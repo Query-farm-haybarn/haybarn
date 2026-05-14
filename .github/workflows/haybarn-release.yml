@@ -76,11 +76,16 @@ jobs:
             sh -c "set -e; apk add ccache cmake g++ git make samurai; \
                    git config --global --add safe.directory $PWD; make -C $PWD"
 
+      # musl binaries are built inside Alpine and won't run on the glibc host
+      # runner, so steps that *execute* the binary are glibc-only. The musl
+      # binary is still built and packaged below. (TODO: run musl smoke
+      # tests inside the alpine container.)
       - name: Print platform
+        if: matrix.config.libc != 'musl'
         run: ./build/release/haybarn -c "PRAGMA platform;"
 
       - name: Test
-        if: ${{ inputs.skip_tests != 'true' }}
+        if: ${{ inputs.skip_tests != 'true' && matrix.config.libc != 'musl' }}
         shell: bash
         run: |
           python3 -m pip install pytest
