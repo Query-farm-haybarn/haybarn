@@ -10,29 +10,26 @@ PRAGMA enable_verification
 statement ok
 set extension_directory='__TEST_DIR__/install_extension'
 
+# Haybarn: the extension repositories are Haybarn's, and the upstream
+# `core_nightly` repository is intentionally removed.
+
 # Check defaults are correct
 statement error
 INSTALL will_never_exist;
 ----
-<REGEX>:.*Failed to download extension "will_never_exist" at URL \"https?://extensions.duckdb.org.*
+<REGEX>:.*Failed to download extension "will_never_exist" at URL \"https?://haybarn-extensions.query.farm/core.*
 
 # Explicitly install from core
 statement error
 INSTALL will_never_exist FROM core;
 ----
-<REGEX>:.*Failed to download extension "will_never_exist" at URL \"https?://extensions.duckdb.org.*
-
-# Explicitly install from nightly
-statement error
-INSTALL will_never_exist FROM core_nightly;
-----
-<REGEX>:.*Failed to download extension "will_never_exist" at URL \"https?://nightly-extensions.duckdb.org.*
+<REGEX>:.*Failed to download extension "will_never_exist" at URL \"https?://haybarn-extensions.query.farm/core.*
 
 # Explicitly install from community
 statement error
 INSTALL will_never_exist FROM community;
 ----
-<REGEX>:.*Failed to download extension "will_never_exist" at URL \"https?://community-extensions.duckdb.org.*
+<REGEX>:.*Failed to download extension "will_never_exist" at URL \"https?://haybarn-extensions.query.farm/community.*
 
 # Alias can not quoted: string literals are interpreted as paths
 statement error
@@ -57,25 +54,19 @@ FROM read_blob('https://duckdb.org/');
 statement error
 INSTALL will_never_exist;
 ----
-<REGEX>:.*Failed to download extension "will_never_exist" at URL \"https://extensions.duckdb.org.*
+<REGEX>:.*Failed to download extension "will_never_exist" at URL \"https://haybarn-extensions.query.farm/core.*
 
 # Explicitly install from core
 statement error
 INSTALL will_never_exist FROM core;
 ----
-<REGEX>:.*Failed to download extension "will_never_exist" at URL \"https://extensions.duckdb.org.*
-
-# Explicitly install from nightly
-statement error
-INSTALL will_never_exist FROM core_nightly;
-----
-<REGEX>:.*Failed to download extension "will_never_exist" at URL \"https://nightly-extensions.duckdb.org.*
+<REGEX>:.*Failed to download extension "will_never_exist" at URL \"https://haybarn-extensions.query.farm/core.*
 
 # Explicitly install from community
 statement error
 INSTALL will_never_exist FROM community;
 ----
-<REGEX>:.*Failed to download extension "will_never_exist" at URL \"https://community-extensions.duckdb.org.*
+<REGEX>:.*Failed to download extension "will_never_exist" at URL \"https://haybarn-extensions.query.farm/community.*
 
 # Next statement should basically invalidate any attempt to reach the internet
 
@@ -86,7 +77,7 @@ SET http_proxy = 'some_non_existent_proxy';
 statement error
 INSTALL will_never_exist FROM community;
 ----
-<REGEX>:.*Failed to download extension "will_never_exist" at URL \"https://community-extensions.duckdb.org.*ERROR Could.* resolve proxy name.*
+<REGEX>:.*Failed to download extension "will_never_exist" at URL \"https://haybarn-extensions.query.farm/community.*ERROR Could.* resolve proxy name.*
 
 statement ok
 SET http_proxy = '';
@@ -95,5 +86,5 @@ SET http_proxy = '';
 statement error
 INSTALL will_never_exist FROM community;
 ----
-<!REGEX>:.*Failed to download extension "will_never_exist" at URL \"https://community-extensions.duckdb.org.*ERROR Could.* resolve proxy name.*
+<!REGEX>:.*Failed to download extension "will_never_exist" at URL \"https://haybarn-extensions.query.farm/community.*ERROR Could.* resolve proxy name.*
 
