@@ -135,3 +135,4 @@ jobs:
           export URL=https://api.github.com/repos/duckdb/duckdb-go-bindings/actions/workflows/nightly.yml/dispatches
           export DATA='{"ref": "main", "inputs": {"duckdb-sha": "${{ inputs.duckdb-sha }}" }}'
           curl -v -XPOST -u "${PAT_USER}:${PAT_TOKEN}" -H "Accept: application/vnd.github.everest-preview+json" -H "Content-Type: application/json" $URL --data "$DATA"
+# Haybarn fork — workflow re-index marker.

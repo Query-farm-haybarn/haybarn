@@ -316,3 +316,4 @@ jobs:
           duckdb_cli-windows-amd64.zip
           libduckdb-windows-arm64.zip
           duckdb_cli-windows-arm64.zip
+# Haybarn fork — workflow re-index marker.

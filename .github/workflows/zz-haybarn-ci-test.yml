@@ -1,8 +1,0 @@
-name: CI Test
-on:
-  workflow_dispatch:
-jobs:
-  hello:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "haybarn ci test"

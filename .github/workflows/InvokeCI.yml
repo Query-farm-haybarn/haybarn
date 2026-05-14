@@ -100,3 +100,4 @@ jobs:
       triggering-event: ${{ github.event_name }}
       should-publish: 'true'
       override-git-describe: ${{ inputs.override_git_describe }}
+# Haybarn fork — workflow re-index marker.

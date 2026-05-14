@@ -57,3 +57,4 @@ jobs:
       run: |
         build/release/benchmark/benchmark_runner --list > alltests.list
         python scripts/regression/test_runner.py --old duckdb/build/release/benchmark/benchmark_runner --new build/release/benchmark/benchmark_runner --benchmarks alltests.list --verbose --threads 2
+# Haybarn fork — workflow re-index marker.

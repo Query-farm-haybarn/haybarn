@@ -17,3 +17,4 @@ jobs:
       - name: Create mirror issue for discussion
         run: |
           gh issue create --repo duckdblabs/duckdb-internal --label "discussion" --title "$TITLE_PREFIX - $PUBLIC_DISCUSSION_TITLE" --body "See https://github.com/duckdb/duckdb/discussions/${{ github.event.discussion.number }}"
+# Haybarn fork — workflow re-index marker.
