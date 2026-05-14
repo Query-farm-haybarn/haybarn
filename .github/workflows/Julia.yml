@@ -87,3 +87,4 @@ jobs:
           ls $JULIA_DUCKDB_LIBRARY
           cd tools/juliapkg
           julia --project -e "import Pkg; Pkg.test()"
+# Haybarn fork — workflow re-index marker.

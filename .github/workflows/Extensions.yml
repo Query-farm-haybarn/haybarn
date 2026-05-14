@@ -420,3 +420,4 @@ jobs:
         run: |
           echo "There are differences in src/include/duckdb/main/extension_entries.hpp"
           echo "Check the uploaded extension_entries.hpp (in the workflow Summary), and check that in instead of src/include/duckdb/main/extension_entries.hpp"
+# Haybarn fork — workflow re-index marker.

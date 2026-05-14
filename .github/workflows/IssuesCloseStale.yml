@@ -28,3 +28,4 @@ jobs:
           operations-per-run: 500
           stale-issue-label: stale
           stale-pr-label: stale
+# Haybarn fork — workflow re-index marker.

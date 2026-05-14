@@ -340,3 +340,4 @@ jobs:
         shell: bash
         run: |
             cat report
+# Haybarn fork — workflow re-index marker.

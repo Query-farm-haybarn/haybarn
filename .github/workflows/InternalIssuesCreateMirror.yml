@@ -85,3 +85,4 @@ jobs:
           else
             gh issue edit --repo duckdblabs/duckdb-internal $MIRROR_ISSUE_NUMBER --remove-label "$UNLABEL" --add-label "$LABEL"
           fi
+# Haybarn fork — workflow re-index marker.

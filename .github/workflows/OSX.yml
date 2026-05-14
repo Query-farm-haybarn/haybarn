@@ -190,3 +190,4 @@ jobs:
         run: |
           (cd examples/embedded-c; make)
           (cd examples/embedded-c++; make)
+# Haybarn fork — workflow re-index marker.

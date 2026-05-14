@@ -218,3 +218,4 @@ jobs:
           name: duckdb-static-libs-linux-${{ matrix.config.arch }}
           path: |
             static-libs-linux-${{ matrix.config.arch }}.zip
+# Haybarn fork — workflow re-index marker.

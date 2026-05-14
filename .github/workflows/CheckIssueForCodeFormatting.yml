@@ -24,3 +24,4 @@ jobs:
           if ! cat issue-text.md | python3 scripts/check-issue-for-code-formatting.py; then
               gh issue comment ${{ github.event.issue.number }} --body-file .github/workflows/code-formatting-warning.md
           fi
+# Haybarn fork — workflow re-index marker.

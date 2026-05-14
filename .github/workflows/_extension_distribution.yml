@@ -73,3 +73,4 @@ jobs:
       extensions_test_selection: 'complete'
       # The extension_config.cmake configuration that gets built
       extra_extension_config: ${{ inputs.extension_config }}
+# Haybarn fork — workflow re-index marker.
