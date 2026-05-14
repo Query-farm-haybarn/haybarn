@@ -44,3 +44,4 @@ jobs:
       - name: Run Python client tests
         run: |
           make test_debug_python
+# Haybarn fork — workflow re-index marker.

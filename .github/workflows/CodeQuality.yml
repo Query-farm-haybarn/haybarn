@@ -122,3 +122,4 @@ jobs:
         shell: bash
         if: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/feature' }}
         run: DUCKDB_GIT_BASE_BRANCH=${{ github.base_ref }} make tidy-check-diff
+# Haybarn fork — workflow re-index marker.

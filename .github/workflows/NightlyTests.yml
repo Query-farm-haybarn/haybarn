@@ -812,3 +812,4 @@ jobs:
           else
             echo "All BWC tests passed."
           fi
+# Haybarn fork — workflow re-index marker.
