@@ -52,19 +52,19 @@ include("${EXTENSION_CONFIG_BASE_DIR}/unity_catalog.cmake")
 
 # --- Out-of-tree extensions, built from the Haybarn build-forks --------------
 # iceberg and ducklake are forked under Query-farm-haybarn for source/tag
-# control. The extension names stay `iceberg` / `ducklake`. The forks track the
-# same upstream commits the DuckDB v1.5.2 CI pinned (iceberg 11fea8ed,
-# ducklake 415a9ebd), on their `haybarn` branches.
-#
-# NOTE: these GIT_URLs require the Haybarn fork repos to be pushed to GitHub.
+# control. The extension names stay `iceberg` / `ducklake`. Each fork's
+# `haybarn` branch is the exact commit DuckDB v1.5.2 CI pinned (iceberg
+# 11fea8ed, ducklake 415a9ebd) plus a single NOTICE commit — pinned here by
+# explicit SHA so the build is reproducible and unambiguously the 1.5.2 build,
+# never `main`.
 if (NOT MINGW)
     duckdb_extension_load(iceberg
             GIT_URL https://github.com/Query-farm-haybarn/haybarn-iceberg
-            GIT_TAG haybarn
+            GIT_TAG e24fd533cb33180e28a1d1d7776489b407ae73ab
             )
 endif()
 
 duckdb_extension_load(ducklake
     GIT_URL https://github.com/Query-farm-haybarn/haybarn-ducklake
-    GIT_TAG haybarn
+    GIT_TAG 45e2b4ba5ae6de1fc0f1c78802638eed672d9a99
 )
