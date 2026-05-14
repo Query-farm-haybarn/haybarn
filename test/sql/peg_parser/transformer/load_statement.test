@@ -19,8 +19,8 @@ set allow_parser_override_extension=strict;
 statement ok
 set extension_directory='__TEST_DIR__/install_extension'
 
-# Check defaults are correct
+# Check defaults are correct (Haybarn: default extension repository)
 statement error
 INSTALL will_never_exist;
 ----
-Failed to download extension "will_never_exist" at URL "http://extensions.duckdb.org"
+<REGEX>:.*Failed to download extension "will_never_exist" at URL "https?://haybarn-extensions.query.farm/core.*
