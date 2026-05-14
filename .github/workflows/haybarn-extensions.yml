@@ -94,3 +94,4 @@ jobs:
           # haybarn-extensions.query.farm with a top-level core/ prefix.
           ./scripts/extension-upload-repository.sh \
             "/tmp/haybarn-repository/*" "${{ secrets.R2_BUCKET }}/core"
+# Haybarn fork — workflow re-index marker.

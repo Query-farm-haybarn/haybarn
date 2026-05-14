@@ -35,3 +35,4 @@ jobs:
       shell: bash
       run: |
         ./scripts/test_docker_images.sh
+# Haybarn fork — workflow re-index marker.

@@ -282,3 +282,4 @@ jobs:
     - name: Banned Symbol Check
       shell: bash
       run: python3 scripts/banned_symbols_check.py --directory build/release/src
+# Haybarn fork — workflow re-index marker.

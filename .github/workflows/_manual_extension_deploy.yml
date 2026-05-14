@@ -163,3 +163,4 @@ jobs:
         run: |
           pip install awscli
           ./scripts/extension-upload-repository.sh /tmp/extension-repository-${{ inputs.duckdb_ref }} duckdb-staging
+# Haybarn fork — workflow re-index marker.

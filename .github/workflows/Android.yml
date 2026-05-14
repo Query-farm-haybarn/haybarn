@@ -80,3 +80,4 @@ jobs:
         name: duckdb-binaries-android-${{matrix.arch}}
         path: |
           libduckdb-android_${{matrix.arch}}.zip
+# Haybarn fork — workflow re-index marker.
