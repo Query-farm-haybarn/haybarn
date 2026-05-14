@@ -30,12 +30,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # extension-ci-tools appends `extra_extension_config` verbatim into the
+  # generated extension_config.cmake, so it must be CMake *content*, not a path.
+  # Read the file contents here and pass them through (mirrors upstream DuckDB's
+  # Extensions.yml `load-extension-configs` pattern).
+  load-config:
+    name: Load extension config
+    runs-on: ubuntu-latest
+    outputs:
+      extension_config: ${{ steps.read.outputs.config }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: read
+        shell: bash
+        run: |
+          {
+            echo 'config<<HAYBARN_EXT_CONFIG_EOF'
+            cat .github/config/haybarn_extensions.cmake
+            echo 'HAYBARN_EXT_CONFIG_EOF'
+          } >> "$GITHUB_OUTPUT"
+
   build:
     name: Build extensions
+    needs: load-config
     uses: ./.github/workflows/_extension_distribution.yml
     with:
       artifact_prefix: haybarn
-      extension_config: .github/config/haybarn_extensions.cmake
+      extension_config: ${{ needs.load-config.outputs.extension_config }}
       # delta and unity_catalog need a Rust toolchain.
       extra_toolchains: 'rust'
       # Pin the embedded DuckDB version to the upstream release Haybarn is
