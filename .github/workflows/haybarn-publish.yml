@@ -1,0 +1,114 @@
+# Haybarn: collects the binary artifacts produced by Haybarn Release, generates
+# SHA256SUMS, signs them with GPG and cosign, and publishes a GitHub Release.
+#
+# OS-native code signing (Apple notarization / Windows Authenticode) is not in
+# place yet — integrity is provided by SHA256SUMS + detached GPG signature +
+# cosign signatures/attestations. Add OS signing in haybarn-release.yml when
+# credentials are available.
+name: Haybarn Publish
+
+on:
+  # Runs automatically once Haybarn Release finishes for a tag push.
+  workflow_run:
+    workflows: ["Haybarn Release"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Haybarn Release run ID to publish artifacts from'
+        type: string
+        required: true
+      tag:
+        description: 'Release tag to publish (e.g. haybarn-v1.5.2)'
+        type: string
+        required: true
+
+permissions:
+  contents: write   # create the GitHub Release
+  id-token: write   # cosign keyless (OIDC) signing
+  actions: read     # download artifacts from the triggering run
+
+jobs:
+  publish:
+    # On workflow_run, only proceed if the release build succeeded on a tag.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       startsWith(github.event.workflow_run.head_branch, 'haybarn-v'))
+    runs-on: ubuntu-latest
+    env:
+      RUN_ID: ${{ inputs.run_id || github.event.workflow_run.id }}
+      TAG: ${{ inputs.tag || github.event.workflow_run.head_branch }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ env.RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          pattern: haybarn-*
+          path: /tmp/artifacts
+          merge-multiple: true
+
+      - name: Collect artifacts and checksums
+        shell: bash
+        run: |
+          mkdir -p release
+          find /tmp/artifacts -type f \( -name '*.zip' -o -name '*.gz' \) -exec cp {} release/ \;
+          cd release
+          ls -la
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: GPG sign checksums
+        shell: bash
+        env:
+          HAYBARN_GPG_PRIVATE_KEY: ${{ secrets.HAYBARN_GPG_PRIVATE_KEY }}
+          HAYBARN_GPG_PASSPHRASE: ${{ secrets.HAYBARN_GPG_PASSPHRASE }}
+        run: |
+          echo "$HAYBARN_GPG_PRIVATE_KEY" | gpg --batch --import
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase "$HAYBARN_GPG_PASSPHRASE" \
+            --armor --detach-sign --output release/SHA256SUMS.asc release/SHA256SUMS
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Cosign sign artifacts (keyless)
+        shell: bash
+        run: |
+          cd release
+          for f in *.zip *.gz SHA256SUMS; do
+            cosign sign-blob --yes \
+              --output-signature "$f.sig" \
+              --output-certificate "$f.pem" \
+              "$f"
+          done
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: ${{ env.TAG }}
+          body: |
+            Haybarn ${{ env.TAG }} — powered by DuckDB.
+
+            An independent derived distribution of DuckDB. Not affiliated with or
+            endorsed by the DuckDB Foundation. DuckDB is a trademark of the
+            DuckDB Foundation.
+
+            ## Verifying downloads
+            - `SHA256SUMS` — checksums for every artifact.
+            - `SHA256SUMS.asc` — detached GPG signature of `SHA256SUMS`.
+            - `*.sig` / `*.pem` — cosign keyless signatures + certificates.
+
+            ```
+            sha256sum -c SHA256SUMS
+            gpg --verify SHA256SUMS.asc SHA256SUMS
+            cosign verify-blob --signature <file>.sig --certificate <file>.pem \
+              --certificate-identity-regexp '.*' \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com <file>
+            ```
+          files: release/*
+          fail_on_unmatched_files: true

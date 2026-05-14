@@ -1,0 +1,132 @@
+# Haybarn: builds the in-tree core extensions, signs them with the Haybarn
+# extension signing key, and publishes them to the Haybarn extension repository
+# on Cloudflare R2 (served at https://haybarn.query.farm/core).
+#
+# Reuses the upstream, bucket-parameterized helper scripts:
+#   scripts/extension-upload-repository.sh  -> scripts/extension-upload-single.sh
+# which sign via `openssl pkeyutl` using $DUCKDB_EXTENSION_SIGNING_PK and upload
+# with the AWS CLI (S3-compatible, works against R2 via AWS_ENDPOINT_URL).
+name: Haybarn Extensions
+
+on:
+  push:
+    tags:
+      - 'haybarn-v[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+    inputs:
+      override_git_describe:
+        description: 'Version string to embed (defaults to v1.5.2)'
+        type: string
+      deploy:
+        description: 'Pass "true" to actually upload to R2 (otherwise dry-run)'
+        type: string
+
+concurrency:
+  group: haybarn-extensions-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  OVERRIDE_GIT_DESCRIBE: ${{ inputs.override_git_describe || 'v1.5.2' }}
+
+jobs:
+  build:
+    name: Build extensions ${{ matrix.config.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - { name: linux_amd64, runner: ubuntu-latest,    image: x86_64  }
+          - { name: linux_arm64, runner: ubuntu-24.04-arm, image: aarch64 }
+          - { name: osx,         runner: macos-latest }
+    runs-on: ${{ matrix.config.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build (Linux / manylinux)
+        if: startsWith(matrix.config.name, 'linux')
+        shell: bash
+        run: |
+          export PWD=`pwd`
+          docker run \
+            -v$PWD:$PWD \
+            -e GEN=ninja -e CC='ccache gcc' -e CXX='ccache g++' -e CCACHE_DIR=$PWD/.ccache \
+            -e OVERRIDE_GIT_DESCRIBE=$OVERRIDE_GIT_DESCRIBE \
+            -e EXTENSION_CONFIGS="$PWD/.github/config/in_tree_extensions.cmake" \
+            quay.io/pypa/manylinux_2_28_${{ matrix.config.image }} \
+            bash -c "set -e; dnf install -y ccache ninja-build perl-IPC-Cmd; \
+                     git config --global --add safe.directory $PWD; make -C $PWD"
+
+      - name: Build (macOS universal)
+        if: matrix.config.name == 'osx'
+        shell: bash
+        env:
+          GEN: ninja
+          OSX_BUILD_UNIVERSAL: 1
+          EXTENSION_CONFIGS: '${{ github.workspace }}/.github/config/in_tree_extensions.cmake'
+        run: |
+          brew install ninja
+          make
+
+      # The DuckDB build emits a ready-made signed-layout repository tree at
+      # build/release/repository/<version>/<platform>/<ext>.duckdb_extension.
+      # If a future upstream bump changes that path, adjust REPO_DIR below.
+      - name: Stage repository tree
+        id: stage
+        shell: bash
+        run: |
+          REPO_DIR=build/release/repository
+          if [ ! -d "$REPO_DIR" ]; then
+            echo "Expected $REPO_DIR to exist after the build" >&2
+            find build/release -name '*.duckdb_extension' -print >&2 || true
+            exit 1
+          fi
+          PLATFORM=$(./build/release/haybarn -noheader -list -c "PRAGMA platform;")
+          echo "platform=$PLATFORM" >> $GITHUB_OUTPUT
+          tree "$REPO_DIR" || find "$REPO_DIR" -type f
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: haybarn-extensions-${{ matrix.config.name }}
+          path: build/release/repository/**/*.duckdb_extension*
+
+  publish:
+    name: Sign and publish to R2
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: haybarn-extensions-*
+          path: /tmp/staged
+          merge-multiple: true
+
+      - name: Assemble merged repository
+        shell: bash
+        run: |
+          mkdir -p /tmp/haybarn-repository
+          cp -r /tmp/staged/* /tmp/haybarn-repository/
+          find /tmp/haybarn-repository -type f
+
+      - name: Sign and upload to R2 (core repository)
+        shell: bash
+        env:
+          # Private key whose public half is embedded in
+          # src/main/extension/extension_helper.cpp.
+          DUCKDB_EXTENSION_SIGNING_PK: ${{ secrets.HAYBARN_EXTENSION_SIGNING_PK }}
+          AWS_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          # for_real => actually upload; anything else => dry run.
+          DUCKDB_DEPLOY_SCRIPT_MODE: ${{ inputs.deploy == 'true' && 'for_real' || 'dry_run' }}
+        run: |
+          python3 -m pip install awscli
+          # $2 is the target bucket+prefix; R2 bucket fronted by
+          # haybarn.query.farm with a top-level core/ prefix.
+          ./scripts/extension-upload-repository.sh \
+            "/tmp/haybarn-repository/*" "${{ secrets.R2_BUCKET }}/core"
