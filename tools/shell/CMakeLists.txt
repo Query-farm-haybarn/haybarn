@@ -80,7 +80,8 @@ if(WIN32 AND NOT MINGW)
   target_sources(shell PRIVATE rc/duckdb.rc)
 endif()
 
-set_target_properties(shell PROPERTIES OUTPUT_NAME duckdb)
+# Haybarn: CLI binary is shipped as `haybarn` (DuckDB ships it as `duckdb`).
+set_target_properties(shell PROPERTIES OUTPUT_NAME haybarn)
 set_target_properties(shell PROPERTIES RUNTIME_OUTPUT_DIRECTORY
                                        ${PROJECT_BINARY_DIR})
 

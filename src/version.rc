@@ -18,6 +18,10 @@ BEGIN
 	BEGIN
 		BLOCK "040904b0"
 		BEGIN
+			// Haybarn: branded library resource info.
+			VALUE "CompanyName",      "Query Farm LLC"
+			VALUE "FileDescription",  "Haybarn library, powered by DuckDB"
+			VALUE "ProductName",      "Haybarn"
 			VALUE "FileVersion",      QUOTE(DUCKDB_VERSION)
 			VALUE "ProductVersion",   QUOTE(DUCKDB_VERSION)
 		END
