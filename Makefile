@@ -945,7 +945,7 @@ bundle-setup:
 	cd build/release && \
 	rm -rf bundle && \
 	mkdir -p bundle && \
-	cp src/libduckdb_static.a bundle/. && \
+	cp src/libhaybarn_static.a bundle/. && \
 	cp third_party/*/libduckdb_*.a bundle/. && \
 	cp extension/libduckdb_generated_extension_loader.a bundle/. && \
 	cp extension/*/lib*_extension.a bundle/. && \
@@ -963,11 +963,11 @@ bundle-setup:
 
 bundle-library-o: bundle-setup
 	cd build/release/bundle && \
-	echo ./*/*.o | xargs ${AR} cr ../libduckdb_bundle.a
+	echo ./*/*.o | xargs ${AR} cr ../libhaybarn_bundle.a
 
 bundle-library-obj: bundle-setup
 	cd build/release/bundle && \
-	echo ./*/*.obj | xargs ${AR} cr ../libduckdb_bundle.a
+	echo ./*/*.obj | xargs ${AR} cr ../libhaybarn_bundle.a
 
 bundle-library: release
 	make bundle-library-o
@@ -982,7 +982,7 @@ gather-libs:
 	cd $(GATHER_LIBS_BUILD_DIR) && \
 	rm -rf libs && \
 	mkdir -p libs && \
-	cp src/$(GATHER_LIBS_PREFIX)duckdb_static.$(GATHER_LIBS_EXTENSION) libs/. && \
+	cp src/$(GATHER_LIBS_PREFIX)haybarn_static.$(GATHER_LIBS_EXTENSION) libs/. && \
 	cp third_party/*/$(GATHER_LIBS_PREFIX)duckdb_*.$(GATHER_LIBS_EXTENSION) libs/. && \
 	cp extension/$(GATHER_LIBS_PREFIX)duckdb_generated_extension_loader.$(GATHER_LIBS_EXTENSION) libs/. && \
 	cp extension/*/$(GATHER_LIBS_PREFIX)*_extension.$(GATHER_LIBS_EXTENSION) libs/.
