@@ -1,11 +1,15 @@
-# Haybarn: builds the in-tree core extensions, signs them with the Haybarn
-# extension signing key, and publishes them to the Haybarn extension repository
-# on Cloudflare R2 (served at https://haybarn.query.farm/core).
+# Haybarn: builds the full Haybarn extension set, signs each extension with the
+# Haybarn extension-signing key, and publishes to the Haybarn extension
+# repository on Cloudflare R2 (served at https://haybarn.query.farm/core).
 #
-# Reuses the upstream, bucket-parameterized helper scripts:
-#   scripts/extension-upload-repository.sh  -> scripts/extension-upload-single.sh
-# which sign via `openssl pkeyutl` using $DUCKDB_EXTENSION_SIGNING_PK and upload
-# with the AWS CLI (S3-compatible, works against R2 via AWS_ENDPOINT_URL).
+# The `build` job reuses DuckDB's own reusable extension-distribution workflow
+# (./.github/workflows/_extension_distribution.yml). That workflow builds with
+# `set_caller_as_duckdb: true`, so every extension is built against THIS repo —
+# i.e. against the Haybarn build of DuckDB — and handles vcpkg + toolchains.
+#
+# The `publish` job then signs the built extensions with the Haybarn key and
+# uploads them to R2 using the upstream, bucket-parameterized helper scripts
+# (scripts/extension-upload-repository.sh -> scripts/extension-upload-single.sh).
 name: Haybarn Extensions
 
 on:
@@ -25,71 +29,22 @@ concurrency:
   group: haybarn-extensions-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  OVERRIDE_GIT_DESCRIBE: ${{ inputs.override_git_describe || 'v1.5.2' }}
-
 jobs:
   build:
-    name: Build extensions ${{ matrix.config.name }}
-    strategy:
-      fail-fast: false
-      matrix:
-        config:
-          - { name: linux_amd64, runner: ubuntu-latest,    image: x86_64  }
-          - { name: linux_arm64, runner: ubuntu-24.04-arm, image: aarch64 }
-          - { name: osx,         runner: macos-latest }
-    runs-on: ${{ matrix.config.runner }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Build (Linux / manylinux)
-        if: startsWith(matrix.config.name, 'linux')
-        shell: bash
-        run: |
-          export PWD=`pwd`
-          docker run \
-            -v$PWD:$PWD \
-            -e GEN=ninja -e CC='ccache gcc' -e CXX='ccache g++' -e CCACHE_DIR=$PWD/.ccache \
-            -e OVERRIDE_GIT_DESCRIBE=$OVERRIDE_GIT_DESCRIBE \
-            -e EXTENSION_CONFIGS="$PWD/.github/config/in_tree_extensions.cmake" \
-            quay.io/pypa/manylinux_2_28_${{ matrix.config.image }} \
-            bash -c "set -e; dnf install -y ccache ninja-build perl-IPC-Cmd; \
-                     git config --global --add safe.directory $PWD; make -C $PWD"
-
-      - name: Build (macOS universal)
-        if: matrix.config.name == 'osx'
-        shell: bash
-        env:
-          GEN: ninja
-          OSX_BUILD_UNIVERSAL: 1
-          EXTENSION_CONFIGS: '${{ github.workspace }}/.github/config/in_tree_extensions.cmake'
-        run: |
-          brew install ninja
-          make
-
-      # The DuckDB build emits a ready-made signed-layout repository tree at
-      # build/release/repository/<version>/<platform>/<ext>.duckdb_extension.
-      # If a future upstream bump changes that path, adjust REPO_DIR below.
-      - name: Stage repository tree
-        id: stage
-        shell: bash
-        run: |
-          REPO_DIR=build/release/repository
-          if [ ! -d "$REPO_DIR" ]; then
-            echo "Expected $REPO_DIR to exist after the build" >&2
-            find build/release -name '*.duckdb_extension' -print >&2 || true
-            exit 1
-          fi
-          PLATFORM=$(./build/release/haybarn -noheader -list -c "PRAGMA platform;")
-          echo "platform=$PLATFORM" >> $GITHUB_OUTPUT
-          tree "$REPO_DIR" || find "$REPO_DIR" -type f
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: haybarn-extensions-${{ matrix.config.name }}
-          path: build/release/repository/**/*.duckdb_extension*
+    name: Build extensions
+    uses: ./.github/workflows/_extension_distribution.yml
+    with:
+      artifact_prefix: haybarn
+      extension_config: .github/config/haybarn_extensions.cmake
+      # delta and unity_catalog need a Rust toolchain.
+      extra_toolchains: 'rust'
+      # Pin the embedded DuckDB version to the upstream release Haybarn is
+      # based on, matching the haybarn-release workflow.
+      override_duckdb_version: ${{ inputs.override_git_describe || 'v1.5.2' }}
+      # Extension tests frequently need external services (postgres, mysql,
+      # S3, ...). Build first; enable targeted tests later.
+      skip_tests: true
+    secrets: inherit
 
   publish:
     name: Sign and publish to R2
@@ -100,9 +55,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/download-artifact@v4
+      - name: Download built extensions
+        uses: actions/download-artifact@v4
         with:
-          pattern: haybarn-extensions-*
+          # The reusable build workflow prefixes its artifacts with
+          # `artifact_prefix` (haybarn) and each contains a
+          # <version>/<platform>/ repository tree.
+          pattern: haybarn-*
           path: /tmp/staged
           merge-multiple: true
 
@@ -110,8 +69,13 @@ jobs:
         shell: bash
         run: |
           mkdir -p /tmp/haybarn-repository
-          cp -r /tmp/staged/* /tmp/haybarn-repository/
-          find /tmp/haybarn-repository -type f
+          # Flatten the per-artifact <version>/<platform>/ trees into one.
+          cp -r /tmp/staged/* /tmp/haybarn-repository/ 2>/dev/null || true
+          find /tmp/haybarn-repository -name '*.duckdb_extension*' -print
+          if [ -z "$(find /tmp/haybarn-repository -name '*.duckdb_extension*' -print -quit)" ]; then
+            echo "No built extensions found to publish" >&2
+            exit 1
+          fi
 
       - name: Sign and upload to R2 (core repository)
         shell: bash
@@ -126,7 +90,7 @@ jobs:
           DUCKDB_DEPLOY_SCRIPT_MODE: ${{ inputs.deploy == 'true' && 'for_real' || 'dry_run' }}
         run: |
           python3 -m pip install awscli
-          # $2 is the target bucket+prefix; R2 bucket fronted by
+          # $2 is the target bucket+prefix; the R2 bucket is fronted by
           # haybarn.query.farm with a top-level core/ prefix.
           ./scripts/extension-upload-repository.sh \
             "/tmp/haybarn-repository/*" "${{ secrets.R2_BUCKET }}/core"
