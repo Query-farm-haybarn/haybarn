@@ -20,7 +20,7 @@ This first Haybarn release is built from **DuckDB v1.5.2**.
 | Shared library      | `libhaybarn.{so,dylib,dll}`                      |
 | Static library      | `libhaybarn_static.a`                            |
 | Python package      | `haybarn` (on PyPI)                              |
-| Core extensions     | Haybarn-signed, served from `haybarn.query.farm` |
+| Core extensions     | Haybarn-signed, served from `haybarn-extensions.query.farm` |
 
 The C/C++ API, the `duckdb::` namespace, public headers (`duckdb.h`/`.hpp`), and
 the on-disk database and extension formats are **unchanged** from upstream
@@ -34,7 +34,7 @@ names, the extension trust root, and the release/distribution pipeline.
 - **Extension signing** — Haybarn embeds its own extension-signing public key
   and trusts *only* that key. DuckDB-signed extensions will not load; every
   Haybarn extension is signed with the Haybarn key and served from the Haybarn
-  extension repository (`https://haybarn.query.farm/core`).
+  extension repository (`https://haybarn-extensions.query.farm/core`).
 - **Distribution** — binaries are published on GitHub Releases with
   `SHA256SUMS`, detached GPG signatures, and cosign signatures. Extensions are
   hosted on Cloudflare R2.
