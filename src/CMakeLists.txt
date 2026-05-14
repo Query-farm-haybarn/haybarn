@@ -96,6 +96,9 @@ endforeach(LINK_LIB)
 add_library(duckdb_static STATIC ${ALL_OBJECT_FILES} ${LINK_OBJECTS})
 target_link_libraries(duckdb_static PUBLIC ${DUCKDB_SYSTEM_LIBS})
 link_threads(duckdb_static PUBLIC)
+# Haybarn: ship the static library as libhaybarn_static. The CMake target name
+# (`duckdb_static`) and the `duckdb::` namespace/symbols are intentionally kept.
+set_target_properties(duckdb_static PROPERTIES OUTPUT_NAME haybarn_static)
 
 #
 # FIXME file(COPY ${CMAKE_SOURCE_DIR}/libduckdb_static.a  DESTINATION
@@ -107,6 +110,9 @@ link_threads(duckdb_static PUBLIC)
 add_library(duckdb SHARED ${ALL_OBJECT_FILES} ${LINK_OBJECTS})
 target_link_libraries(duckdb PUBLIC ${DUCKDB_SYSTEM_LIBS})
 link_extension_libraries(duckdb PRIVATE)
+# Haybarn: ship the shared library as libhaybarn.{so,dylib,dll}. The CMake target
+# name (`duckdb`) and the `duckdb::` namespace/symbols are intentionally kept.
+set_target_properties(duckdb PROPERTIES OUTPUT_NAME haybarn)
 
 link_threads(duckdb PUBLIC)
 

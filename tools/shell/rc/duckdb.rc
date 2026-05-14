@@ -3,6 +3,8 @@
 #define Q(x) #x
 #define QUOTE(x) Q(x)
 
+// Haybarn: Windows VERSIONINFO rebranded. Version macros (DUCKDB_*) are kept as
+// they carry the upstream DuckDB version numbers Haybarn is built from.
 VS_VERSION_INFO VERSIONINFO
 	FILEVERSION DUCKDB_MAJOR_VERSION,DUCKDB_MINOR_VERSION,DUCKDB_PATCH_VERSION,DUCKDB_DEV_ITERATION
 	PRODUCTVERSION DUCKDB_MAJOR_VERSION,DUCKDB_MINOR_VERSION,DUCKDB_PATCH_VERSION,DUCKDB_DEV_ITERATION
@@ -18,16 +20,16 @@ BEGIN
 	BEGIN
 		BLOCK "040904b0"
 		BEGIN
-			VALUE "Comments",         "DuckDB shell"
-			VALUE "CompanyName",      "DuckDB Labs"
+			VALUE "Comments",         "Haybarn shell, powered by DuckDB"
+			VALUE "CompanyName",      "Query Farm LLC"
 
-			VALUE "FileDescription",  "DuckDB shell"
+			VALUE "FileDescription",  "Haybarn shell"
 			VALUE "FileVersion",      QUOTE(DUCKDB_VERSION)
-			VALUE "InternalName",     "DuckDB shell"
-			VALUE "LegalCopyright",   "Copyright 2018-" QUOTE(DUCKDB_COPYRIGHT_YEAR) " Stichting DuckDB Foundation"
+			VALUE "InternalName",     "Haybarn shell"
+			VALUE "LegalCopyright",   "Copyright 2026 Query Farm LLC. Powered by DuckDB, Copyright 2018-" QUOTE(DUCKDB_COPYRIGHT_YEAR) " Stichting DuckDB Foundation."
 
-			VALUE "OriginalFilename", "duckdb.exe"
-			VALUE "ProductName",      "DuckDB"
+			VALUE "OriginalFilename", "haybarn.exe"
+			VALUE "ProductName",      "Haybarn"
 			VALUE "ProductVersion",   QUOTE(DUCKDB_VERSION)
 		END
 	END
@@ -37,4 +39,5 @@ BEGIN
 	END
 END
 
-MAINICON ICON "../../../logo/DuckDB.ico"
+// Haybarn: the DuckDB logo icon must not be shipped (trademark). Restore a
+// MAINICON line here pointing at a Haybarn icon once the brand assets exist.
