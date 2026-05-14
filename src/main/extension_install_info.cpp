@@ -25,7 +25,6 @@ struct KnownExtensionRepository {
 
 static constexpr const KnownExtensionRepository KNOWN_REPOSITORIES[] = {
     {"core", ExtensionRepository::CORE_REPOSITORY_URL, ExtensionRepositoryType::CORE},
-    {"core_nightly", ExtensionRepository::CORE_NIGHTLY_REPOSITORY_URL, ExtensionRepositoryType::CORE},
     {"community", ExtensionRepository::COMMUNITY_REPOSITORY_URL, ExtensionRepositoryType::COMMUNITY},
     {"local_build_debug", ExtensionRepository::BUILD_DEBUG_REPOSITORY_PATH, ExtensionRepositoryType::CORE},
     {"local_build_release", ExtensionRepository::BUILD_RELEASE_REPOSITORY_PATH, ExtensionRepositoryType::CORE},
