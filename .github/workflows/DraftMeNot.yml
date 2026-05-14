@@ -1,9 +1,9 @@
 # Marks all changed PR as draft
 name: Placeholder to cancel auto draft
 on:
-  pull_request:
-    types: [ ready_for_review ]
-
+  # Haybarn: upstream auto-triggers removed so this workflow
+  # does not run on the fork. Still runnable manually if needed.
+  workflow_dispatch:
 concurrency:
   group: shouldturntodraft-${{ github.event.number }}
   cancel-in-progress: true
