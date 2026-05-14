@@ -1,0 +1,236 @@
+# Haybarn: builds the `haybarn` CLI and `libhaybarn` libraries for all release
+# platforms. Self-contained (does not reuse DuckDB's S3-staging-coupled release
+# workflows). Artifacts are uploaded for the haybarn-publish workflow to sign
+# and attach to a GitHub Release.
+name: Haybarn Release
+
+on:
+  push:
+    tags:
+      - 'haybarn-v[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+    inputs:
+      override_git_describe:
+        description: 'Version string to embed (defaults to the upstream tag, e.g. v1.5.2)'
+        type: string
+      skip_tests:
+        description: 'Pass "true" to skip tests'
+        type: string
+
+concurrency:
+  group: haybarn-release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Haybarn is built from a specific upstream DuckDB tag. The version string the
+  # binary reports stays the upstream version (e.g. v1.5.2) for storage and
+  # extension-path compatibility; see the plan's branding decisions.
+  OVERRIDE_GIT_DESCRIBE: ${{ inputs.override_git_describe || 'v1.5.2' }}
+
+jobs:
+  linux:
+    name: Linux ${{ matrix.config.arch }}${{ matrix.config.libc == 'musl' && '-musl' || '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - { runner: ubuntu-latest,     arch: amd64, image: x86_64,  libc: glibc }
+          - { runner: ubuntu-24.04-arm,  arch: arm64, image: aarch64, libc: glibc }
+          - { runner: ubuntu-latest,     arch: amd64,                 libc: musl  }
+          - { runner: ubuntu-24.04-arm,  arch: arm64,                 libc: musl  }
+    runs-on: ${{ matrix.config.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build (glibc / manylinux)
+        if: matrix.config.libc == 'glibc'
+        shell: bash
+        run: |
+          export PWD=`pwd`
+          docker run \
+            -v$PWD:$PWD \
+            -e GEN=ninja \
+            -e CC='ccache gcc' -e CXX='ccache g++' -e CCACHE_DIR=$PWD/.ccache \
+            -e OVERRIDE_GIT_DESCRIBE=$OVERRIDE_GIT_DESCRIBE \
+            -e EXTENSION_CONFIGS="$PWD/.github/config/in_tree_extensions.cmake" \
+            -e ENABLE_EXTENSION_AUTOLOADING=1 -e ENABLE_EXTENSION_AUTOINSTALL=1 \
+            quay.io/pypa/manylinux_2_28_${{ matrix.config.image }} \
+            bash -c "set -e; dnf install -y ccache ninja-build perl-IPC-Cmd; \
+                     git config --global --add safe.directory $PWD; make -C $PWD"
+
+      - name: Build (musl / alpine)
+        if: matrix.config.libc == 'musl'
+        shell: bash
+        run: |
+          export PWD=`pwd`
+          docker run \
+            -v$PWD:$PWD \
+            -e GEN=ninja \
+            -e CC='ccache gcc' -e CXX='ccache g++' -e CCACHE_DIR=$PWD/.ccache \
+            -e OVERRIDE_GIT_DESCRIBE=$OVERRIDE_GIT_DESCRIBE \
+            -e EXTENSION_CONFIGS="$PWD/.github/config/in_tree_extensions.cmake" \
+            -e ENABLE_EXTENSION_AUTOLOADING=1 -e ENABLE_EXTENSION_AUTOINSTALL=1 \
+            alpine:3.22 \
+            sh -c "set -e; apk add ccache cmake g++ git make samurai; \
+                   git config --global --add safe.directory $PWD; make -C $PWD"
+
+      - name: Print platform
+        run: ./build/release/haybarn -c "PRAGMA platform;"
+
+      - name: Test
+        if: ${{ inputs.skip_tests != 'true' }}
+        shell: bash
+        run: |
+          python3 -m pip install pytest
+          python3 scripts/run_tests_one_by_one.py build/release/test/unittest "*" --time_execution
+          python3 -m pytest tools/shell/tests --shell-binary build/release/haybarn
+
+      - name: Package
+        shell: bash
+        run: |
+          SUFFIX="${{ matrix.config.arch }}${{ matrix.config.libc == 'musl' && '-musl' || '' }}"
+          python3 scripts/amalgamation.py
+          zip -j haybarn_cli-linux-$SUFFIX.zip build/release/haybarn
+          gzip -9 -k -n -c build/release/haybarn > haybarn_cli-linux-$SUFFIX.gz
+          zip -j libhaybarn-linux-$SUFFIX.zip build/release/src/libhaybarn*.* \
+            src/amalgamation/duckdb.hpp src/include/duckdb.h
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: haybarn-linux-${{ matrix.config.arch }}${{ matrix.config.libc == 'musl' && '-musl' || '' }}
+          path: |
+            haybarn_cli-linux-*.zip
+            haybarn_cli-linux-*.gz
+            libhaybarn-linux-*.zip
+
+  osx:
+    name: macOS (universal)
+    runs-on: macos-latest
+    env:
+      EXTENSION_CONFIGS: '${{ github.workspace }}/.github/config/in_tree_extensions.cmake'
+      ENABLE_EXTENSION_AUTOLOADING: 1
+      ENABLE_EXTENSION_AUTOINSTALL: 1
+      OSX_BUILD_UNIVERSAL: 1
+      GEN: ninja
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Ninja
+        run: brew install ninja
+
+      - name: Build
+        run: make
+
+      - name: Print platform
+        run: ./build/release/haybarn -c "PRAGMA platform;"
+
+      # NOTE: macOS code signing / notarization is intentionally not wired up
+      # yet. When an Apple Developer ID is available, add a codesign +
+      # `xcrun notarytool` step here using OSX_CODESIGN_* / OSX_NOTARIZE_*
+      # secrets, signing build/release/haybarn and libhaybarn*.dylib.
+
+      - name: Test
+        if: ${{ inputs.skip_tests != 'true' }}
+        run: |
+          python3 -m pip install pytest
+          python3 -m pytest tools/shell/tests --shell-binary build/release/haybarn
+
+      - name: Package
+        shell: bash
+        run: |
+          python3 scripts/amalgamation.py
+          zip -j -y libhaybarn-osx-universal.zip build/release/src/libhaybarn*.dylib \
+            src/amalgamation/duckdb.hpp src/include/duckdb.h
+          mkdir build/release_arm64 build/release_amd64
+          lipo -extract arm64  -output build/release_arm64/haybarn  build/release/haybarn
+          lipo -extract x86_64 -output build/release_amd64/haybarn  build/release/haybarn
+          zip -j haybarn_cli-osx-universal.zip build/release/haybarn
+          zip -j haybarn_cli-osx-arm64.zip     build/release_arm64/haybarn
+          zip -j haybarn_cli-osx-amd64.zip     build/release_amd64/haybarn
+          gzip -9 -k -n -c build/release/haybarn        > haybarn_cli-osx-universal.gz
+          gzip -9 -k -n -c build/release_arm64/haybarn  > haybarn_cli-osx-arm64.gz
+          gzip -9 -k -n -c build/release_amd64/haybarn  > haybarn_cli-osx-amd64.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: haybarn-osx
+          path: |
+            haybarn_cli-osx-*.zip
+            haybarn_cli-osx-*.gz
+            libhaybarn-osx-universal.zip
+
+  windows:
+    name: Windows ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64]
+    runs-on: windows-2022
+    env:
+      EXTENSION_CONFIGS: '.github/config/in_tree_extensions.cmake'
+      ENABLE_EXTENSION_AUTOLOADING: 1
+      ENABLE_EXTENSION_AUTOINSTALL: 1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build
+        shell: bash
+        run: |
+          python scripts/windows_ci.py
+          cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_UNITTESTS=0 \
+            -DEXTENSION_CONFIGS=.github/config/in_tree_extensions.cmake \
+            -DENABLE_EXTENSION_AUTOLOADING=1 -DENABLE_EXTENSION_AUTOINSTALL=1 \
+            -DOVERRIDE_GIT_DESCRIBE="$OVERRIDE_GIT_DESCRIBE" -B build .
+          cmake --build build --config Release
+
+      # NOTE: Windows code signing (Azure Trusted Signing) is intentionally not
+      # wired up yet. Add a signing step here over build/Release/haybarn.exe and
+      # build/src/Release/haybarn.dll when AZURE_CODESIGN_* secrets are available.
+
+      - name: Package
+        shell: bash
+        run: |
+          python scripts/amalgamation.py
+          7z a haybarn_cli-windows-${{ matrix.arch }}.zip ./build/Release/haybarn.exe
+          7z a libhaybarn-windows-${{ matrix.arch }}.zip \
+            ./build/src/Release/haybarn.dll ./build/src/Release/haybarn.lib \
+            ./src/amalgamation/duckdb.hpp ./src/include/duckdb.h
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: haybarn-windows-${{ matrix.arch }}
+          path: |
+            haybarn_cli-windows-*.zip
+            libhaybarn-windows-*.zip
+
+  src-amalgamation:
+    name: libhaybarn source amalgamation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build amalgamation
+        run: |
+          python3 scripts/amalgamation.py
+          zip -j libhaybarn-src.zip \
+            src/amalgamation/duckdb.hpp src/amalgamation/duckdb.cpp \
+            src/include/duckdb.h src/include/duckdb_extension.h
+      - uses: actions/upload-artifact@v4
+        with:
+          name: haybarn-src
+          path: libhaybarn-src.zip
