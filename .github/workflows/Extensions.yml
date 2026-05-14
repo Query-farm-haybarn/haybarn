@@ -4,6 +4,9 @@
 
 name: Extensions (all platforms)
 on:
+  # Haybarn: upstream auto-triggers removed so this workflow
+  # does not run on the fork. Still runnable manually if needed.
+  workflow_dispatch:
   workflow_call:
     inputs:
       override_git_describe:
@@ -23,65 +26,6 @@ on:
         type: string
         required: false
         default: ''
-  workflow_dispatch:
-    inputs:
-      override_git_describe:
-        description: 'Version tag to override git describe. Use to produce binaries'
-        type: string
-      git_ref:
-        description: 'Set to override the DuckDB version, leave empty for current commit'
-        type: string
-        required: false
-        default: ''
-      extra_exclude_archs:
-        description: 'Inject more architectures to skip'
-        type: string
-        required: false
-        default: ''
-      opt_in_archs:
-        description: 'Semicolon-separated list of architectures to opt into'
-        type: string
-        required: false
-        default: 'windows_arm64;'
-      skip_tests:
-        description: 'Set to true to skip all testing'
-        type: boolean
-        required: false
-        default: false
-      run_all:
-        type: string
-        required: false
-        default: 'true'
-      run_disk_clean_step:
-        description: 'Disabling this can result in faster builds, but may run out of space on some runners'
-        type: boolean
-        required: false
-        default: true
-  push:
-    branches-ignore:
-      - 'main'
-      - 'feature'
-      - 'v*.*-*'
-    paths-ignore:
-      - '**.md'
-      - 'tools/**'
-      - '!tools/shell/**'
-      - '.github/patches/duckdb-wasm/**'
-      - '.github/workflows/**'
-      - '!.github/workflows/Extensions.yml'
-      - '!.github/workflows/_extension_distribution.yml'
-  merge_group:
-  pull_request:
-    types: [opened, reopened, ready_for_review, converted_to_draft]
-    paths-ignore:
-      - '**.md'
-      - 'tools/**'
-      - '!tools/shell/**'
-      - '.github/patches/duckdb-wasm/**'
-      - '.github/workflows/**'
-      - '!.github/workflows/Extensions.yml'
-      - '!.github/workflows/_extension_distribution.yml'
-
 concurrency:
   group: extensions-${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref || '' }}-${{ github.base_ref || '' }}-${{ github.ref != 'refs/heads/main' || github.sha }}-${{ inputs.override_git_describe }}
   cancel-in-progress: true
