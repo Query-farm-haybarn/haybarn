@@ -234,3 +234,4 @@ jobs:
         with:
           name: haybarn-src
           path: libhaybarn-src.zip
+# Haybarn fork — workflow re-index marker.

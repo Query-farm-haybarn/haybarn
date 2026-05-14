@@ -56,3 +56,4 @@ jobs:
             -workspace tools/swift/duckdb-swift/DuckDB.xcworkspace \
             -scheme DuckDB \
             -destination platform='${{ matrix.destination }}'
+# Haybarn fork — workflow re-index marker.

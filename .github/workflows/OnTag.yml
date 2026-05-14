@@ -14,3 +14,4 @@ jobs:
     secrets: inherit
     with:
       target_git_describe: ${{ inputs.override_git_describe || github.ref_name }}
+# Haybarn fork — workflow re-index marker.
