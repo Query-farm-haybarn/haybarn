@@ -2,7 +2,7 @@
 # Haybarn extension build configuration.
 #
 # This is the full set of extensions Haybarn builds, signs with the Haybarn
-# extension-signing key, and serves from https://haybarn.query.farm/core.
+# extension-signing key, and serves from https://haybarn-extensions.query.farm/core.
 #
 # It is the set DuckDB's own CI builds, MINUS the extensions Haybarn does not
 # ship: vortex, lance, motherduck.

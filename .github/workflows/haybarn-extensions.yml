@@ -1,6 +1,6 @@
 # Haybarn: builds the full Haybarn extension set, signs each extension with the
 # Haybarn extension-signing key, and publishes to the Haybarn extension
-# repository on Cloudflare R2 (served at https://haybarn.query.farm/core).
+# repository on Cloudflare R2 (served at https://haybarn-extensions.query.farm/core).
 #
 # The `build` job reuses DuckDB's own reusable extension-distribution workflow
 # (./.github/workflows/_extension_distribution.yml). That workflow builds with
@@ -91,6 +91,6 @@ jobs:
         run: |
           python3 -m pip install awscli
           # $2 is the target bucket+prefix; the R2 bucket is fronted by
-          # haybarn.query.farm with a top-level core/ prefix.
+          # haybarn-extensions.query.farm with a top-level core/ prefix.
           ./scripts/extension-upload-repository.sh \
             "/tmp/haybarn-repository/*" "${{ secrets.R2_BUCKET }}/core"
