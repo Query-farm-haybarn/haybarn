@@ -773,7 +773,8 @@ OrderByNullType DBConfig::ResolveNullOrder(ClientContext &context, OrderType ord
 }
 
 string GetDefaultUserAgent() {
-	return StringUtil::Format("duckdb/%s(%s)", DuckDB::LibraryVersion(), DuckDB::Platform());
+	// Haybarn: brand the default HTTP user-agent.
+	return StringUtil::Format("haybarn/%s(%s)", DuckDB::LibraryVersion(), DuckDB::Platform());
 }
 
 const string DBConfig::UserAgent() const {
