@@ -22,7 +22,8 @@ SET duckdb_api='something else'
 ----
 Cannot change duckdb_api setting while database is running
 
+# Haybarn: the default user-agent is branded `haybarn/...`.
 query T
-SELECT regexp_matches(user_agent, '^duckdb/.*(.*)') FROM pragma_user_agent()
+SELECT regexp_matches(user_agent, '^haybarn/.*(.*)') FROM pragma_user_agent()
 ----
 true

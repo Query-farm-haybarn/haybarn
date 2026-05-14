@@ -84,13 +84,17 @@ jobs:
         if: matrix.config.libc != 'musl'
         run: ./build/release/haybarn -c "PRAGMA platform;"
 
-      - name: Test
+      # Release builds run a fast smoke test only: the `release`-tagged unittest
+      # subset plus the shell tests and a basic query. The full unit-test suite
+      # (~2h/platform) belongs in a separate test workflow, not the release path.
+      - name: Smoke test
         if: ${{ inputs.skip_tests != 'true' && matrix.config.libc != 'musl' }}
         shell: bash
         run: |
           python3 -m pip install pytest
-          python3 scripts/run_tests_one_by_one.py build/release/test/unittest "*" --time_execution
+          ./build/release/test/unittest --select-tag release
           python3 -m pytest tools/shell/tests --shell-binary build/release/haybarn
+          ./build/release/haybarn -c "SELECT 42 AS answer; PRAGMA version;"
 
       - name: Package
         shell: bash
