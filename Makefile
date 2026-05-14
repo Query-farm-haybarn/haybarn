@@ -534,7 +534,7 @@ bundle-setup:
 	cd build/release && \
 	rm -rf bundle && \
 	mkdir -p bundle && \
-	cp src/libduckdb_static.a bundle/. && \
+	cp src/libhaybarn_static.a bundle/. && \
 	cp third_party/*/libduckdb_*.a bundle/. && \
 	cp extension/libduckdb_generated_extension_loader.a bundle/. && \
 	cp extension/*/lib*_extension.a bundle/. && \
@@ -546,11 +546,11 @@ bundle-setup:
 
 bundle-library-o: bundle-setup
 	cd build/release/bundle && \
-	echo ./*/*.o | xargs ${AR} cr ../libduckdb_bundle.a
+	echo ./*/*.o | xargs ${AR} cr ../libhaybarn_bundle.a
 
 bundle-library-obj: bundle-setup
 	cd build/release/bundle && \
-	echo ./*/*.obj | xargs ${AR} cr ../libduckdb_bundle.a
+	echo ./*/*.obj | xargs ${AR} cr ../libhaybarn_bundle.a
 
 bundle-library: release
 	make bundle-library-o
@@ -559,7 +559,7 @@ gather-libs: release
 	cd build/release && \
 	rm -rf libs && \
 	mkdir -p libs && \
-	cp src/libduckdb_static.a libs/. && \
+	cp src/libhaybarn_static.a libs/. && \
 	cp third_party/*/libduckdb_*.a libs/. && \
 	cp extension/libduckdb_generated_extension_loader.a libs/. && \
 	cp extension/*/lib*_extension.a libs/.
