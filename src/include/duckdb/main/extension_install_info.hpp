@@ -54,10 +54,11 @@ public:
 };
 
 struct ExtensionRepository {
-	//! All currently available repositories
-	static constexpr const char *CORE_REPOSITORY_URL = "http://extensions.duckdb.org";
-	static constexpr const char *CORE_NIGHTLY_REPOSITORY_URL = "http://nightly-extensions.duckdb.org";
-	static constexpr const char *COMMUNITY_REPOSITORY_URL = "http://community-extensions.duckdb.org";
+	//! All currently available repositories. Haybarn hosts its own signed
+	//! extension repositories on Cloudflare R2, fronted by haybarn.query.farm.
+	//! The upstream nightly repository concept is intentionally dropped.
+	static constexpr const char *CORE_REPOSITORY_URL = "https://haybarn.query.farm/core";
+	static constexpr const char *COMMUNITY_REPOSITORY_URL = "https://haybarn.query.farm/community";
 
 	//! Debugging repositories (target local, relative paths that are produced by DuckDB's build system)
 	static constexpr const char *BUILD_DEBUG_REPOSITORY_PATH = "./build/debug/repository";
