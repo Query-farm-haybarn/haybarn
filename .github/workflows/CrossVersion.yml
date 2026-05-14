@@ -1,23 +1,13 @@
 name: Cross Version DB test
 on:
+  # Haybarn: upstream auto-triggers removed so this workflow
+  # does not run on the fork. Still runnable manually if needed.
+  workflow_dispatch:
   workflow_call:
     inputs:
       git_ref:
         type: string
-  workflow_dispatch:
-    inputs:
-      git_ref:
-        type: string
   repository_dispatch:
-  push:
-    branches-ignore:
-      - 'main'
-      - 'feature'
-      - 'v*.*-*'
-    paths-ignore:
-      - '**'
-      - '!.github/workflows/CrossVersion.yml'
-
 concurrency:
   group: crossversion-${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref || '' }}-${{ github.base_ref || '' }}-${{ github.ref != 'refs/heads/main' || github.sha }}
   cancel-in-progress: true
