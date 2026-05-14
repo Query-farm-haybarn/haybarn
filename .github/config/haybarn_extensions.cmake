@@ -38,7 +38,12 @@ include("${EXTENSION_CONFIG_BASE_DIR}/fts.cmake")
 include("${EXTENSION_CONFIG_BASE_DIR}/httpfs.cmake")
 include("${EXTENSION_CONFIG_BASE_DIR}/inet.cmake")
 include("${EXTENSION_CONFIG_BASE_DIR}/mysql_scanner.cmake")
-include("${EXTENSION_CONFIG_BASE_DIR}/odbc_scanner.cmake")
+# TODO(haybarn): odbc_scanner needs system ODBC libs (ODBC_LIBRARY /
+# ODBC_INCLUDE_DIR) that aren't provided by the merged vcpkg manifest on the CI
+# runner — it fails CMake configure and, because all extensions configure in one
+# pass, blocks the entire build. Temporarily disabled; re-enable once the
+# unixodbc dependency is wired into the extension build.
+# include("${EXTENSION_CONFIG_BASE_DIR}/odbc_scanner.cmake")
 include("${EXTENSION_CONFIG_BASE_DIR}/postgres_scanner.cmake")
 include("${EXTENSION_CONFIG_BASE_DIR}/spatial.cmake")
 include("${EXTENSION_CONFIG_BASE_DIR}/sqlite_scanner.cmake")
