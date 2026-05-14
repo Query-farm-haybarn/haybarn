@@ -3228,13 +3228,23 @@ int RunShell(int argc, const char **argv) {
 			const char *zHistory;
 			ShellHighlight highlight(data);
 
-			auto startup_version = StringUtil::Format("DuckDB %s (%s", duckdb::DuckDB::LibraryVersion(),
-			                                          duckdb::DuckDB::ReleaseCodename());
-			if (StringUtil::Contains(duckdb::DuckDB::ReleaseCodename(), "Development")) {
-				startup_version += ", ";
-				startup_version += duckdb::DuckDB::SourceID();
+			// Haybarn: branded startup banner. LibraryVersion() returns the
+			// upstream string e.g. "v1.5.2"; strip the leading 'v' for the
+			// Haybarn version display, and keep the full DuckDB version after
+			// the "powered by DuckDB" attribution.
+			string hb_duckdb_version = duckdb::DuckDB::LibraryVersion();
+			string hb_version = hb_duckdb_version;
+			if (!hb_version.empty() && hb_version[0] == 'v') {
+				hb_version = hb_version.substr(1);
 			}
-			startup_version += ")\n";
+			auto startup_version = StringUtil::Format("Haybarn %s — powered by DuckDB %s", hb_version,
+			                                          hb_duckdb_version);
+			if (StringUtil::Contains(duckdb::DuckDB::ReleaseCodename(), "Development")) {
+				startup_version += " (";
+				startup_version += duckdb::DuckDB::SourceID();
+				startup_version += ")";
+			}
+			startup_version += "\n";
 			if (data.startup_text != StartupText::NONE) {
 				highlight.PrintText(startup_version, PrintOutput::STDOUT, HighlightElementType::STARTUP_VERSION);
 			}
