@@ -73,6 +73,12 @@ if [ "$DUCKDB_DEPLOY_SCRIPT_MODE" == "for_real" ]; then
   DRY_RUN_PARAM=""
 fi
 
+# Haybarn: Cloudflare R2 does not support S3 object ACLs; public read access is
+# provided by the bucket's custom domain (haybarn-extensions.query.farm), not
+# per-object ACLs. Default to no ACL flag; set EXTENSION_UPLOAD_ACL to override
+# (e.g. EXTENSION_UPLOAD_ACL='--acl public-read') for a real S3 bucket instead.
+ACL_PARAM="${EXTENSION_UPLOAD_ACL:-}"
+
 # upload versioned version
 if [[ $7 = 'true' ]]; then
   if [ -z "$3" ]; then
@@ -82,18 +88,18 @@ if [[ $7 = 'true' ]]; then
   fi
 
   if [[ $4 == wasm* ]]; then
-    aws s3 cp $ext.compressed s3://$5/$1/$2/$3/$4/$1.duckdb_extension.wasm $DRY_RUN_PARAM --acl public-read --content-encoding br --content-type="application/wasm"
+    aws s3 cp $ext.compressed s3://$5/$1/$2/$3/$4/$1.duckdb_extension.wasm $DRY_RUN_PARAM $ACL_PARAM --content-encoding br --content-type="application/wasm"
   else
-    aws s3 cp $ext.compressed s3://$5/$1/$2/$3/$4/$1.duckdb_extension.gz $DRY_RUN_PARAM --acl public-read
+    aws s3 cp $ext.compressed s3://$5/$1/$2/$3/$4/$1.duckdb_extension.gz $DRY_RUN_PARAM $ACL_PARAM
   fi
 fi
 
 # upload to latest version
 if [[ $6 = 'true' ]]; then
   if [[ $4 == wasm* ]]; then
-    aws s3 cp $ext.compressed s3://$5/$3/$4/$1.duckdb_extension.wasm $DRY_RUN_PARAM --acl public-read --content-encoding br --content-type="application/wasm"
+    aws s3 cp $ext.compressed s3://$5/$3/$4/$1.duckdb_extension.wasm $DRY_RUN_PARAM $ACL_PARAM --content-encoding br --content-type="application/wasm"
   else
-    aws s3 cp $ext.compressed s3://$5/$3/$4/$1.duckdb_extension.gz $DRY_RUN_PARAM --acl public-read
+    aws s3 cp $ext.compressed s3://$5/$3/$4/$1.duckdb_extension.gz $DRY_RUN_PARAM $ACL_PARAM
   fi
 fi
 
