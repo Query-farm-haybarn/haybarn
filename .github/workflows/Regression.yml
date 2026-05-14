@@ -1,5 +1,8 @@
 name: Regression
 on:
+  # Haybarn: upstream auto-triggers removed so this workflow
+  # does not run on the fork. Still runnable manually if needed.
+  workflow_dispatch:
   workflow_call:
     inputs:
       duckdb_commit:
@@ -29,6 +32,7 @@ on:
       save_cache:
         default: false
         type: boolean
+  repository_dispatch:
 concurrency:
   group: regression-${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref || '' }}-${{ github.base_ref || '' }}-${{ github.ref != 'refs/heads/main' || github.sha }}
   cancel-in-progress: true
