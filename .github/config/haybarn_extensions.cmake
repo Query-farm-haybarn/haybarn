@@ -63,7 +63,13 @@ include("${EXTENSION_CONFIG_BASE_DIR}/unity_catalog.cmake")
 # explicit SHA so the build is reproducible and unambiguously the 1.5.2 build,
 # never `main`.
 if (NOT MINGW)
+    # DONT_LINK: iceberg ships Unity-Catalog support and defines
+    # duckdb::GetUCCreateView, which collides with the unity_catalog extension
+    # when both are statically linked into one binary (DuckDB builds them in
+    # separate configs; Haybarn's merged config does not). Built loadable-only,
+    # which is exactly what the extension repository needs.
     duckdb_extension_load(iceberg
+            DONT_LINK
             GIT_URL https://github.com/Query-farm-haybarn/haybarn-iceberg
             GIT_TAG e24fd533cb33180e28a1d1d7776489b407ae73ab
             )
