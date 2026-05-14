@@ -60,7 +60,7 @@ OVERRIDE_GIT_DESCRIBE=v1.5.2 make release
 - **Binaries:** GitHub Releases under `Query-farm-haybarn/haybarn`, with
   `SHA256SUMS` + GPG + cosign signatures. OS-native code signing (Apple/Windows)
   is not wired up yet — TODOs are marked in `.github/workflows/haybarn-*.yml`.
-- **Extensions:** Cloudflare R2, served at `https://haybarn.query.farm/core` and
+- **Extensions:** Cloudflare R2, served at `https://haybarn-extensions.query.farm/core` and
   `/community`. Signed with the Haybarn extension key
   (`HAYBARN_EXTENSION_SIGNING_PK` secret; public half embedded in
   `extension_helper.cpp`).
