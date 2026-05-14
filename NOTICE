@@ -1,0 +1,75 @@
+Haybarn
+=======
+
+Haybarn is an independent derived distribution of DuckDB, published by
+Query Farm LLC. It is built from the DuckDB source code.
+
+Haybarn is NOT affiliated with, sponsored by, maintained by, or endorsed by the
+DuckDB Foundation or DuckDB Labs.
+
+DuckDB is a trademark of the DuckDB Foundation. The name "DuckDB" is used here
+only descriptively, to identify the upstream project Haybarn is derived from
+("powered by DuckDB"). No DuckDB logo or other DuckDB trademark is used in
+Haybarn's branding or artifacts.
+
+
+License
+-------
+
+DuckDB and Haybarn are distributed under the MIT License. The upstream DuckDB
+license is preserved verbatim in the LICENSE file and applies to all DuckDB
+source code in this repository. Modifications made by Haybarn are likewise
+released under the MIT License.
+
+
+Modifications made by Haybarn
+-----------------------------
+
+Haybarn is maintained as a hard fork of duckdb/duckdb. All Haybarn-specific
+changes are kept as a small, curated commit stack on top of an upstream DuckDB
+release tag. As of the current release (built from DuckDB v1.5.2) those changes
+are:
+
+  * branding: rename artifacts to Haybarn
+      The CLI is built as `haybarn`, the libraries as `libhaybarn` /
+      `libhaybarn_static`, and the bundled static library as
+      `libhaybarn_bundle.a`. The C++ `duckdb::` namespace, exported symbols,
+      public header names, and the extension/database file formats are
+      deliberately unchanged. Windows resource metadata is rebranded and the
+      DuckDB logo icon is no longer referenced.
+
+  * branding: Haybarn CLI banner and user-agent
+      The interactive shell prints "Haybarn <version> — powered by DuckDB
+      v<version>"; the default HTTP user-agent is "haybarn/...".
+
+  * signing: replace embedded extension keys with the Haybarn key
+      DuckDB's core and community extension-signing public keys are removed and
+      replaced with a single Haybarn-controlled signing key. Only extensions
+      signed by Haybarn will verify and load.
+
+  * signing: repoint extension repositories to haybarn.query.farm
+      The default and community extension repository URLs point at Haybarn's
+      own repositories. The upstream "nightly" repository is removed.
+
+  * ci: Haybarn release/extensions/python/publish workflows
+      New GitHub Actions workflows that build, sign, and publish Haybarn
+      artifacts.
+
+  * ci: neuter upstream-only workflow triggers on the fork
+      Auto-triggers are stripped from upstream DuckDB CI workflows that are not
+      reused by Haybarn.
+
+  * packaging: rename bundled static-library outputs
+
+  * Python package rebranding (tools/pythonpkg): package and import name
+      `haybarn`, compiled module renamed, opt-in `haybarn.compat` shim.
+
+The authoritative, line-level record of every modification is the git history
+of this fork (the commit stack on top of the upstream `v1.5.2` tag).
+
+
+Trademark
+---------
+
+For questions about the DuckDB trademark, contact the DuckDB Foundation at
+quack@duckdb.org. For questions about Haybarn, contact Query Farm LLC.

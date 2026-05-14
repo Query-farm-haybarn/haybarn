@@ -1,51 +1,80 @@
-<div align="center">
-  <picture>
-    <source media="(prefers-color-scheme: light)" srcset="logo/DuckDB_Logo-horizontal.svg">
-    <source media="(prefers-color-scheme: dark)" srcset="logo/DuckDB_Logo-horizontal-dark-mode.svg">
-    <img alt="DuckDB logo" src="logo/DuckDB_Logo-horizontal.svg" height="100">
-  </picture>
-</div>
-<br>
+# Haybarn
 
-<p align="center">
-  <a href="https://github.com/duckdb/duckdb/actions"><img src="https://github.com/duckdb/duckdb/actions/workflows/Main.yml/badge.svg?branch=main" alt="Github Actions Badge"></a>
-  <a href="https://discord.gg/tcvwpjfnZx"><img src="https://shields.io/discord/909674491309850675" alt="discord" /></a>
-  <a href="https://github.com/duckdb/duckdb/releases/"><img src="https://img.shields.io/github/v/release/duckdb/duckdb?color=brightgreen&display_name=tag&logo=duckdb&logoColor=white" alt="Latest Release"></a>
-</p>
+**Haybarn is an independent derived distribution of [DuckDB](https://duckdb.org), powered by DuckDB.**
 
-## DuckDB
+Haybarn builds the DuckDB source into its own branded binaries, libraries, and a
+signed extension ecosystem, with an independent release cadence. It is published
+by Query Farm LLC.
 
-DuckDB is a high-performance analytical database system. It is designed to be fast, reliable, portable, and easy to use. DuckDB provides a rich SQL dialect with support far beyond basic SQL. DuckDB supports arbitrary and nested correlated subqueries, window functions, collations, complex types (arrays, structs, maps), and [several extensions designed to make SQL easier to use](https://duckdb.org/docs/stable/sql/dialect/friendly_sql.html).
+> Haybarn is **not** affiliated with, sponsored by, or endorsed by the DuckDB
+> Foundation or DuckDB Labs. DuckDB is a trademark of the DuckDB Foundation.
+> See [NOTICE](NOTICE) for details.
 
-DuckDB is available as a [standalone CLI application](https://duckdb.org/docs/stable/clients/cli/overview) and has clients for [Python](https://duckdb.org/docs/stable/clients/python/overview), [R](https://duckdb.org/docs/stable/clients/r), [Java](https://duckdb.org/docs/stable/clients/java), [Wasm](https://duckdb.org/docs/stable/clients/wasm/overview), etc., with deep integrations with packages such as [pandas](https://duckdb.org/docs/guides/python/sql_on_pandas) and [dplyr](https://duckdb.org/docs/stable/clients/r#duckplyr-dplyr-api).
+This first Haybarn release is built from **DuckDB v1.5.2**.
 
-For more information on using DuckDB, please refer to the [DuckDB documentation](https://duckdb.org/docs/stable/).
+## What Haybarn ships
 
-## Installation
+| Artifact            | Name                                             |
+|---------------------|--------------------------------------------------|
+| CLI                 | `haybarn`                                        |
+| Shared library      | `libhaybarn.{so,dylib,dll}`                      |
+| Static library      | `libhaybarn_static.a`                            |
+| Python package      | `haybarn` (on PyPI)                              |
+| Core extensions     | Haybarn-signed, served from `haybarn.query.farm` |
 
-If you want to install DuckDB, please see [our installation page](https://duckdb.org/docs/installation/) for instructions.
+The C/C++ API, the `duckdb::` namespace, public headers (`duckdb.h`/`.hpp`), and
+the on-disk database and extension formats are **unchanged** from upstream
+DuckDB — Haybarn is ABI-compatible. What differs is the branding, the artifact
+names, the extension trust root, and the release/distribution pipeline.
 
-## Data Import
+## How Haybarn differs from DuckDB
 
-For CSV files and Parquet files, data import is as simple as referencing the file in the FROM clause:
+- **Branding** — the CLI is `haybarn`, the libraries are `libhaybarn`, and the
+  shell banner reads `Haybarn <version> — powered by DuckDB v<version>`.
+- **Extension signing** — Haybarn embeds its own extension-signing public key
+  and trusts *only* that key. DuckDB-signed extensions will not load; every
+  Haybarn extension is signed with the Haybarn key and served from the Haybarn
+  extension repository (`https://haybarn.query.farm/core`).
+- **Distribution** — binaries are published on GitHub Releases with
+  `SHA256SUMS`, detached GPG signatures, and cosign signatures. Extensions are
+  hosted on Cloudflare R2.
 
-```sql
-SELECT * FROM 'myfile.csv';
-SELECT * FROM 'myfile.parquet';
+## Python
+
+The Python package and import name are both `haybarn`. Because the API surface
+is identical to DuckDB's, migrating existing code is a one-line change:
+
+```python
+import haybarn as duckdb
 ```
 
-Refer to our [Data Import](https://duckdb.org/docs/stable/data/overview) section for more information.
+For third-party code you cannot edit, an opt-in compatibility shim is available:
 
-## SQL Reference
+```python
+import haybarn.compat   # registers `haybarn` as the `duckdb` module
+import duckdb           # now resolves to Haybarn
+```
 
-The documentation contains a [SQL introduction and reference](https://duckdb.org/docs/stable/sql/introduction).
+## Building from source
 
-## Development
+```sh
+make release
+```
 
-For development, DuckDB requires [CMake](https://cmake.org), Python 3 and a `C++11` compliant compiler. In the root directory, run `make` to compile the sources. For development, use `make debug` to build a non-optimized debug version. You should run `make unit` and `make allunit` to verify that your version works properly after making changes. To test performance, you can run `BUILD_BENCHMARK=1 BUILD_TPCH=1 make` and then perform several standard benchmarks from the root directory by executing `./build/release/benchmark/benchmark_runner`. The details of benchmarks are in our [Benchmark Guide](benchmark/README.md).
+This produces `build/release/haybarn` and `build/release/src/libhaybarn.*`.
+See the upstream [DuckDB build documentation](https://duckdb.org/docs/dev/building/overview)
+for prerequisites and build options — they apply unchanged.
 
-Please also refer to our [Build Guide](https://duckdb.org/docs/stable/dev/building/overview) and [Contribution Guide](CONTRIBUTING.md).
+## Repository layout
 
-## Support
+Haybarn is maintained as a **hard fork** of `duckdb/duckdb`. All Haybarn-specific
+changes are kept as a small, curated commit stack on top of an upstream release
+tag, so the delta from DuckDB is auditable and easy to forward-port. The rebase
+procedure for adopting a new upstream release is documented in
+[HAYBARN/REBASE.md](HAYBARN/REBASE.md).
 
-See the [Support Options](https://duckdblabs.com/support/) page and the dedicated [`endoflife.date`](https://endoflife.date/duckdb) page.
+## License
+
+Haybarn is distributed under the MIT License, the same license as DuckDB. The
+upstream license is preserved verbatim in [LICENSE](LICENSE). See [NOTICE](NOTICE)
+for the list of modifications Haybarn makes and the trademark attribution.
