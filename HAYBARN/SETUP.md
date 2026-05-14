@@ -55,6 +55,20 @@ scoped API token → `PYPI_API_TOKEN`.
 Forked repos often have Actions disabled by default — enable it on all four
 repos (Settings → Actions).
 
+## Fork tags
+
+The `haybarn` core fork must carry the upstream `v1.5.2` tag — the extension
+build (`extension-ci-tools`) runs `git checkout v1.5.2` inside the checked-out
+caller repo. Push it explicitly (a branch push does not carry tags):
+
+```sh
+git push origin refs/tags/v1.5.2
+```
+
+Note: enabling GitHub Actions on a fork does not retroactively index workflows
+already on the default branch — push a commit after enabling Actions to trigger
+indexing.
+
 ## First run
 
 Tag the core repo to exercise the pipelines:
