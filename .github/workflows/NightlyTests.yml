@@ -1,23 +1,9 @@
 name: NightlyTests
 on:
+  # Haybarn: upstream auto-triggers removed so this workflow
+  # does not run on the fork. Still runnable manually if needed.
   workflow_dispatch:
   repository_dispatch:
-  push:
-    branches-ignore:
-      - 'main'
-      - 'feature'
-      - 'v*.*-*'
-    paths-ignore:
-      - '**'
-      - '!.github/workflows/NightlyTests.yml'
-      - '!.github/patches/duckdb-wasm/**'
-  pull_request:
-    types: [opened, reopened, ready_for_review, converted_to_draft]
-    paths-ignore:
-      - '**'
-      - '!.github/workflows/NightlyTests.yml'
-      - '!.github/patches/duckdb-wasm/**'
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref || '' }}-${{ github.base_ref || '' }}-${{ github.ref != 'refs/heads/main' || github.sha }}
   cancel-in-progress: true

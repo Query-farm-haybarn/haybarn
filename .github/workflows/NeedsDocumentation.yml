@@ -1,15 +1,14 @@
 name: Create Documentation issue for the Needs Documentation label
 on:
+  # Haybarn: upstream auto-triggers removed so this workflow
+  # does not run on the fork. Still runnable manually if needed.
+  workflow_dispatch:
   discussion:
     types:
       - labeled
   issues:
     types:
       - labeled
-  pull_request_target:
-    types:
-      - labeled
-
 env:
   GH_TOKEN: ${{ secrets.DUCKDBLABS_BOT_TOKEN }}
   # an event triggering this workflow is either an issue or a pull request,
