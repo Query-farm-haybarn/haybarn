@@ -45,7 +45,7 @@ jobs:
     # substitute it into the binary-sources URL via the `{0}` placeholder
     # (works around GH Actions blocking `secrets` in `with:` of nested
     # workflow_call).
-    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/_extension_distribution.yml@a83a190bcd4c535690a8a448008fe248b9fa1ffc
+    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/_extension_distribution.yml@e924a07e7299b4f2b355d6cdf611b55ff72beb66
     with:
       # We piggy-back extension-template to build the extensions in extension_config, it's hacky, but it works ¯\_(ツ)_/¯
       override_repository: duckdb/extension-template
@@ -61,7 +61,7 @@ jobs:
 
       # Match the `uses:` above so the cloned CI tools tree matches the called workflow.
       override_ci_tools_repository: Query-farm-haybarn/haybarn-extension-ci-tools
-      ci_tools_version: a83a190bcd4c535690a8a448008fe248b9fa1ffc
+      ci_tools_version: e924a07e7299b4f2b355d6cdf611b55ff72beb66
 
       exclude_archs: ${{ inputs.exclude_archs }}
       opt_in_archs: ${{ inputs.opt_in_archs }}
