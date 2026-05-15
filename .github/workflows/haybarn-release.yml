@@ -59,7 +59,7 @@ jobs:
         if: matrix.config.libc == 'glibc'
         shell: bash
         env:
-          CCACHE_REMOTE_STORAGE: "https://haybarn-vcpkg-cache.rusty-bb6.workers.dev/ccache|bearer-token=${{ secrets.HAYBARN_VCPKG_TOKEN }}|connect-timeout=10000|operation-timeout=30000"
+          CCACHE_REMOTE_STORAGE: "http://haybarn-vcpkg-cache.rusty-bb6.workers.dev/ccache|bearer-token=${{ secrets.HAYBARN_VCPKG_TOKEN }}|connect-timeout=10000|operation-timeout=30000"
         run: |
           export PWD=`pwd`
           docker run \
@@ -81,7 +81,7 @@ jobs:
         if: matrix.config.libc == 'musl'
         shell: bash
         env:
-          CCACHE_REMOTE_STORAGE: "https://haybarn-vcpkg-cache.rusty-bb6.workers.dev/ccache|bearer-token=${{ secrets.HAYBARN_VCPKG_TOKEN }}|connect-timeout=10000|operation-timeout=30000"
+          CCACHE_REMOTE_STORAGE: "http://haybarn-vcpkg-cache.rusty-bb6.workers.dev/ccache|bearer-token=${{ secrets.HAYBARN_VCPKG_TOKEN }}|connect-timeout=10000|operation-timeout=30000"
         run: |
           export PWD=`pwd`
           docker run \
@@ -154,7 +154,7 @@ jobs:
       CCACHE_NOHASHDIR: "1"
       CCACHE_SLOPPINESS: "time_macros,include_file_mtime,pch_defines"
       CCACHE_COMPILERCHECK: "content"
-      CCACHE_REMOTE_STORAGE: "https://haybarn-vcpkg-cache.rusty-bb6.workers.dev/ccache|bearer-token=${{ secrets.HAYBARN_VCPKG_TOKEN }}|connect-timeout=10000|operation-timeout=30000"
+      CCACHE_REMOTE_STORAGE: "http://haybarn-vcpkg-cache.rusty-bb6.workers.dev/ccache|bearer-token=${{ secrets.HAYBARN_VCPKG_TOKEN }}|connect-timeout=10000|operation-timeout=30000"
     steps:
       - uses: actions/checkout@v6
         with:
