@@ -77,9 +77,9 @@ jobs:
             bash -c 'set -e; \
                      CCACHE_VERSION=4.13.6; \
                      case "${{ matrix.config.image }}" in x86_64) CCACHE_ARCH=x86_64;; aarch64) CCACHE_ARCH=aarch64;; esac; \
-                     curl -fsSL "https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/ccache-${CCACHE_VERSION}-linux-${CCACHE_ARCH}-glibc.tar.xz" -o /tmp/ccache.tar.xz; \
+                     curl -fsSL "https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/ccache-${CCACHE_VERSION}-linux-${CCACHE_ARCH}-musl-static.tar.xz" -o /tmp/ccache.tar.xz; \
                      tar -xJf /tmp/ccache.tar.xz -C /tmp; \
-                     install -m 0755 "/tmp/ccache-${CCACHE_VERSION}-linux-${CCACHE_ARCH}-glibc/ccache" /usr/local/bin/ccache; \
+                     install -m 0755 "/tmp/ccache-${CCACHE_VERSION}-linux-${CCACHE_ARCH}-musl-static/ccache" /usr/local/bin/ccache; \
                      ccache --version; \
                      dnf install -y ninja-build perl-IPC-Cmd; \
                      git config --global --add safe.directory '"$PWD"'; \
