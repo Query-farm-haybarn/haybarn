@@ -39,11 +39,6 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       extension_config: ${{ steps.read.outputs.config }}
-      # Relay the bearer-authed vcpkg binary-sources string through a job output
-      # so it can be consumed by the reusable workflow's `with:` (which does
-      # NOT accept `${{ secrets.X }}` directly). GitHub's secret masker follows
-      # the secret value through outputs.
-      vcpkg_binary_sources: ${{ steps.vcpkg.outputs.sources }}
     steps:
       - uses: actions/checkout@v4
       - id: read
@@ -54,12 +49,6 @@ jobs:
             cat .github/config/haybarn_extensions.cmake
             echo 'HAYBARN_EXT_CONFIG_EOF'
           } >> "$GITHUB_OUTPUT"
-      - id: vcpkg
-        shell: bash
-        env:
-          HAYBARN_VCPKG_TOKEN: ${{ secrets.HAYBARN_VCPKG_TOKEN }}
-        run: |
-          echo "sources=clear;http,https://haybarn-vcpkg-cache.rusty-bb6.workers.dev,readwrite,Authorization: Bearer ${HAYBARN_VCPKG_TOKEN}" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build extensions
@@ -68,7 +57,6 @@ jobs:
     with:
       artifact_prefix: haybarn
       extension_config: ${{ needs.load-config.outputs.extension_config }}
-      vcpkg_binary_sources: ${{ needs.load-config.outputs.vcpkg_binary_sources }}
       # extension-ci-tools' save_cache defaults to false, which is why our
       # extension ccache wasn't persisting between runs even though it was
       # loading; ask it to actually save.
