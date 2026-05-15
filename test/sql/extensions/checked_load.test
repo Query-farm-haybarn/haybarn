@@ -5,7 +5,7 @@
 statement error
 LOAD 'README.md';
 ----
-Permission Error: DuckDB extensions are files ending with '.duckdb_extension', loading different files is not possible, error while loading from 'README.md', consider 'INSTALL <path>; LOAD <name>;'
+Permission Error: Haybarn extensions are files ending with '.duckdb_extension', loading different files is not possible, error while loading from 'README.md', consider 'INSTALL <path>; LOAD <name>;'
 
 statement ok
 SET allow_extensions_metadata_mismatch=true;
@@ -14,12 +14,12 @@ SET allow_extensions_metadata_mismatch=true;
 statement error
 LOAD 'README.md';
 ----
-Permission Error: DuckDB extensions are files ending with '.duckdb_extension', loading different files is not possible, error while loading from 'README.md', consider 'INSTALL <path>; LOAD <name>;'
+Permission Error: Haybarn extensions are files ending with '.duckdb_extension', loading different files is not possible, error while loading from 'README.md', consider 'INSTALL <path>; LOAD <name>;'
 
 statement error
 LOAD '{DATA_DIR}/csv/no_opt.csv';
 ----
-Permission Error: DuckDB extensions are files ending with '.duckdb_extension', loading different files is not possible, error while loading from
+Permission Error: Haybarn extensions are files ending with '.duckdb_extension', loading different files is not possible, error while loading from
 
 statement ok
 SET allow_unsigned_extensions=false;
@@ -27,4 +27,4 @@ SET allow_unsigned_extensions=false;
 statement error
 LOAD 'README.md';
 ----
-Permission Error: DuckDB extensions are files ending with '.duckdb_extension', loading different files is not possible, error while loading from 'README.md', consider 'INSTALL <path>; LOAD <name>;'
+Permission Error: Haybarn extensions are files ending with '.duckdb_extension', loading different files is not possible, error while loading from 'README.md', consider 'INSTALL <path>; LOAD <name>;'

@@ -175,9 +175,10 @@ ClientContext::ClientContext(shared_ptr<DatabaseInstance> database)
 
 #ifdef __APPLE__
 	if (OsxRosettaIsActive()) {
-		DUCKDB_LOG_WARNING(*this, "OSX binary translation ('Rosetta') detected. Running DuckDB through Rosetta will "
-		                          "cause a significant performance degradation. DuckDB is available natively on Apple "
-		                          "silicon, please download an appropriate binary here: https://duckdb.org/install/");
+		DUCKDB_LOG_WARNING(*this, "OSX binary translation ('Rosetta') detected. Running Haybarn through Rosetta will "
+		                          "cause a significant performance degradation. Haybarn is available natively on Apple "
+		                          "silicon, please download an appropriate binary from "
+		                          "https://github.com/Query-farm-haybarn/haybarn/releases");
 	}
 #endif
 }

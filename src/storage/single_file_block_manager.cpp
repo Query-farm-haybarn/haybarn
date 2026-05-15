@@ -195,30 +195,33 @@ void MainHeader::Write(WriteStream &ser) {
 void MainHeader::CheckMagicBytes(QueryContext context, FileHandle &handle) {
 	data_t magic_bytes[MAGIC_BYTE_SIZE];
 	if (handle.GetFileSize() < MainHeader::MAGIC_BYTE_SIZE + MainHeader::MAGIC_BYTE_OFFSET) {
-		throw IOException("The file \"%s\" exists, but it is not a valid DuckDB database file!", handle.path);
+		throw IOException("The file \"%s\" exists, but it is not a valid Haybarn database file!", handle.path);
 	}
 	handle.Read(context, magic_bytes, MainHeader::MAGIC_BYTE_SIZE, MainHeader::MAGIC_BYTE_OFFSET);
 	if (memcmp(magic_bytes, MainHeader::MAGIC_BYTES, MainHeader::MAGIC_BYTE_SIZE) != 0) {
-		throw IOException("The file \"%s\" exists, but it is not a valid DuckDB database file!", handle.path);
+		throw IOException("The file \"%s\" exists, but it is not a valid Haybarn database file!", handle.path);
 	}
 }
 
+// The version label below names the upstream storage-format version (which Haybarn
+// preserves unchanged for cross-distribution file compatibility), not a Haybarn release
+// version. The migration link points at the canonical storage-format doc.
 static void ShowUnsupportedStorageVersionError(const uint64_t version_number) {
 	auto version = GetDuckDBVersions(version_number);
 	string version_text;
 	if (!version.empty()) {
 		// Known version.
-		version_text = "DuckDB version " + string(version);
+		version_text = "storage format version " + string(version);
 	} else if (version_number > VERSION_NUMBER_UPPER) {
-		version_text = "a newer version of DuckDB";
+		version_text = "a newer version of Haybarn / DuckDB";
 	} else {
-		version_text = "an older development version of DuckDB";
+		version_text = "an older development version of Haybarn / DuckDB";
 	}
 	throw IOException(
 	    "Trying to read a database file with version number %lld, but we can only read versions between %lld and "
 	    "%lld.\n"
 	    "The database file was created with %s.\n\n"
-	    "Newer DuckDB version might introduce backward incompatible changes (possibly guarded by compatibility "
+	    "Newer storage versions might introduce backward incompatible changes (possibly guarded by compatibility "
 	    "settings).\n"
 	    "See the storage page for migration strategy and more information: https://duckdb.org/internals/storage",
 	    version_number, VERSION_NUMBER_LOWER, VERSION_NUMBER_UPPER, version_text);
@@ -230,7 +233,7 @@ MainHeader MainHeader::Read(ReadStream &source) {
 	MainHeader header;
 	source.ReadData(magic_bytes, MainHeader::MAGIC_BYTE_SIZE);
 	if (memcmp(magic_bytes, MainHeader::MAGIC_BYTES, MainHeader::MAGIC_BYTE_SIZE) != 0) {
-		throw IOException("The file is not a valid DuckDB database file!");
+		throw IOException("The file is not a valid Haybarn database file!");
 	}
 
 	header.version_number = source.Read<uint64_t>();

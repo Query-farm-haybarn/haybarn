@@ -300,7 +300,7 @@ ParsedExtensionMetaData ExtensionHelper::ParseExtensionMetaData(FileHandle &hand
 
 	if (handle.GetFileSize() < ParsedExtensionMetaData::FOOTER_SIZE) {
 		throw InvalidInputException(
-		    "File '%s' is not a DuckDB extension. Valid DuckDB extensions must be at least %llu bytes", handle.path,
+		    "File '%s' is not a valid Haybarn extension. Valid extensions must be at least %llu bytes", handle.path,
 		    ParsedExtensionMetaData::FOOTER_SIZE);
 	}
 
@@ -455,7 +455,7 @@ bool ExtensionHelper::TryInitialLoad(DatabaseInstance &db, FileSystem &fs, const
 	}
 	if (!StringUtil::EndsWith(filename, ".duckdb_extension")) {
 		throw PermissionException(
-		    "DuckDB extensions are files ending with '.duckdb_extension', loading different "
+		    "Haybarn extensions are files ending with '.duckdb_extension', loading different "
 		    "files is not possible, error while loading from '%s', consider 'INSTALL <path>; LOAD <name>;'",
 		    filename);
 	}
