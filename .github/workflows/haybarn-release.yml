@@ -253,6 +253,18 @@ jobs:
       EXTENSION_CONFIGS: '.github/config/in_tree_extensions.cmake'
       ENABLE_EXTENSION_AUTOLOADING: 1
       ENABLE_EXTENSION_AUTOINSTALL: 1
+      # ccache R2 remote backend + tuning (same Cloudflare Worker / token as
+      # Linux/macOS — content-addressed hashes mean cross-platform sharing for
+      # the few translation units that actually overlap is free). MSVC support
+      # in ccache landed in 4.6 and has been solid since 4.8; chocolatey ships
+      # a recent version.
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_NOHASHDIR: "1"
+      CCACHE_SLOPPINESS: "time_macros,include_file_mtime,pch_defines"
+      CCACHE_COMPILERCHECK: "content"
+      CCACHE_COMPILERTYPE: "msvc"
+      CCACHE_REMOTE_STORAGE: "http://haybarn-vcpkg-cache.rusty-bb6.workers.dev/ccache|bearer-token=${{ secrets.HAYBARN_VCPKG_TOKEN }}|connect-timeout=10000|operation-timeout=30000"
     steps:
       - uses: actions/checkout@v6
         with:
@@ -262,15 +274,36 @@ jobs:
         with:
           python-version: '3.12'
 
+      # CMAKE_CXX_COMPILER_LAUNCHER only works with Ninja/Make generators
+      # (MSBuild silently ignores it), so the Windows build switches from
+      # the default Visual Studio generator → Ninja Multi-Config. That
+      # requires cl.exe + nmake on PATH, which msvc-dev-cmd provides.
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Install ccache
+        shell: pwsh
+        run: choco install ccache --yes --no-progress
+
+      - name: ccache (actions/cache for L1 persistence)
+        uses: actions/cache@v5
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-release-windows-${{ matrix.arch }}-${{ github.sha }}
+          restore-keys: |
+            ccache-release-windows-${{ matrix.arch }}-
+
       - name: Build
         shell: bash
         run: |
           python scripts/windows_ci.py
-          cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_UNITTESTS=0 \
+          cmake -G "Ninja Multi-Config" \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_UNITTESTS=0 \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DEXTENSION_CONFIGS=.github/config/in_tree_extensions.cmake \
             -DENABLE_EXTENSION_AUTOLOADING=1 -DENABLE_EXTENSION_AUTOINSTALL=1 \
             -DOVERRIDE_GIT_DESCRIBE="$OVERRIDE_GIT_DESCRIBE" -B build .
           cmake --build build --config Release
+          ccache -s
 
       # NOTE: Windows code signing (Azure Trusted Signing) is intentionally not
       # wired up yet. Add a signing step here over build/Release/haybarn.exe and
