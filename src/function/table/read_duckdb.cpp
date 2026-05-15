@@ -199,8 +199,9 @@ DuckDBReader::DuckDBReader(ClientContext &context_p, OpenFileInfo file_p, const 
 	auto &attached = GetAttachedDatabase();
 	auto &catalog = attached.GetCatalog();
 	if (!catalog.IsDuckCatalog()) {
-		throw NotImplementedException("read_duckdb can only be used to read DuckDB files - \"%s\" is of type \"%s\"",
-		                              catalog.GetDBPath(), catalog.GetCatalogType());
+		throw NotImplementedException(
+		    "read_duckdb can only be used to read database files in the DuckDB format - \"%s\" is of type \"%s\"",
+		    catalog.GetDBPath(), catalog.GetCatalogType());
 	}
 	vector<reference<TableCatalogEntry>> tables;
 	vector<reference<TableCatalogEntry>> candidate_tables;

@@ -149,6 +149,18 @@ extern int pclose(FILE *);
 ** rendering quoted strings that contain \n characters).  The following
 ** routines take care of that.
 */
+// Haybarn: env-var lookup with backward-compat fallback. New code reads
+// HAYBARN_PAGER / HAYBARN_EDITOR / HAYBARN_HISTORY first, but falls through
+// to the upstream DUCKDB_* names if the new name is unset — keeps existing
+// muscle memory + dotfiles working for users migrating from DuckDB.
+static const char *haybarn_getenv_fallback(const char *primary, const char *legacy) {
+	const char *v = getenv(primary);
+	if (v && *v) {
+		return v;
+	}
+	return getenv(legacy);
+}
+
 #if (defined(_WIN32) || defined(WIN32)) && !SQLITE_OS_WINRT
 static void setBinaryMode(FILE *file, int isOutput) {
 	if (isOutput)
@@ -398,12 +410,12 @@ static void shell_out_of_memory(void) {
 	ShellState::Exit(1);
 }
 
-ShellState::ShellState() : seenInterrupt(0), program_name("duckdb") {
+ShellState::ShellState() : seenInterrupt(0), program_name("haybarn") {
 	config.error_manager->AddCustomError(
 	    duckdb::ErrorType::UNSIGNED_EXTENSION,
 	    "Extension \"%s\" could not be loaded because its signature is either missing or invalid and unsigned "
 	    "extensions are disabled by configuration.\nStart the shell with the -unsigned parameter to allow this "
-	    "(e.g. duckdb -unsigned).");
+	    "(e.g. haybarn -unsigned).");
 	nullValue = "NULL";
 	strcpy(continuePrompt, "  ");
 	strcpy(continuePromptSelected, "  ");
@@ -1337,11 +1349,11 @@ FILE *ShellState::OpenOutputFile(const char *zFile, int bTextMode) {
 }
 
 string ShellState::GetSystemPager() {
-	const char *duckdb_pager = getenv("DUCKDB_PAGER");
+	// Try HAYBARN_PAGER first, fall back to DUCKDB_PAGER (compat).
+	const char *haybarn_pager = haybarn_getenv_fallback("HAYBARN_PAGER", "DUCKDB_PAGER");
 
-	// Try DUCKDB_PAGER first (highest priority for env vars)
-	if (duckdb_pager && strlen(duckdb_pager) > 0) {
-		return duckdb_pager;
+	if (haybarn_pager && strlen(haybarn_pager) > 0) {
+		return haybarn_pager;
 	}
 
 	// Try PAGER next
@@ -1372,7 +1384,7 @@ bool ShellState::ShouldUsePager() {
 	if (pager_command.empty()) {
 		pager_command = GetSystemPager();
 		if (pager_command.empty()) {
-			Print(PrintOutput::STDERR, "Warning: No pager configured. Set DUCKDB_PAGER or PAGER environment variable\n"
+			Print(PrintOutput::STDERR, "Warning: No pager configured. Set HAYBARN_PAGER or PAGER environment variable\n"
 			                           "or supply a command like `.pager 'less -SR'` or `.pager 'pspg --csv'`.\n");
 			return false;
 		}
@@ -2890,12 +2902,12 @@ static string GetHomeDirectory() {
 }
 
 string ShellState::GetDefaultDuckDBRC() {
-	return GetHomeDirectory() + "/.duckdbrc";
+	return GetHomeDirectory() + "/.haybarnrc";
 }
 
 /*
 ** Read input from the file given by sqliterc_override.  Or if that
-** parameter is NULL, take input from ~/.duckdbrc
+** parameter is NULL, take input from ~/.haybarnrc
 **
 ** Returns true if successful, false otherwise.
 */
@@ -2924,12 +2936,12 @@ bool ShellState::ProcessDuckDBRC(const char *file) {
 	string path;
 	bool is_default = false;
 	if (!file) {
-		// use default .duckdbrc path
+		// use default .haybarnrc path
 		path = ShellState::GetDefaultDuckDBRC();
 		if (path.empty()) {
 			// could not find home directory - return
 			PrintF(PrintOutput::STDERR, "-- warning: cannot find home directory;"
-			                            " cannot read ~/.duckdbrc\n");
+			                            " cannot read ~/.haybarnrc\n");
 			return true;
 		}
 		file = path.c_str();
@@ -3008,7 +3020,7 @@ void ShellState::Initialize() {
 	showHeader = true;
 	main_prompt = make_uniq<Prompt>();
 	string default_prompt;
-	default_prompt = "{max_length:40}{highlight_element:prompt}{setting:current_database_and_schema}{color:reset} D ";
+	default_prompt = "{max_length:40}{highlight_element:prompt}{setting:current_database_and_schema}{color:reset} H ";
 	main_prompt->ParsePrompt(default_prompt);
 	vector<string> default_components;
 	default_components.push_back("{setting:progress_bar_percentage} {setting:progress_bar}{setting:eta}");
@@ -3252,9 +3264,9 @@ int RunShell(int argc, const char **argv) {
 				highlight.PrintText("Enter \".help\" for usage hints.\n", PrintOutput::STDOUT,
 				                    HighlightElementType::STARTUP_TEXT);
 			}
-			zHistory = getenv("DUCKDB_HISTORY");
+			zHistory = haybarn_getenv_fallback("HAYBARN_HISTORY", "DUCKDB_HISTORY");
 			if (!zHistory) {
-				zHome = GetHomeDirectory() + "/.duckdb_history";
+				zHome = GetHomeDirectory() + "/.haybarn_history";
 				zHistory = zHome.c_str();
 			}
 			if (zHistory) {
