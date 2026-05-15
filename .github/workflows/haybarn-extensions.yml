@@ -36,7 +36,7 @@ jobs:
   # Extensions.yml `load-extension-configs` pattern).
   load-config:
     name: Load extension config
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       extension_config: ${{ steps.read.outputs.config }}
     steps:
@@ -70,7 +70,7 @@ jobs:
   publish:
     name: Sign and publish to R2
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
