@@ -62,7 +62,10 @@ jobs:
       # loading; ask it to actually save.
       save_cache: true
       # delta and unity_catalog need a Rust toolchain.
-      extra_toolchains: 'rust'
+      # odbc_scanner needs unixODBC headers/libs (which the extension-ci-tools
+      # manylinux Dockerfile and macOS jobs install when `unixodbc` is in the
+      # toolchains string — semicolon-delimited match).
+      extra_toolchains: 'rust;unixodbc'
       # Pin the embedded DuckDB version to the upstream release Haybarn is
       # based on, matching the haybarn-release workflow.
       override_duckdb_version: ${{ inputs.override_git_describe || 'v1.5.2' }}
