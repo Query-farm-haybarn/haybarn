@@ -61,11 +61,15 @@ string ExtensionHelper::ExtensionInstallDocumentationLink(const string &extensio
 vector<duckdb::string> ExtensionHelper::DefaultExtensionFolders(FileSystem &fs) {
 	vector<duckdb::string> default_folders;
 // These fallbacks are necessary if the user doesn't use the CMake build.
+// Haybarn: extension cache dir is ~/.haybarn/extensions/ — clean break from
+// upstream's ~/.duckdb/extensions/ (DuckDB-signed extensions wouldn't verify
+// against the Haybarn trust root anyway, so reusing the same path would
+// only confuse users by leaving stale, unloadable files behind).
 #ifndef DUCKDB_EXTENSION_DIRECTORIES
 #ifdef _WIN32
-#define DUCKDB_EXTENSION_DIRECTORIES "~\\.duckdb\\extensions"
+#define DUCKDB_EXTENSION_DIRECTORIES "~\\.haybarn\\extensions"
 #else
-#define DUCKDB_EXTENSION_DIRECTORIES "~/.duckdb/extensions"
+#define DUCKDB_EXTENSION_DIRECTORIES "~/.haybarn/extensions"
 #endif
 #endif
 	string dirs_string(DUCKDB_EXTENSION_DIRECTORIES);
@@ -276,7 +280,7 @@ string ExtensionHelper::ExtensionFinalizeUrlTemplate(const string &url_template,
 static void CheckExtensionMetadataOnInstall(DatabaseInstance &db, void *in_buffer, idx_t file_size,
                                             ExtensionInstallInfo &info, const string &extension_name) {
 	if (file_size < ParsedExtensionMetaData::FOOTER_SIZE) {
-		throw IOException("Failed to install '%s', file too small to be a valid DuckDB extension!", extension_name);
+		throw IOException("Failed to install '%s', file too small to be a valid Haybarn extension!", extension_name);
 	}
 
 	auto parsed_metadata = ExtensionHelper::ParseExtensionMetaData(static_cast<char *>(in_buffer) +

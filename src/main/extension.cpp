@@ -42,18 +42,20 @@ string ParsedExtensionMetaData::GetInvalidMetadataError() {
 	const string engine_platform = string(DuckDB::Platform());
 
 	if (!AppearsValid()) {
-		return "The file is not a DuckDB extension. The metadata at the end of the file is invalid";
+		return "The file is not a valid Haybarn extension. The metadata at the end of the file is invalid";
 	}
 
 	string result;
 
-	// CPP or C_STRUCT_UNSTABLE ABI versioning needs to match the DuckDB version exactly
+	// CPP or C_STRUCT_UNSTABLE ABI versioning needs to match the engine version exactly.
+	// Note: the "DuckDB C API" naming below is the upstream API name (an extension contract,
+	// documented at duckdb.org/api/c) — Haybarn preserves the API unchanged, so the name stays.
 	if (abi_type == ExtensionABIType::CPP || abi_type == ExtensionABIType::C_STRUCT_UNSTABLE) {
 		const string engine_version = string(ExtensionHelper::GetVersionDirectoryName());
 
 		if (engine_version != duckdb_version) {
-			result += StringUtil::Format("The file was built specifically for DuckDB version '%s' and can only be "
-			                             "loaded with that version of DuckDB. (this version of DuckDB is '%s')",
+			result += StringUtil::Format("The file was built specifically for engine version '%s' and can only be "
+			                             "loaded with that version of Haybarn. (this version of Haybarn is '%s')",
 			                             PrettyPrintString(duckdb_version), engine_version);
 		}
 		// C_STRUCT ABI versioning
