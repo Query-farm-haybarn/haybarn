@@ -478,8 +478,13 @@ MetadataResult SetStartupText(ShellState &state, const vector<string> &args) {
 }
 
 MetadataResult ShowVersion(ShellState &state, const vector<string> &args) {
+#ifdef HAYBARN_VERSION_STRING
+	state.PrintF("Haybarn %s (powered by DuckDB %s, %s) %s\n" /*extra-version-info*/, HAYBARN_VERSION_STRING,
+	             duckdb::DuckDB::LibraryVersion(), duckdb::DuckDB::ReleaseCodename(), duckdb::DuckDB::SourceID());
+#else
 	state.PrintF("Haybarn %s (%s) %s\n" /*extra-version-info*/, duckdb::DuckDB::LibraryVersion(),
 	             duckdb::DuckDB::ReleaseCodename(), duckdb::DuckDB::SourceID());
+#endif
 #define CTIMEOPT_VAL_(opt) #opt
 #define CTIMEOPT_VAL(opt)  CTIMEOPT_VAL_(opt)
 #if defined(__clang__) && defined(__clang_major__)

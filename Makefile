@@ -76,6 +76,16 @@ else
         COMMON_CMAKE_VARS:=${COMMON_CMAKE_VARS} -DOVERRIDE_GIT_DESCRIBE=""
 endif
 
+# Haybarn: parallel HAYBARN_GIT_DESCRIBE override for the Haybarn-specific
+# version string. Distinct from OVERRIDE_GIT_DESCRIBE (which sets the
+# upstream DuckDB storage/extension version) — HAYBARN_GIT_DESCRIBE drives
+# the Haybarn release banner and is meant to track haybarn-v* git tags.
+# If unset, CMake derives it from `git describe --match haybarn-v*` with a
+# `dev-<sha>` fallback when no tag is reachable.
+ifdef HAYBARN_GIT_DESCRIBE
+        COMMON_CMAKE_VARS:=${COMMON_CMAKE_VARS} -DHAYBARN_GIT_DESCRIBE="${HAYBARN_GIT_DESCRIBE}"
+endif
+
 ifdef DUCKDB_EXPLICIT_VERSION
         COMMON_CMAKE_VARS:=${COMMON_CMAKE_VARS} -DDUCKDB_EXPLICIT_VERSION="${DUCKDB_EXPLICIT_VERSION}"
 else
