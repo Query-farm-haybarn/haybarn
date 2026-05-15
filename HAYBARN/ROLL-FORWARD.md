@@ -22,6 +22,35 @@ Not pinned by us (deliberately): the `external/duckdb` submodule gitlink in
 `haybarn-python` is a SHA — it tracks the Haybarn core fork's `haybarn` branch
 HEAD and gets bumped explicitly when we want to.
 
+## Known un-pinned bits (drift sources we accept)
+
+These are pinnable in principle but cost more than they're worth right now.
+Worth being explicit about them so a future "why did this break" investigation
+doesn't go hunting:
+
+- **`brew install <pkg>` on macOS** (e.g. `brew install ninja ccache` in
+  `haybarn-release.yml`, `brew install ccache` in `pyproject.toml`'s
+  cibuildwheel `before-build`). Homebrew doesn't keep historical formula
+  versions reachable from `brew install`; you get whatever the main tap has
+  at install time. The runner image is pinned (`macos-15`) but the packages
+  installed onto it are not. If we ever need true reproducibility here, the
+  path is to download release tarballs from each tool's GitHub releases page
+  and unpack them rather than `brew install`.
+- **`choco install <pkg>` on Windows** (`choco install ccache` in cibuildwheel
+  `before-build`). Same story — Chocolatey supports `--version=X.Y.Z` for some
+  packages but not all, and historical versions aren't always retained.
+- **`python-version: '3.12'`** in `setup-python` — resolves to whichever 3.12.x
+  is on the runner. Patch versions are stable enough that we accept this; pin
+  to `3.12.7` etc. if a specific patch ever matters.
+- **GitHub Actions referenced by major version** (`@v4`, `@v5`). SHA-pinning
+  every action is stricter but introduces meaningful Dependabot/manual upkeep.
+  We accept major-pinning for now.
+
+What we *do* pin on macOS/Windows: the runner image (`macos-15`,
+`windows-2022`), so the toolchain (Xcode / MSVC / system libs) is fixed. That
+catches the biggest class of drift; the brew/choco packages above are
+secondary.
+
 ## How to roll forward
 
 ### Quick refresh of all moving refs
