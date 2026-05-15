@@ -58,12 +58,18 @@ jobs:
       - name: Build (glibc / manylinux)
         if: matrix.config.libc == 'glibc'
         shell: bash
+        env:
+          CCACHE_REMOTE_STORAGE: "https://haybarn-vcpkg-cache.rusty-bb6.workers.dev/ccache|bearer-token=${{ secrets.HAYBARN_VCPKG_TOKEN }}|connect-timeout=10000|operation-timeout=30000"
         run: |
           export PWD=`pwd`
           docker run \
             -v$PWD:$PWD \
             -e GEN=ninja \
             -e CC='ccache gcc' -e CXX='ccache g++' -e CCACHE_DIR=$PWD/.ccache \
+            -e CCACHE_BASEDIR=$PWD -e CCACHE_NOHASHDIR=1 \
+            -e CCACHE_SLOPPINESS=time_macros,include_file_mtime,pch_defines \
+            -e CCACHE_COMPILERCHECK=content \
+            -e CCACHE_REMOTE_STORAGE \
             -e OVERRIDE_GIT_DESCRIBE=$OVERRIDE_GIT_DESCRIBE \
             -e EXTENSION_CONFIGS="$PWD/.github/config/in_tree_extensions.cmake" \
             -e ENABLE_EXTENSION_AUTOLOADING=1 -e ENABLE_EXTENSION_AUTOINSTALL=1 \
@@ -74,12 +80,18 @@ jobs:
       - name: Build (musl / alpine)
         if: matrix.config.libc == 'musl'
         shell: bash
+        env:
+          CCACHE_REMOTE_STORAGE: "https://haybarn-vcpkg-cache.rusty-bb6.workers.dev/ccache|bearer-token=${{ secrets.HAYBARN_VCPKG_TOKEN }}|connect-timeout=10000|operation-timeout=30000"
         run: |
           export PWD=`pwd`
           docker run \
             -v$PWD:$PWD \
             -e GEN=ninja \
             -e CC='ccache gcc' -e CXX='ccache g++' -e CCACHE_DIR=$PWD/.ccache \
+            -e CCACHE_BASEDIR=$PWD -e CCACHE_NOHASHDIR=1 \
+            -e CCACHE_SLOPPINESS=time_macros,include_file_mtime,pch_defines \
+            -e CCACHE_COMPILERCHECK=content \
+            -e CCACHE_REMOTE_STORAGE \
             -e OVERRIDE_GIT_DESCRIBE=$OVERRIDE_GIT_DESCRIBE \
             -e EXTENSION_CONFIGS="$PWD/.github/config/in_tree_extensions.cmake" \
             -e ENABLE_EXTENSION_AUTOLOADING=1 -e ENABLE_EXTENSION_AUTOINSTALL=1 \
@@ -137,6 +149,12 @@ jobs:
       # DuckDB's CMake auto-detects ccache as the compiler launcher when it is
       # on PATH; CCACHE_DIR points it at the cached directory.
       CCACHE_DIR: ${{ github.workspace }}/.ccache
+      # Tuning + remote backend (same Cloudflare Worker → R2 bucket as vcpkg).
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_NOHASHDIR: "1"
+      CCACHE_SLOPPINESS: "time_macros,include_file_mtime,pch_defines"
+      CCACHE_COMPILERCHECK: "content"
+      CCACHE_REMOTE_STORAGE: "https://haybarn-vcpkg-cache.rusty-bb6.workers.dev/ccache|bearer-token=${{ secrets.HAYBARN_VCPKG_TOKEN }}|connect-timeout=10000|operation-timeout=30000"
     steps:
       - uses: actions/checkout@v6
         with:
