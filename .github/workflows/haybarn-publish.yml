@@ -40,10 +40,10 @@ jobs:
       RUN_ID: ${{ inputs.run_id || github.event.workflow_run.id }}
       TAG: ${{ inputs.tag || github.event.workflow_run.head_branch }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download release artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           run-id: ${{ env.RUN_ID }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
