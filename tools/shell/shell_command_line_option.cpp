@@ -73,7 +73,7 @@ MetadataResult AllowUnsigned(ShellState &state, const vector<string> &args) {
 }
 
 MetadataResult ShowVersionAndExit(ShellState &state, const vector<string> &args) {
-	printf("%s (%s) %s\n", duckdb::DuckDB::LibraryVersion(), duckdb::DuckDB::ReleaseCodename(),
+	printf("Haybarn %s (%s) %s\n", duckdb::DuckDB::LibraryVersion(), duckdb::DuckDB::ReleaseCodename(),
 	       duckdb::DuckDB::SourceID());
 	return MetadataResult::EXIT;
 }
@@ -202,7 +202,7 @@ static const CommandLineOption command_line_options[] = {
     {"ui", 0, "", nullptr, LaunchUI, "launches a web interface using the ui extension (configurable with .ui_command)"},
     {"unredacted", 0, "", AllowUnredacted, nullptr, "allow printing unredacted secrets"},
     {"unsigned", 0, "", AllowUnsigned, nullptr, "allow loading of unsigned extensions"},
-    {"version", 0, "", nullptr, ShowVersionAndExit, "show DuckDB version"},
+    {"version", 0, "", nullptr, ShowVersionAndExit, "show Haybarn version"},
     {nullptr, 0, nullptr, nullptr, nullptr, nullptr}};
 
 optional_idx FindOption(const char *name) {
@@ -254,7 +254,7 @@ void ShellState::PrintUsage() {
 	highlighter.PrintText(program_name, PrintOutput::STDOUT, HighlightElementType::KEYWORD);
 	highlighter.PrintText(" [OPTIONS] FILENAME [SQL]\n\n", PrintOutput::STDOUT, HighlightElementType::STRING_CONSTANT);
 	highlighter.PrintText("FILENAME", PrintOutput::STDOUT, PrintColor::STANDARD, PrintIntensity::BOLD);
-	PrintF(" is the name of a DuckDB database. A new database is created\n"
+	PrintF(" is the name of a Haybarn database. A new database is created\n"
 	       "if the file does not previously exist.\n\n");
 	highlighter.PrintText("OPTIONS:\n", PrintOutput::STDOUT, PrintColor::STANDARD, PrintIntensity::BOLD);
 	constexpr idx_t INITIAL_SPACING = 2;

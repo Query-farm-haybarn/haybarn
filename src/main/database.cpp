@@ -603,8 +603,8 @@ shared_ptr<EncryptionUtil> DatabaseInstance::GetEncryptionUtil(bool read_only) {
 		return GetMbedTLSUtil(force_mbedtls);
 	}
 
-	throw InvalidConfigurationException(" DuckDB currently has a read-only crypto module "
-	                                    "loaded. Please ensure httpfs is loaded using `LOAD httpfs`, or for DuckDB "
+	throw InvalidConfigurationException(" Haybarn currently has a read-only crypto module "
+	                                    "loaded. Please ensure httpfs is loaded using `LOAD httpfs`, or for "
 	                                    "database files consider READONLY mode."
 	                                    " To write an encrypted database or parquet file that is NOT securely "
 	                                    "encrypted, one can use SET force_mbedtls_unsafe = "

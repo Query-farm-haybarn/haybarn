@@ -470,7 +470,7 @@ MetadataResult SetStartupText(ShellState &state, const vector<string> &args) {
 	if (state.displayed_loading_resources_message && prev_display == StartupText::ALL &&
 	    state.startup_text != StartupText::ALL) {
 		ShellHighlight highlight(state);
-		string warning = "WARNING: .startup_text should be on top of your ~/.duckdbrc in order to "
+		string warning = "WARNING: .startup_text should be on top of your ~/.haybarnrc in order to "
 		                 "prevent the \"Loading resources\" message from being displayed\n";
 		highlight.PrintText(warning, PrintOutput::STDERR, HighlightElementType::STARTUP_TEXT);
 	}
@@ -478,7 +478,7 @@ MetadataResult SetStartupText(ShellState &state, const vector<string> &args) {
 }
 
 MetadataResult ShowVersion(ShellState &state, const vector<string> &args) {
-	state.PrintF("DuckDB %s (%s) %s\n" /*extra-version-info*/, duckdb::DuckDB::LibraryVersion(),
+	state.PrintF("Haybarn %s (%s) %s\n" /*extra-version-info*/, duckdb::DuckDB::LibraryVersion(),
 	             duckdb::DuckDB::ReleaseCodename(), duckdb::DuckDB::SourceID());
 #define CTIMEOPT_VAL_(opt) #opt
 #define CTIMEOPT_VAL(opt)  CTIMEOPT_VAL_(opt)
@@ -825,7 +825,8 @@ static const MetadataCommand metadata_commands[] = {
     {"display_colors", 0, DisplayColors, "[bold|underline]", "Display all terminal colors and their names", 0, ""},
     {"echo", 2, ToggleEcho, "on|off", "Turn command echo on or off", 3, ""},
     {"edit", 0, nullptr, "", "Opens an external text editor to edit a query.", 0,
-     "Notes:\n\t* The editor is read from the environment variables\n\t  DUCKDB_EDITOR, EDITOR, VISUAL in-order\n\t* "
+     "Notes:\n\t* The editor is read from the environment variables\n\t  HAYBARN_EDITOR, EDITOR, VISUAL in-order"
+     "\n\t  (DUCKDB_EDITOR also honored for migration compat)\n\t* "
      "If "
      "none of these are set, the default editor is vi\n\t* \\e can be used as an alias for .edit"},
 #ifdef HAVE_LINENOISE
@@ -888,8 +889,8 @@ static const MetadataCommand metadata_commands[] = {
     {"pager", 0, SetPager, "OPTIONS", "Control pager usage for output", 0,
      "Options:\n\t[on|off|automatic]\tToggle pager mode (default: automatic)\n\tset_[row|column]_threshold "
      "THRESHOLD\tIn automatic mode, trigger the pager when the result has more rows/columns than "
-     "this\n\t[pager_command]\tSet the pager command to invoke\nNote: Set DUCKDB_PAGER or PAGER environment variable "
-     "or <cmd> to configure default pager"},
+     "this\n\t[pager_command]\tSet the pager command to invoke\nNote: Set HAYBARN_PAGER or PAGER environment variable "
+     "(DUCKDB_PAGER also honored for compat) or <cmd> to configure default pager"},
     {"print", 0, PrintArguments, "STRING...", "Print literal STRING", 3, ""},
     {"progress_bar", 0, ConfigureProgressBar, "OPTIONS", "Configure the progress bar display", 0,
      "OPTIONS:\n\t--add [COMPONENT]\tAdd a component to the progress bar\n\t--clear\tClear all components"},
@@ -915,7 +916,7 @@ static const MetadataCommand metadata_commands[] = {
     {"singleline", 1, ToggleSingleLine, "", "Sets the render mode to single-line", 0, ""},
 #endif
     {"startup_text", 2, SetStartupText, "none|version|all",
-     "Start-up text to display. Set this as the first line in .duckdbrc", 0, ""},
+     "Start-up text to display. Set this as the first line in .haybarnrc", 0, ""},
     {"system", 0, RunShellCommand, "CMD ARGS...", "Run CMD ARGS... in a system shell", 0, ""},
     {"tables", 0, ShowTables, "?TABLE?", "List names of tables matching LIKE pattern TABLE", 2, ""},
     {"thousand_sep", 0, SetThousandSep, "SEP",
