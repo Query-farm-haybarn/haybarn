@@ -133,6 +133,12 @@ else
         COMMON_CMAKE_VARS:=${COMMON_CMAKE_VARS} -DDUCKDB_EXPLICIT_VERSION=""
 endif
 
+# Haybarn's release identity is independent from DuckDB's engine version.
+# If unset, CMake derives it from the nearest `haybarn-v*` tag.
+ifdef HAYBARN_GIT_DESCRIBE
+        COMMON_CMAKE_VARS:=${COMMON_CMAKE_VARS} -DHAYBARN_GIT_DESCRIBE="${HAYBARN_GIT_DESCRIBE}"
+endif
+
 ifdef DUCKDB_COMMIT
         COMMON_CMAKE_VARS:=${COMMON_CMAKE_VARS} -DGIT_COMMIT_HASH="${DUCKDB_COMMIT}"
 endif

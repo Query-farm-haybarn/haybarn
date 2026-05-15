@@ -504,6 +504,33 @@ endif()
 
 set(DUCKDB_VERSION_NUMBER "${DUCKDB_MAJOR_VERSION}.${DUCKDB_MINOR_VERSION}.${DUCKDB_PATCH_VERSION}")
 
+# Haybarn has a distribution version separate from DuckDB's engine and
+# extension-compatibility version. Release tags use the form
+# `haybarn-v2.0.0-rc1`; development builds retain the distance and commit hash.
+if (NOT HAYBARN_GIT_DESCRIBE)
+  if (Git_FOUND)
+    execute_process(
+          COMMAND ${GIT_EXECUTABLE} describe --tags --match "haybarn-v*" --always
+          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+          RESULT_VARIABLE HAYBARN_GIT_RESULT
+          OUTPUT_VARIABLE HAYBARN_GIT_DESCRIBE
+          ERROR_QUIET
+          OUTPUT_STRIP_TRAILING_WHITESPACE)
+  endif()
+  if (NOT Git_FOUND OR HAYBARN_GIT_RESULT)
+    set(HAYBARN_GIT_DESCRIBE "dev-g${GIT_COMMIT_HASH}")
+  endif()
+endif()
+if (HAYBARN_GIT_DESCRIBE MATCHES "^haybarn-v")
+  string(REGEX REPLACE "^haybarn-v" "" HAYBARN_VERSION_STRING "${HAYBARN_GIT_DESCRIBE}")
+elseif (HAYBARN_GIT_DESCRIBE MATCHES "^dev-")
+  set(HAYBARN_VERSION_STRING "${HAYBARN_GIT_DESCRIBE}")
+else()
+  set(HAYBARN_VERSION_STRING "dev-g${HAYBARN_GIT_DESCRIBE}")
+endif()
+add_compile_definitions(HAYBARN_VERSION_STRING="${HAYBARN_VERSION_STRING}")
+message(STATUS "Haybarn version: ${HAYBARN_VERSION_STRING}")
+
 if(DUCKDB_VERSION MATCHES "-dev[0-9]+$")
   set(DUCKDB_NORMALIZED_VERSION "${GIT_COMMIT_HASH}")
 else()
