@@ -304,7 +304,7 @@ string Prompt::HandleText(ShellState &state, const string &text, idx_t &length) 
 		start_pos = i;
 	}
 	// add the final components
-	truncated_text += "... D ";
+	truncated_text += "... H ";
 	length += 6;
 	return truncated_text;
 }

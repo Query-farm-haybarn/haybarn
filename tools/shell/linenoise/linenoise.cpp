@@ -1851,7 +1851,11 @@ void Linenoise::LogTokens(const vector<highlightToken> &tokens) {
 // .edit functionality - code adopted from psql
 
 bool Linenoise::EditFileWithEditor(const string &file_name, const char *editor) {
-	/* Find an editor to use */
+	/* Find an editor to use. Haybarn checks HAYBARN_EDITOR first, falls
+	   back to DUCKDB_EDITOR (compat), then EDITOR / VISUAL. */
+	if (!editor) {
+		editor = getenv("HAYBARN_EDITOR");
+	}
 	if (!editor) {
 		editor = getenv("DUCKDB_EDITOR");
 	}
