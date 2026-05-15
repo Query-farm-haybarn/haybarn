@@ -68,6 +68,14 @@ OVERRIDE_GIT_DESCRIBE=v1.5.2 make release
   them. The upstream `OnTag.yml` (matches `v*.*.*`) is intentionally left alone —
   it never matches Haybarn tags.
 
+## Pinning + rolling forward
+
+Every drifting CI reference is **pinned** — runner OS, manylinux image, the
+`duckdb/extension-ci-tools` SHA, pybind11. The pipeline is meant to be
+reproducible; do not loosen pins to make a build green, adapt the *source* and
+roll the pin forward deliberately. The where/why/how is in
+[`HAYBARN/ROLL-FORWARD.md`](HAYBARN/ROLL-FORWARD.md).
+
 ## Related repos (Query-farm-haybarn org)
 
 Haybarn is multi-repo. The Python client and the out-of-tree extensions live in
