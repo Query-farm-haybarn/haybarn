@@ -44,6 +44,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Persist the ccache directory across runs. The docker builds set
+      # CCACHE_DIR=$PWD/.ccache and bind-mount $PWD, so .ccache in the workspace
+      # is the cache. Without this every release build is a cold full recompile.
+      - name: ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-release-linux-${{ matrix.config.arch }}-${{ matrix.config.libc }}-${{ github.sha }}
+          restore-keys: |
+            ccache-release-linux-${{ matrix.config.arch }}-${{ matrix.config.libc }}-
+
       - name: Build (glibc / manylinux)
         if: matrix.config.libc == 'glibc'
         shell: bash
@@ -123,6 +134,9 @@ jobs:
       ENABLE_EXTENSION_AUTOINSTALL: 1
       OSX_BUILD_UNIVERSAL: 1
       GEN: ninja
+      # DuckDB's CMake auto-detects ccache as the compiler launcher when it is
+      # on PATH; CCACHE_DIR points it at the cached directory.
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
       - uses: actions/checkout@v4
         with:
@@ -132,8 +146,16 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install Ninja
-        run: brew install ninja
+      - name: ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-release-osx-${{ github.sha }}
+          restore-keys: |
+            ccache-release-osx-
+
+      - name: Install Ninja + ccache
+        run: brew install ninja ccache
 
       - name: Build
         run: make
