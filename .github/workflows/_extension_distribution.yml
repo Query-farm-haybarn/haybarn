@@ -67,6 +67,12 @@ jobs:
       extra_toolchains: ${{ inputs.extra_toolchains }}
       use_merged_vcpkg_manifest: '1'
 
+      # Haybarn vcpkg binary cache: still read from DuckDB's public cache (free
+      # hits for shared deps), and read+write our own R2-backed cache via a
+      # Cloudflare Worker that bearer-auths writes.
+      # Worker source: ~/Development/haybarn/haybarn-vcpkg-worker
+      vcpkg_binary_sources: "clear;http,https://vcpkg-cache.duckdb.org,read;http,https://haybarn-vcpkg-cache.rusty-bb6.workers.dev,readwrite,Authorization: Bearer ${{ secrets.HAYBARN_VCPKG_TOKEN }}"
+
       duckdb_tag: ${{ inputs.override_tag }}
 
       skip_tests: ${{ inputs.skip_tests }}
