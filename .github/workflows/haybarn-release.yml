@@ -74,8 +74,17 @@ jobs:
             -e EXTENSION_CONFIGS="$PWD/.github/config/in_tree_extensions.cmake" \
             -e ENABLE_EXTENSION_AUTOLOADING=1 -e ENABLE_EXTENSION_AUTOINSTALL=1 \
             quay.io/pypa/manylinux_2_28_${{ matrix.config.image }}:2026.05.13-1 \
-            bash -c "set -e; dnf install -y ccache ninja-build perl-IPC-Cmd; \
-                     git config --global --add safe.directory $PWD; make -C $PWD"
+            bash -c 'set -e; \
+                     CCACHE_VERSION=4.13.6; \
+                     case "${{ matrix.config.image }}" in x86_64) CCACHE_ARCH=x86_64;; aarch64) CCACHE_ARCH=aarch64;; esac; \
+                     curl -fsSL "https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/ccache-${CCACHE_VERSION}-linux-${CCACHE_ARCH}-glibc.tar.xz" -o /tmp/ccache.tar.xz; \
+                     tar -xJf /tmp/ccache.tar.xz -C /tmp; \
+                     install -m 0755 "/tmp/ccache-${CCACHE_VERSION}-linux-${CCACHE_ARCH}-glibc/ccache" /usr/local/bin/ccache; \
+                     ccache --version; \
+                     dnf install -y ninja-build perl-IPC-Cmd; \
+                     git config --global --add safe.directory '"$PWD"'; \
+                     make -C '"$PWD"'; \
+                     ccache -s'
 
       - name: Build (musl / alpine)
         if: matrix.config.libc == 'musl'
@@ -96,8 +105,17 @@ jobs:
             -e EXTENSION_CONFIGS="$PWD/.github/config/in_tree_extensions.cmake" \
             -e ENABLE_EXTENSION_AUTOLOADING=1 -e ENABLE_EXTENSION_AUTOINSTALL=1 \
             alpine:3.22 \
-            sh -c "set -e; apk add ccache cmake g++ git make samurai; \
-                   git config --global --add safe.directory $PWD; make -C $PWD"
+            sh -c 'set -e; \
+                   CCACHE_VERSION=4.13.6; \
+                   case "${{ matrix.config.arch }}" in amd64) CCACHE_ARCH=x86_64;; arm64) CCACHE_ARCH=aarch64;; esac; \
+                   apk add cmake curl g++ git make samurai xz; \
+                   curl -fsSL "https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/ccache-${CCACHE_VERSION}-linux-${CCACHE_ARCH}-musl-static.tar.xz" -o /tmp/ccache.tar.xz; \
+                   tar -xJf /tmp/ccache.tar.xz -C /tmp; \
+                   install -m 0755 "/tmp/ccache-${CCACHE_VERSION}-linux-${CCACHE_ARCH}-musl-static/ccache" /usr/local/bin/ccache; \
+                   ccache --version; \
+                   git config --global --add safe.directory '"$PWD"'; \
+                   make -C '"$PWD"'; \
+                   ccache -s'
 
       # musl binaries are built inside Alpine and won't run on the glibc host
       # runner, so steps that *execute* the binary are glibc-only. The musl
