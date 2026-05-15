@@ -34,9 +34,9 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - { runner: ubuntu-latest,     arch: amd64, image: x86_64,  libc: glibc }
+          - { runner: ubuntu-24.04,     arch: amd64, image: x86_64,  libc: glibc }
           - { runner: ubuntu-24.04-arm,  arch: arm64, image: aarch64, libc: glibc }
-          - { runner: ubuntu-latest,     arch: amd64,                 libc: musl  }
+          - { runner: ubuntu-24.04,     arch: amd64,                 libc: musl  }
           - { runner: ubuntu-24.04-arm,  arch: arm64,                 libc: musl  }
     runs-on: ${{ matrix.config.runner }}
     steps:
@@ -67,7 +67,7 @@ jobs:
             -e OVERRIDE_GIT_DESCRIBE=$OVERRIDE_GIT_DESCRIBE \
             -e EXTENSION_CONFIGS="$PWD/.github/config/in_tree_extensions.cmake" \
             -e ENABLE_EXTENSION_AUTOLOADING=1 -e ENABLE_EXTENSION_AUTOINSTALL=1 \
-            quay.io/pypa/manylinux_2_28_${{ matrix.config.image }} \
+            quay.io/pypa/manylinux_2_28_${{ matrix.config.image }}:2024.10.07-1 \
             bash -c "set -e; dnf install -y ccache ninja-build perl-IPC-Cmd; \
                      git config --global --add safe.directory $PWD; make -C $PWD"
 
@@ -127,7 +127,7 @@ jobs:
 
   osx:
     name: macOS (universal)
-    runs-on: macos-latest
+    runs-on: macos-15
     env:
       EXTENSION_CONFIGS: '${{ github.workspace }}/.github/config/in_tree_extensions.cmake'
       ENABLE_EXTENSION_AUTOLOADING: 1
@@ -250,7 +250,7 @@ jobs:
 
   src-amalgamation:
     name: libhaybarn source amalgamation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:

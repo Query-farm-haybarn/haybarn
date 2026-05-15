@@ -40,7 +40,10 @@ on:
 jobs:
   build:
     name: Build
-    uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v1.5-variegata
+    # Haybarn: pinned to the v1.5-variegata SHA at the time of pinning so the
+    # build is reproducible. Roll forward intentionally (look up the current
+    # `v1.5-variegata` SHA on duckdb/extension-ci-tools and update here).
+    uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@4b3b37b0c9de00da54e1765d65abfea3f94617f4
     with:
       # We piggy-back extension-template to build the extensions in extension_config, it's hacky, but it works ¯\_(ツ)_/¯
       override_repository: duckdb/extension-template
@@ -54,9 +57,9 @@ jobs:
       set_caller_as_duckdb: true
       duckdb_version: ${{ inputs.override_duckdb_version != '' && inputs.override_duckdb_version || github.sha }}
 
-      # CI tools is pinned to v1.5-variegata
+      # Haybarn: extension-ci-tools also pinned to a SHA (matches the uses: above).
       override_ci_tools_repository: duckdb/extension-ci-tools
-      ci_tools_version: v1.5-variegata
+      ci_tools_version: 4b3b37b0c9de00da54e1765d65abfea3f94617f4
 
       exclude_archs: ${{ inputs.exclude_archs }}
       opt_in_archs: ${{ inputs.opt_in_archs }}
