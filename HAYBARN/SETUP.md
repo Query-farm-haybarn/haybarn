@@ -90,3 +90,10 @@ sha256sum -c SHA256SUMS
 gpg --import haybarn_release_signing.pub
 gpg --verify SHA256SUMS.asc SHA256SUMS
 ```
+
+## Updating pinned toolchain
+
+Every moving CI reference (runner OSes, manylinux image, extension-ci-tools
+SHA, pybind11) is pinned for reproducibility. To refresh them, see
+[ROLL-FORWARD.md](ROLL-FORWARD.md) — it lists each pin's location and gives
+the exact `gh`/`curl`/`pip` commands to resolve current values.
