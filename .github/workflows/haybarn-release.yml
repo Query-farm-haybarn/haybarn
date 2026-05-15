@@ -26,6 +26,12 @@ env:
   # binary reports stays the upstream version (e.g. v1.5.2) for storage and
   # extension-path compatibility; see the plan's branding decisions.
   OVERRIDE_GIT_DESCRIBE: ${{ inputs.override_git_describe || 'v1.5.2' }}
+  # Haybarn-specific version string that drives the startup banner + `-version`
+  # flag (distinct from the upstream OVERRIDE_GIT_DESCRIBE above which dictates
+  # storage compat). On tag push (`refs/tags/haybarn-v...`) GITHUB_REF_NAME is
+  # the tag itself ("haybarn-v1.5.2-rc1"); on workflow_dispatch it's empty, and
+  # CMake will derive it from `git describe --match 'haybarn-v*'` instead.
+  HAYBARN_GIT_DESCRIBE: ${{ startsWith(github.ref, 'refs/tags/haybarn-v') && github.ref_name || '' }}
 
 jobs:
   linux:
@@ -71,6 +77,7 @@ jobs:
             -e CCACHE_COMPILERCHECK=content \
             -e CCACHE_REMOTE_STORAGE \
             -e OVERRIDE_GIT_DESCRIBE=$OVERRIDE_GIT_DESCRIBE \
+            -e HAYBARN_GIT_DESCRIBE \
             -e EXTENSION_CONFIGS="$PWD/.github/config/in_tree_extensions.cmake" \
             -e ENABLE_EXTENSION_AUTOLOADING=1 -e ENABLE_EXTENSION_AUTOINSTALL=1 \
             quay.io/pypa/manylinux_2_28_${{ matrix.config.image }}:2026.05.13-1 \
@@ -102,6 +109,7 @@ jobs:
             -e CCACHE_COMPILERCHECK=content \
             -e CCACHE_REMOTE_STORAGE \
             -e OVERRIDE_GIT_DESCRIBE=$OVERRIDE_GIT_DESCRIBE \
+            -e HAYBARN_GIT_DESCRIBE \
             -e EXTENSION_CONFIGS="$PWD/.github/config/in_tree_extensions.cmake" \
             -e ENABLE_EXTENSION_AUTOLOADING=1 -e ENABLE_EXTENSION_AUTOINSTALL=1 \
             alpine:3.22 \

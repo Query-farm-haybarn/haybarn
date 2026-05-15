@@ -73,8 +73,13 @@ MetadataResult AllowUnsigned(ShellState &state, const vector<string> &args) {
 }
 
 MetadataResult ShowVersionAndExit(ShellState &state, const vector<string> &args) {
+#ifdef HAYBARN_VERSION_STRING
+	printf("Haybarn %s (powered by DuckDB %s, %s) %s\n", HAYBARN_VERSION_STRING, duckdb::DuckDB::LibraryVersion(),
+	       duckdb::DuckDB::ReleaseCodename(), duckdb::DuckDB::SourceID());
+#else
 	printf("Haybarn %s (%s) %s\n", duckdb::DuckDB::LibraryVersion(), duckdb::DuckDB::ReleaseCodename(),
 	       duckdb::DuckDB::SourceID());
+#endif
 	return MetadataResult::EXIT;
 }
 

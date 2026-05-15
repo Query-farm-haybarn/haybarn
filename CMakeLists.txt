@@ -392,6 +392,43 @@ endif()
 
 set(DUCKDB_VERSION_NUMBER "${DUCKDB_MAJOR_VERSION}.${DUCKDB_MINOR_VERSION}.${DUCKDB_PATCH_VERSION}")
 
+# Haybarn version derivation — distinct from DUCKDB_VERSION above (which
+# tracks the upstream storage-format + extension-repo version and must stay
+# pinned to v1.5.2). HAYBARN_VERSION_STRING drives the startup banner +
+# `-version` flag. Strategy: git describe of `haybarn-v*` tags.
+#   - Tag at HEAD                 → "haybarn-v1.5.2-rc1" → "1.5.2-rc1"
+#   - N commits past tag          → "1.5.2-rc1-3-g5f26f0d"
+#   - No haybarn-v* tag reachable → "dev-g5f26f0d"
+# Override at build time via -DHAYBARN_GIT_DESCRIBE="..." (or HAYBARN_GIT_DESCRIBE
+# env in the Makefile). CI passes GITHUB_REF_NAME on tag pushes.
+if (NOT HAYBARN_GIT_DESCRIBE)
+  find_package(Git QUIET)
+  if (Git_FOUND)
+    execute_process(
+      COMMAND ${GIT_EXECUTABLE} describe --tags --match "haybarn-v*" --always
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      RESULT_VARIABLE HAYBARN_GIT_RESULT
+      OUTPUT_VARIABLE HAYBARN_GIT_DESCRIBE
+      ERROR_QUIET
+      OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if (HAYBARN_GIT_RESULT)
+      set(HAYBARN_GIT_DESCRIBE "dev-g${GIT_COMMIT_HASH}")
+    endif()
+  else()
+    set(HAYBARN_GIT_DESCRIBE "dev-g${GIT_COMMIT_HASH}")
+  endif()
+endif()
+if (HAYBARN_GIT_DESCRIBE MATCHES "^haybarn-v")
+  string(REGEX REPLACE "^haybarn-v" "" HAYBARN_VERSION_STRING "${HAYBARN_GIT_DESCRIBE}")
+elseif (HAYBARN_GIT_DESCRIBE MATCHES "^dev-")
+  set(HAYBARN_VERSION_STRING "${HAYBARN_GIT_DESCRIBE}")
+else()
+  # Bare SHA from `git describe --always` (no haybarn-v* tag reachable).
+  set(HAYBARN_VERSION_STRING "dev-g${HAYBARN_GIT_DESCRIBE}")
+endif()
+add_definitions(-DHAYBARN_VERSION_STRING="${HAYBARN_VERSION_STRING}")
+message(STATUS "Haybarn version: ${HAYBARN_VERSION_STRING}")
+
 string(LENGTH "${GIT_COMMIT_HASH}" LENGTH_GIT_COMMIT_HASH)
 if (NOT ${LENGTH_GIT_COMMIT_HASH} EQUAL 10)
    message(STATUS "GIT_COMMIT_HASH has length ${LENGTH_GIT_COMMIT_HASH} different than the expected 10")
