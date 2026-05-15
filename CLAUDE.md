@@ -76,6 +76,13 @@ reproducible; do not loosen pins to make a build green, adapt the *source* and
 roll the pin forward deliberately. The where/why/how is in
 [`HAYBARN/ROLL-FORWARD.md`](HAYBARN/ROLL-FORWARD.md).
 
+## Extending the build-fork extensions
+
+`iceberg`, `ducklake`, `delta`, and `httpfs` are Haybarn build-forks at
+`Query-farm-haybarn/haybarn-<ext>`, so Haybarn-specific changes can land on top
+of upstream over time. Procedure for adding a change to a fork and rolling the
+core build to pick it up: [`HAYBARN/EXTENDING-FORKS.md`](HAYBARN/EXTENDING-FORKS.md).
+
 ## Related repos (Query-farm-haybarn org)
 
 Haybarn is multi-repo. The Python client and the out-of-tree extensions live in
