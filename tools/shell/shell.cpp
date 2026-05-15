@@ -3240,15 +3240,22 @@ int RunShell(int argc, const char **argv) {
 			const char *zHistory;
 			ShellHighlight highlight(data);
 
-			// Haybarn: branded startup banner. LibraryVersion() returns the
-			// upstream string e.g. "v1.5.2"; strip the leading 'v' for the
-			// Haybarn version display, and keep the full DuckDB version after
-			// the "powered by DuckDB" attribution.
+			// Haybarn: branded startup banner. HAYBARN_VERSION_STRING is
+			// derived in CMakeLists.txt from `git describe --match
+			// 'haybarn-v*'` (e.g. "1.5.2-rc1" for a tag-at-HEAD release,
+			// "1.5.2-rc1-3-g5f26f0d" for commits past it, or "dev-g5f26f0d"
+			// when no haybarn-v* tag is reachable). LibraryVersion() keeps
+			// tracking the upstream DuckDB version for the "powered by
+			// DuckDB" attribution + storage compatibility.
 			string hb_duckdb_version = duckdb::DuckDB::LibraryVersion();
+#ifdef HAYBARN_VERSION_STRING
+			const string hb_version = HAYBARN_VERSION_STRING;
+#else
 			string hb_version = hb_duckdb_version;
 			if (!hb_version.empty() && hb_version[0] == 'v') {
 				hb_version = hb_version.substr(1);
 			}
+#endif
 			auto startup_version = StringUtil::Format("Haybarn %s — powered by DuckDB %s", hb_version,
 			                                          hb_duckdb_version);
 			if (StringUtil::Contains(duckdb::DuckDB::ReleaseCodename(), "Development")) {
