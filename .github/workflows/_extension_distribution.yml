@@ -36,21 +36,16 @@ on:
         required: false
         type: boolean
         default: false
-      # Haybarn: full VCPKG_BINARY_SOURCES string (including any bearer auth
-      # header). The caller constructs this in a normal job and passes it via a
-      # `needs.X.outputs.Y` reference so the secret can flow through.
-      vcpkg_binary_sources:
-        required: false
-        type: string
-        default: ''
 
 jobs:
   build:
     name: Build
-    # Haybarn: pinned to the v1.5-variegata SHA at the time of pinning so the
-    # build is reproducible. Roll forward intentionally (look up the current
-    # `v1.5-variegata` SHA on duckdb/extension-ci-tools and update here).
-    uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@4b3b37b0c9de00da54e1765d65abfea3f94617f4
+    # Haybarn fork of extension-ci-tools, pinned by SHA. The fork carries one
+    # patch: accept the vcpkg bearer token via `secrets.vcpkg_token` and
+    # substitute it into the binary-sources URL via the `{0}` placeholder
+    # (works around GH Actions blocking `secrets` in `with:` of nested
+    # workflow_call).
+    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/_extension_distribution.yml@94991ef4760eebf866361747c19797f0371baa0f
     with:
       # We piggy-back extension-template to build the extensions in extension_config, it's hacky, but it works ¯\_(ツ)_/¯
       override_repository: duckdb/extension-template
@@ -64,9 +59,9 @@ jobs:
       set_caller_as_duckdb: true
       duckdb_version: ${{ inputs.override_duckdb_version != '' && inputs.override_duckdb_version || github.sha }}
 
-      # Haybarn: extension-ci-tools also pinned to a SHA (matches the uses: above).
-      override_ci_tools_repository: duckdb/extension-ci-tools
-      ci_tools_version: 4b3b37b0c9de00da54e1765d65abfea3f94617f4
+      # Match the `uses:` above so the cloned CI tools tree matches the called workflow.
+      override_ci_tools_repository: Query-farm-haybarn/haybarn-extension-ci-tools
+      ci_tools_version: 94991ef4760eebf866361747c19797f0371baa0f
 
       exclude_archs: ${{ inputs.exclude_archs }}
       opt_in_archs: ${{ inputs.opt_in_archs }}
@@ -74,12 +69,11 @@ jobs:
       extra_toolchains: ${{ inputs.extra_toolchains }}
       use_merged_vcpkg_manifest: '1'
 
-      # Haybarn vcpkg binary cache: read+write our own R2-backed cache via the
-      # haybarn-vcpkg-cache Cloudflare Worker (bearer-auths writes). Self-
-      # contained — we do not read from duckdb.org's cache. The full sources
-      # string (with bearer token) is constructed in the caller's load-config
-      # job and forwarded here. Worker source: ~/Development/haybarn/haybarn-vcpkg-worker
-      vcpkg_binary_sources: ${{ inputs.vcpkg_binary_sources }}
+      # Haybarn vcpkg binary cache. The `{0}` placeholder is replaced inside the
+      # extension-ci-tools fork with the bearer token (passed via the secrets
+      # block below). Self-contained — we don't read from duckdb.org's cache.
+      # Worker source: ~/Development/haybarn/haybarn-vcpkg-worker
+      vcpkg_binary_sources: "clear;http,https://haybarn-vcpkg-cache.rusty-bb6.workers.dev,readwrite,Authorization: Bearer {0}"
 
       duckdb_tag: ${{ inputs.override_tag }}
 
@@ -90,4 +84,10 @@ jobs:
       extensions_test_selection: 'complete'
       # The extension_config.cmake configuration that gets built
       extra_extension_config: ${{ inputs.extension_config }}
+    # Pass the bearer token to the haybarn fork of extension-ci-tools, which
+    # substitutes it into the `{0}` placeholder in vcpkg_binary_sources.
+    # `secrets:` is the ONE place GH Actions allows `${{ secrets.X }}` to flow
+    # into a nested workflow_call; `with:` is blocked.
+    secrets:
+      vcpkg_token: ${{ secrets.HAYBARN_VCPKG_TOKEN }}
 # Haybarn fork — workflow re-index marker.
