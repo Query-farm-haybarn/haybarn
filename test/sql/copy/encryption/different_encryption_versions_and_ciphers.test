@@ -11,7 +11,7 @@ foreach cipher GCM CTR
 statement error
 ATTACH '{TEST_DIR}/encrypted_{cipher}_{version}.duckdb' AS encrypted_{cipher}_{version} (ENCRYPTION_KEY 'asdf', ENCRYPTION_CIPHER '{cipher}',  debug_encryption_version 'v9');
 ----
-No encryption version higher then v1 is supported yet in this DuckDB version
+No encryption version higher then v1 is supported yet in this Haybarn version
 
 statement ok
 ATTACH '{TEST_DIR}/encrypted_{cipher}_{version}.duckdb' AS encrypted_{cipher}_{version} (ENCRYPTION_KEY 'asdf', ENCRYPTION_CIPHER '{cipher}',  debug_encryption_version '{version}');

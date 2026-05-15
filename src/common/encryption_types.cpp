@@ -38,7 +38,7 @@ EncryptionTypes::EncryptionVersion EncryptionTypes::StringToVersion(const string
 	} else if (encryption_version_p == "v1") {
 		return V0_1;
 	} else {
-		throw NotImplementedException("No encryption version higher then v%d is supported yet in this DuckDB version",
+		throw NotImplementedException("No encryption version higher then v%d is supported yet in this Haybarn version",
 		                              MAX_VERSION);
 	}
 }

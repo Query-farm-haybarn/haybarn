@@ -27,7 +27,7 @@ StorageCompatibility StorageCompatibility::FromString(const string &input) {
 	auto storage_version = GetStorageVersion(input.c_str());
 	if (storage_version == StorageVersion::INVALID) {
 		auto candidates = GetStorageCandidates();
-		throw InvalidInputException("The version string '%s' is not a known DuckDB version, valid options are: %s",
+		throw InvalidInputException("The version string '%s' is not a known engine version, valid options are: %s",
 		                            input, StringUtil::Join(candidates, ", "));
 	}
 	StorageCompatibility result;

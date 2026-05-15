@@ -5,4 +5,4 @@
 statement error
 LOAD 'folder/a.csv';
 ----
-Permission Error: DuckDB extensions are files ending with '.duckdb_extension', loading different files is not possible
+Permission Error: Haybarn extensions are files ending with '.duckdb_extension', loading different files is not possible

@@ -199,18 +199,18 @@ void MainHeader::Write(WriteStream &ser) {
 void MainHeader::CheckMagicBytes(QueryContext context, FileHandle &handle) {
 	data_t magic_bytes[MAGIC_BYTE_SIZE];
 	if (handle.GetFileSize() < MainHeader::MAGIC_BYTE_SIZE + MainHeader::MAGIC_BYTE_OFFSET) {
-		throw IOException("The file \"%s\" exists, but it is not a valid DuckDB database file!", handle.path);
+		throw IOException("The file \"%s\" exists, but it is not a valid Haybarn database file!", handle.path);
 	}
 	handle.Read(context, magic_bytes, MainHeader::MAGIC_BYTE_SIZE, MainHeader::MAGIC_BYTE_OFFSET);
 	if (memcmp(magic_bytes, MainHeader::MAGIC_BYTES, MainHeader::MAGIC_BYTE_SIZE) != 0) {
-		throw IOException("The file \"%s\" exists, but it is not a valid DuckDB database file!", handle.path);
+		throw IOException("The file \"%s\" exists, but it is not a valid Haybarn database file!", handle.path);
 	}
 }
 
 void MainHeader::CheckMagicBytes(MemoryMappedFile &handle) {
 	auto magic_bytes = handle.GetData(MainHeader::MAGIC_BYTE_OFFSET, MainHeader::MAGIC_BYTE_SIZE);
 	if (memcmp(magic_bytes, MainHeader::MAGIC_BYTES, MainHeader::MAGIC_BYTE_SIZE) != 0) {
-		throw IOException("The file \"%s\" exists, but it is not a valid DuckDB database file!", handle.GetPath());
+		throw IOException("The file \"%s\" exists, but it is not a valid Haybarn database file!", handle.GetPath());
 	}
 }
 
@@ -220,7 +220,7 @@ MainHeader MainHeader::Read(ReadStream &source) {
 	MainHeader header;
 	source.ReadData(magic_bytes, MainHeader::MAGIC_BYTE_SIZE);
 	if (memcmp(magic_bytes, MainHeader::MAGIC_BYTES, MainHeader::MAGIC_BYTE_SIZE) != 0) {
-		throw IOException("The file is not a valid DuckDB database file!");
+		throw IOException("The file is not a valid Haybarn database file!");
 	}
 
 	header.version_number = source.Read<idx_t>();
@@ -229,22 +229,22 @@ MainHeader MainHeader::Read(ReadStream &source) {
 		// if the version number in the main header is deprecated, then we just ignore the main header version number
 		// TODO: if we are confident, we can remove the check below
 	} else if (header.version_number < VERSION_NUMBER_LOWER || header.version_number > VERSION_NUMBER_UPPER) {
-		// Check the version number to determine if we can read this file.
+		// This is DuckDB's upstream storage-format version, which Haybarn preserves for compatibility.
 		auto version = GetDuckDBVersions(static_cast<StorageVersion>(header.version_number));
 		string version_text;
 		if (!version.empty()) {
 			// Known version.
-			version_text = "DuckDB version " + string(version);
+			version_text = "storage format version " + string(version);
 		} else {
 			version_text = string("an ") +
 			               (VERSION_NUMBER_UPPER > header.version_number ? "older development" : "newer") +
-			               string(" version of DuckDB");
+			               string(" version of Haybarn / DuckDB");
 		}
 		throw IOException(
 		    "Trying to read a database file with version number %lld, but we can only read versions between %lld and "
 		    "%lld.\n"
 		    "The database file was created with %s.\n\n"
-		    "Newer DuckDB version might introduce backward incompatible changes (possibly guarded by compatibility "
+		    "Newer storage versions might introduce backward incompatible changes (possibly guarded by compatibility "
 		    "settings).\n"
 		    "See the storage page for migration strategy and more information: https://duckdb.org/internals/storage",
 		    header.version_number, VERSION_NUMBER_LOWER, VERSION_NUMBER_UPPER, version_text);

@@ -40,7 +40,7 @@ v1.5.0+
 statement error
 ATTACH '{TEST_DIR}/encrypted_error.duckdb' AS encrypted_error (ENCRYPTION_KEY 'asdf', debug_encryption_version 'v2');
 ----
-Not implemented Error: No encryption version higher then v1 is supported yet in this DuckDB version
+Not implemented Error: No encryption version higher then v1 is supported yet in this Haybarn version
 
 statement ok
 ATTACH '{TEST_DIR}/unencrypted.duckdb' as unencrypted;
