@@ -52,16 +52,22 @@ include("${EXTENSION_CONFIG_BASE_DIR}/vss.cmake")
 
 # --- Rust-based out-of-tree extensions, rebuilt from upstream ----------------
 # (require a Rust toolchain in CI)
-include("${EXTENSION_CONFIG_BASE_DIR}/delta.cmake")
 include("${EXTENSION_CONFIG_BASE_DIR}/unity_catalog.cmake")
 
 # --- Out-of-tree extensions, built from the Haybarn build-forks --------------
-# iceberg and ducklake are forked under Query-farm-haybarn for source/tag
-# control. The extension names stay `iceberg` / `ducklake`. Each fork's
-# `haybarn` branch is the exact commit DuckDB v1.5.2 CI pinned (iceberg
-# 11fea8ed, ducklake 415a9ebd) plus a single NOTICE commit — pinned here by
-# explicit SHA so the build is reproducible and unambiguously the 1.5.2 build,
-# never `main`.
+# iceberg, ducklake and delta are forked under Query-farm-haybarn for source/tag
+# control. The extension names stay `iceberg` / `ducklake` / `delta`. Each
+# fork's `haybarn` branch is the exact commit DuckDB v1.5.2 CI pinned (iceberg
+# 11fea8ed, ducklake 415a9ebd, delta 776be7ac) plus a single NOTICE commit —
+# pinned here by explicit SHA so the build is reproducible and unambiguously
+# the 1.5.2 build, never `main`.
+if(NOT MINGW AND NOT ${WASM_ENABLED})
+    duckdb_extension_load(delta
+            GIT_URL https://github.com/Query-farm-haybarn/haybarn-delta
+            GIT_TAG 9ef3645f4610a0e7877095f4de3887075eebdb07
+            SUBMODULES extension-ci-tools
+    )
+endif()
 if (NOT MINGW)
     # DONT_LINK: iceberg ships Unity-Catalog support and defines
     # duckdb::GetUCCreateView, which collides with the unity_catalog extension
