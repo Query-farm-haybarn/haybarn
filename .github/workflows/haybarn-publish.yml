@@ -35,7 +35,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
        startsWith(github.event.workflow_run.head_branch, 'haybarn-v'))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       RUN_ID: ${{ inputs.run_id || github.event.workflow_run.id }}
       TAG: ${{ inputs.tag || github.event.workflow_run.head_branch }}
