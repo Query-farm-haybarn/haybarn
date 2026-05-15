@@ -35,7 +35,16 @@ include("${EXTENSION_CONFIG_BASE_DIR}/azure.cmake")
 include("${EXTENSION_CONFIG_BASE_DIR}/encodings.cmake")
 include("${EXTENSION_CONFIG_BASE_DIR}/excel.cmake")
 include("${EXTENSION_CONFIG_BASE_DIR}/fts.cmake")
-include("${EXTENSION_CONFIG_BASE_DIR}/httpfs.cmake")
+# httpfs is a Haybarn build-fork (Query-farm-haybarn/haybarn-httpfs) so Haybarn
+# changes can land on top of upstream over time. Same source as duckdb-httpfs
+# v1.5.2 pin (13e18b3c) plus a NOTICE commit; pinned by explicit SHA — bump it
+# when you want to roll forward (or pick up new Haybarn commits on the fork's
+# haybarn branch).
+duckdb_extension_load(httpfs
+        LOAD_TESTS
+        GIT_URL https://github.com/Query-farm-haybarn/haybarn-httpfs
+        GIT_TAG 5ed0a9e1e4614dcafe8d60db1a817c46e0e92370
+)
 include("${EXTENSION_CONFIG_BASE_DIR}/inet.cmake")
 include("${EXTENSION_CONFIG_BASE_DIR}/mysql_scanner.cmake")
 # TODO(haybarn): odbc_scanner needs system ODBC libs (ODBC_LIBRARY /
