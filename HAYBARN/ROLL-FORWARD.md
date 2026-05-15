@@ -12,8 +12,8 @@ This doc lists what's pinned, where, and how to refresh each one.
 
 | Component | Where | Why |
 |---|---|---|
-| runner OSes (`ubuntu-24.04`, `macos-15`, `windows-2022`) | all three `haybarn-*.yml` workflows + `haybarn-python.yml` | GitHub silently bumps `*-latest` aliases (newer toolchains → new compiler strictness surfaces, e.g. the `pybind11` `auto&` issue) |
-| manylinux image tag (`manylinux_2_28:2024.10.07-1`) | `haybarn-release.yml` (the `docker run` line) and `pyproject.toml` `[tool.cibuildwheel]` (`manylinux-*-image`) in haybarn-python | the bare `manylinux_2_28` tag resolves to whatever's `latest` |
+| runner OSes (`ubuntu-24.04`, `macos-15`, `windows-2022`) | all three `haybarn-*.yml` workflows + `haybarn-python.yml` + `haybarn-node-neo.yml` + `haybarn-jdbc.yml` | GitHub silently bumps `*-latest` aliases (newer toolchains → new compiler strictness surfaces, e.g. the `pybind11` `auto&` issue) |
+| manylinux image tag (`manylinux_2_28:2026.05.13-1`) and musllinux (`musllinux_1_2:2026.05.13-1`) | `haybarn-release.yml`, `pyproject.toml` (`manylinux-*-image` + `musllinux-*-image`) in haybarn-python, `haybarn-node-neo.yml`, `haybarn-jdbc.yml`, both Dockerfiles in `haybarn-extension-ci-tools/docker/` | bare `manylinux_2_28` / `musllinux_1_2` tags resolve to whatever's `latest`; pypa publishes new dated tags every few days |
 | extension-ci-tools wrapper | `.github/workflows/_extension_distribution.yml` (`uses:` line + `ci_tools_version:`) — a SHA, not the `v1.5-variegata` branch ref | branch refs move; the SHA doesn't |
 | pybind11 build dependency (`==2.13.6`) | `pyproject.toml` in haybarn-python — both `[build-system].requires` and the dev/test groups | open upper bound resolves to latest at pip-install time |
 | cibuildwheel (`@v2.21`), setup-uv (`@v5`), setup-python (`@v5`), checkout (`@v4`) | workflows | already pinned; rev majors deliberately |
@@ -104,3 +104,30 @@ Haybarn was bitten by every kind of drift in its first build cycle:
 These are all *legitimate* drift, but they break the assumption "the code that
 shipped should build the same way tomorrow." Pinning makes that assumption
 hold; this doc is how we break the pins on purpose.
+
+## Roll-forward log
+
+Record each roll-forward here so a future "why is this pin so old" investigation
+has the context.
+
+### 2026-05-15 — bump manylinux + musllinux from `2024.10.07-1` to `2026.05.13-1`
+
+- **What**: All `manylinux_2_28_{x86_64,aarch64}` and `musllinux_1_2_{x86_64,aarch64}`
+  pins moved forward ~19 months across the seven config sites. Also pinned
+  musllinux explicitly for the first time (previously cibuildwheel picked its
+  own default, which had drifted to the same date as our manylinux pin —
+  surprising and worth eliminating).
+- **Why**: The original pin was just "whatever was current the day we wrote it"
+  with no specific feature/bug rationale. After ~19 months the toolchain drift
+  is huge; pulling forward keeps us closer to what wheel consumers actually
+  have on their hosts.
+- **Surfaced**: Re-enabling `odbc_scanner` in `haybarn_extensions.cmake` at the
+  same time (separate fix — unixODBC headers now present in the newer manylinux
+  base; old TODO comment removed). The `mysql_scanner` GCC 12 `unique_ptr` copy
+  error from the old image *may* be gone in the newer toolchain (older GCC) or
+  *may* be even stricter (likely newer GCC) — first run after the bump will
+  tell. We adapt the source, not the pin (see "When to roll forward" rules).
+- **Also fixed**: Added a `[[tool.cibuildwheel.overrides]]` block in
+  haybarn-python's `pyproject.toml` so `*-musllinux*` wheels use `apk add` instead
+  of `yum install` in their before-build. The unified `[tool.cibuildwheel.linux]`
+  was wrong for Alpine-based musllinux and silently broke aarch64-musl wheels.
