@@ -40,7 +40,7 @@ jobs:
           - { runner: ubuntu-24.04-arm,  arch: arm64,                 libc: musl  }
     runs-on: ${{ matrix.config.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -48,7 +48,7 @@ jobs:
       # CCACHE_DIR=$PWD/.ccache and bind-mount $PWD, so .ccache in the workspace
       # is the cache. Without this every release build is a cold full recompile.
       - name: ccache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .ccache
           key: ccache-release-linux-${{ matrix.config.arch }}-${{ matrix.config.libc }}-${{ github.sha }}
@@ -117,7 +117,7 @@ jobs:
           zip -j libhaybarn-linux-$SUFFIX.zip build/release/src/libhaybarn*.* \
             src/amalgamation/duckdb.hpp src/include/duckdb.h
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: haybarn-linux-${{ matrix.config.arch }}${{ matrix.config.libc == 'musl' && '-musl' || '' }}
           path: |
@@ -138,16 +138,16 @@ jobs:
       # on PATH; CCACHE_DIR points it at the cached directory.
       CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
       - name: ccache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .ccache
           key: ccache-release-osx-${{ github.sha }}
@@ -190,7 +190,7 @@ jobs:
           gzip -9 -k -n -c build/release_arm64/haybarn  > haybarn_cli-osx-arm64.gz
           gzip -9 -k -n -c build/release_amd64/haybarn  > haybarn_cli-osx-amd64.gz
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: haybarn-osx
           path: |
@@ -210,11 +210,11 @@ jobs:
       ENABLE_EXTENSION_AUTOLOADING: 1
       ENABLE_EXTENSION_AUTOINSTALL: 1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -241,7 +241,7 @@ jobs:
             ./build/src/Release/haybarn.dll ./build/src/Release/haybarn.lib \
             ./src/amalgamation/duckdb.hpp ./src/include/duckdb.h
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: haybarn-windows-${{ matrix.arch }}
           path: |
@@ -252,7 +252,7 @@ jobs:
     name: libhaybarn source amalgamation
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Build amalgamation
@@ -261,7 +261,7 @@ jobs:
           zip -j libhaybarn-src.zip \
             src/amalgamation/duckdb.hpp src/amalgamation/duckdb.cpp \
             src/include/duckdb.h src/include/duckdb_extension.h
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: haybarn-src
           path: libhaybarn-src.zip
