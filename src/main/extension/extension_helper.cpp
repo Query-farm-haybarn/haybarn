@@ -454,8 +454,9 @@ void ExtensionHelper::AutoLoadExtension(DatabaseInstance &db, const string &exte
 }
 
 // typos:off
-static const char *const public_keys[] = {
-    R"(
+// Haybarn uses one RSA trust root for both core and community extensions.
+// DuckDB-signed extensions intentionally do not verify in this distribution.
+static const char *const HAYBARN_TRUST_ROOT = R"(
 -----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsaa0V5d4IEKBv7UX7uwj
 KXrn42rNYS7AHBiQJ5bXyHO+0JZGQL/lvByDIa3zuGpo/M89AAl8ziCoBhOHJTyr
@@ -465,13 +466,19 @@ K9zepc3vGC7rJMCUOrBoFkJHrFJ6f24ag2/nFaHCuHKWDgLrZ6bbgjopUE6504Uv
 zkL8UKYc42Qa+zR0qd5d6QC3E+2EnYmg0GPE7u0xGEAANdU2KuwXrM8IfNpIVKBK
 iQIDAQAB
 -----END PUBLIC KEY-----
-)", nullptr};
+)";
 
-// Haybarn: the upstream DuckDB core + community signing keys have been removed.
-// Haybarn trusts exactly one signing key (above). Every extension Haybarn loads
-// must be signed with the matching Haybarn private key and served from the
-// Haybarn extension repository; DuckDB-signed extensions will not verify.
-static const char *const community_public_keys[] = {nullptr};
+static const char *const public_keys[] = {HAYBARN_TRUST_ROOT, nullptr};
+
+// Same trust root as `public_keys` — Haybarn deliberately uses ONE key to sign
+// both core and community extensions. Two distribution channels (core and
+// community-extensions buckets) but one cryptographic identity. The arrays stay
+// separate (rather than collapsing into one) so the upstream-shaped
+// `allow_community_extensions` gating still works: a user can disallow
+// community-installed extensions and the verification loop in GetPublicKeys()
+// below will skip this array — even though the keys are identical, the *flag*
+// is the gate, not the key list.
+static const char *const community_public_keys[] = {HAYBARN_TRUST_ROOT, nullptr};
 
 // typos:on
 const vector<string> ExtensionHelper::GetPublicKeys(bool allow_community_extensions) {
