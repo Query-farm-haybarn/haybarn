@@ -52,7 +52,7 @@ jobs:
     #   - wasm ccache upgraded 4.9.1 → 4.13.6 (HTTP backend bearer auth fix)
     #   - Windows ccache same upgrade (writes were silently failing too)
     #   - GHCR docker login before pulling pre-built images
-    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/_extension_distribution.yml@790941d871bc5eda6e5b805ae2c908aac05e9f64
+    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/_extension_distribution.yml@dc0cae2971be09896f7d66dd57c7481e074ce5e2
     with:
       # We piggy-back extension-template to build the extensions in extension_config, it's hacky, but it works ¯\_(ツ)_/¯
       override_repository: duckdb/extension-template
@@ -68,7 +68,7 @@ jobs:
 
       # Match the `uses:` above so the cloned CI tools tree matches the called workflow.
       override_ci_tools_repository: Query-farm-haybarn/haybarn-extension-ci-tools
-      ci_tools_version: 790941d871bc5eda6e5b805ae2c908aac05e9f64
+      ci_tools_version: dc0cae2971be09896f7d66dd57c7481e074ce5e2
 
       # Phase C: pull the pre-built Linux build image from GHCR instead of
       # `docker build`-ing it inline on every leg. Core extensions need rust
