@@ -113,7 +113,16 @@ jobs:
           DUCKDB_EXTENSION_SIGNING_PK: ${{ secrets.HAYBARN_EXTENSION_SIGNING_PK }}
           AWS_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT }}
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          # NOTE: the org secret is named `R2_SECRET_KEY_ID` (not the more
+          # conventional `_SECRET_ACCESS_KEY`). The previous reference to a
+          # non-existent `R2_SECRET_ACCESS_KEY` resolved to empty string and
+          # `extension-upload-repository.sh` silently bailed with
+          # "No AWS key found, skipping" — so the deploy-step was green for
+          # weeks without ever writing to R2. The engine ran in dry_run
+          # mode for tag-triggered builds (deploy='true' is required to
+          # actually deploy), so it never surfaced — until the parallel
+          # haybarn-community-extensions wiring exercised the same path.
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_KEY_ID }}
           # for_real => actually upload; anything else => dry run.
           DUCKDB_DEPLOY_SCRIPT_MODE: ${{ inputs.deploy == 'true' && 'for_real' || 'dry_run' }}
         run: |
