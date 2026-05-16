@@ -1,0 +1,149 @@
+# Haybarn: publish the release CLI binaries to PyPI as haybarn-cli wheels.
+#
+# One package, multiple platform-tagged wheels:
+#
+#   haybarn_cli-1.5.2rc7-py3-none-manylinux_2_28_x86_64.whl
+#   haybarn_cli-1.5.2rc7-py3-none-manylinux_2_28_aarch64.whl
+#   haybarn_cli-1.5.2rc7-py3-none-musllinux_1_2_x86_64.whl
+#   haybarn_cli-1.5.2rc7-py3-none-musllinux_1_2_aarch64.whl
+#   haybarn_cli-1.5.2rc7-py3-none-macosx_11_0_x86_64.whl
+#   haybarn_cli-1.5.2rc7-py3-none-macosx_11_0_arm64.whl
+#   haybarn_cli-1.5.2rc7-py3-none-win_amd64.whl
+#
+# pip / uv select the right wheel from the platform tag in the filename;
+# no meta-package + leaves dance like npm — PyPI's wheel-tag system
+# handles the platform fan-out natively.
+#
+# Auth: PyPI Trusted Publishers via OIDC (no API token). Provenance:
+# pypa/gh-action-pypi-publish enables PEP 740 attestations by default
+# when OIDC is in use.
+name: Haybarn PyPI CLI publish
+
+on:
+  workflow_run:
+    workflows: ["Haybarn Publish"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish (e.g. haybarn-v1.5.2-rc7)'
+        type: string
+        required: true
+
+permissions:
+  contents: read       # gh release download
+  id-token: write      # PyPI Trusted Publisher OIDC
+
+concurrency:
+  group: haybarn-pypi-cli-publish-${{ inputs.tag || github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       startsWith(github.event.workflow_run.head_branch, 'haybarn-v'))
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ inputs.tag || github.event.workflow_run.head_branch }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Derive PyPI version from the release tag
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Tag format: haybarn-v<MAJOR>.<MINOR>.<PATCH>[-rc<N>]
+          # Strip 'haybarn-v' and rewrite '-rc<N>' → 'rc<N>' for PEP 440.
+          # (npm accepts '-rc<N>'; PyPI requires no separator before the
+          # prerelease identifier.)
+          NPM_VERSION="${TAG#haybarn-v}"
+          PYPI_VERSION="$(echo "$NPM_VERSION" | sed -E 's/-(rc[0-9]+)$/\1/')"
+          echo "tag_version=${NPM_VERSION}"  >> "$GITHUB_OUTPUT"
+          echo "pep440=${PYPI_VERSION}"      >> "$GITHUB_OUTPUT"
+          echo "Resolved PyPI version: ${PYPI_VERSION} (from tag ${TAG})"
+
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p release-assets
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" \
+            --dir release-assets \
+            --pattern 'haybarn_cli-*.zip'
+          ls -la release-assets/
+
+      - name: Build per-platform wheels
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG_VERSION='${{ steps.ver.outputs.tag_version }}'
+          mkdir -p dist
+
+          # ZIP_BASENAME → PyPI platform tag (PEP 425 / 600 / 656)
+          # manylinux_2_28 requires glibc >= 2.28 (RHEL 8+, Ubuntu 20.04+) —
+          #   matches the manylinux_2_28 base our Linux glibc binaries
+          #   are built against. The musl-static ccache binary doesn't
+          #   affect this tag.
+          # musllinux_1_2 covers Alpine 3.13+, which is the lowest musl-libc
+          #   version that Alpine still supports.
+          # macosx_11_0 is the lowest deployment target our CMake build
+          #   honors (matches DuckDB's macOS minimum).
+          declare -A PLAT=(
+            [haybarn_cli-linux-amd64.zip]=manylinux_2_28_x86_64
+            [haybarn_cli-linux-arm64.zip]=manylinux_2_28_aarch64
+            [haybarn_cli-linux-amd64-musl.zip]=musllinux_1_2_x86_64
+            [haybarn_cli-linux-arm64-musl.zip]=musllinux_1_2_aarch64
+            [haybarn_cli-osx-amd64.zip]=macosx_11_0_x86_64
+            [haybarn_cli-osx-arm64.zip]=macosx_11_0_arm64
+            [haybarn_cli-windows-amd64.zip]=win_amd64
+          )
+
+          for zip in "${!PLAT[@]}"; do
+            src="release-assets/$zip"
+            if [[ ! -f "$src" ]]; then
+              echo "::warning::missing release asset $zip — skipping its wheel"
+              continue
+            fi
+            python3 tools/pypi-cli/build_wheel.py \
+              --src-zip "$src" \
+              --platform-tag "${PLAT[$zip]}" \
+              --version "$TAG_VERSION" \
+              --readme tools/pypi-cli/README.md \
+              --license LICENSE \
+              --out-dir dist/
+          done
+
+          echo "=== built wheels ==="
+          ls -la dist/
+
+      - name: Publish to PyPI via Trusted Publisher
+        # OIDC token-exchange handled by the action; no PYPI_API_TOKEN
+        # secret needed. Action also attaches PEP 740 attestations.
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          # The action defaults to `attestations: true` when OIDC is in
+          # use. Explicit is better than implicit.
+          attestations: true
+          # If a wheel for this version+platform has somehow already
+          # been published (e.g. workflow re-run), skip rather than fail.
+          skip-existing: true
+          verbose: true
+
+      - name: Verify
+        shell: bash
+        run: |
+          PEP="${{ steps.ver.outputs.pep440 }}"
+          echo "haybarn-cli ${PEP} published to PyPI."
+          echo "Users can run:"
+          echo "  uvx haybarn-cli==${PEP} -c \"PRAGMA version;\""
+          echo "or for the latest stable:"
+          echo "  uvx haybarn-cli -c \"PRAGMA version;\""
+# Haybarn fork — workflow re-index marker.
