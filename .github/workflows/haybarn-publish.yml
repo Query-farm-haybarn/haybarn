@@ -25,7 +25,6 @@ on:
 
 permissions:
   contents: write   # create the GitHub Release
-  id-token: write   # cosign keyless (OIDC) signing
   actions: read     # download artifacts from the triggering run
 
 jobs:
@@ -132,20 +131,6 @@ jobs:
             --passphrase "$HAYBARN_GPG_PASSPHRASE" \
             --armor --detach-sign --output release/SHA256SUMS.asc release/SHA256SUMS
 
-      - name: Install cosign
-        uses: sigstore/cosign-installer@v3
-
-      - name: Cosign sign artifacts (keyless)
-        shell: bash
-        run: |
-          cd release
-          for f in *.zip *.gz SHA256SUMS; do
-            cosign sign-blob --yes \
-              --output-signature "$f.sig" \
-              --output-certificate "$f.pem" \
-              "$f"
-          done
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -161,14 +146,13 @@ jobs:
             ## Verifying downloads
             - `SHA256SUMS` — checksums for every artifact.
             - `SHA256SUMS.asc` — detached GPG signature of `SHA256SUMS`.
-            - `*.sig` / `*.pem` — cosign keyless signatures + certificates.
+            - GitHub build attestations — SLSA provenance binding each artifact
+              to the commit, workflow, and run that built it.
 
             ```
             sha256sum -c SHA256SUMS
             gpg --verify SHA256SUMS.asc SHA256SUMS
-            cosign verify-blob --signature <file>.sig --certificate <file>.pem \
-              --certificate-identity-regexp '.*' \
-              --certificate-oidc-issuer https://token.actions.githubusercontent.com <file>
+            gh attestation verify <file> --repo Query-farm-haybarn/haybarn
             ```
           files: release/*
           fail_on_unmatched_files: true
