@@ -172,9 +172,9 @@ jobs:
           DIST_TAG='${{ steps.ver.outputs.dist_tag }}'
 
           STAGE="stage/meta"
-          mkdir -p "$STAGE/bin"
-          cp tools/npm/bin/haybarn.cjs "$STAGE/bin/"
-          chmod +x "$STAGE/bin/haybarn.cjs"
+          mkdir -p "$STAGE"
+          cp tools/npm/haybarn.cjs "$STAGE/"
+          chmod +x "$STAGE/haybarn.cjs"
           cp tools/npm/README.md "$STAGE/"
           cp LICENSE "$STAGE/"
 
@@ -212,8 +212,8 @@ jobs:
               "url": "git+https://github.com/Query-farm-haybarn/haybarn.git"
             },
             "license": "MIT",
-            "bin": { "haybarn": "bin/haybarn.cjs" },
-            "files": ["bin", "README.md", "LICENSE"],
+            "bin": { "haybarn": "haybarn.cjs" },
+            "files": ["haybarn.cjs", "README.md", "LICENSE"],
             "engines": { "node": ">=18" },
             "keywords": ["haybarn", "duckdb", "cli", "olap", "sql"],
             "optionalDependencies": {
