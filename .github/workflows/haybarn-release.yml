@@ -90,25 +90,35 @@ jobs:
         env:
           CCACHE_REMOTE_STORAGE: "http://haybarn-vcpkg-cache.rusty-bb6.workers.dev/ccache|bearer-token=${{ secrets.HAYBARN_VCPKG_TOKEN }}|connect-timeout=10000|operation-timeout=30000"
         run: |
-          export PWD=$(pwd)
+          export WORKSPACE="$(pwd)"
           docker pull "${{ steps.image.outputs.ref }}"
+          # `-w "$WORKSPACE"` sets the container's working directory to the
+          # bind-mounted host path. Without this, the Phase A image's
+          # WORKDIR /duckdb_build_dir takes effect — and `$PWD` inside the
+          # bash command resolves there, missing the Makefile. (First run
+          # of this code failed with: `make: No targets specified and no
+          # makefile found. Stop. make: Entering directory '/duckdb_build_dir'`.)
+          # We also pass WORKSPACE explicitly so the bash command uses it
+          # rather than relying on $PWD (less fragile).
           docker run \
-            -v"$PWD":"$PWD" \
+            -v"$WORKSPACE":"$WORKSPACE" \
+            -w "$WORKSPACE" \
             -e GEN=ninja \
-            -e CC='ccache gcc' -e CXX='ccache g++' -e CCACHE_DIR="$PWD/.ccache" \
-            -e CCACHE_BASEDIR="$PWD" -e CCACHE_NOHASHDIR=1 \
+            -e CC='ccache gcc' -e CXX='ccache g++' -e CCACHE_DIR="$WORKSPACE/.ccache" \
+            -e CCACHE_BASEDIR="$WORKSPACE" -e CCACHE_NOHASHDIR=1 \
             -e CCACHE_SLOPPINESS=time_macros,include_file_mtime,pch_defines \
             -e CCACHE_COMPILERCHECK=content \
             -e CCACHE_REMOTE_STORAGE \
             -e OVERRIDE_GIT_DESCRIBE="$OVERRIDE_GIT_DESCRIBE" \
             -e HAYBARN_GIT_DESCRIBE \
-            -e EXTENSION_CONFIGS="$PWD/.github/config/in_tree_extensions.cmake" \
+            -e EXTENSION_CONFIGS="$WORKSPACE/.github/config/in_tree_extensions.cmake" \
             -e ENABLE_EXTENSION_AUTOLOADING=1 -e ENABLE_EXTENSION_AUTOINSTALL=1 \
+            -e WORKSPACE="$WORKSPACE" \
             "${{ steps.image.outputs.ref }}" \
             bash -c 'set -e; \
                      ccache --version; \
-                     git config --global --add safe.directory "$PWD"; \
-                     make -C "$PWD"; \
+                     git config --global --add safe.directory "$WORKSPACE"; \
+                     make -C "$WORKSPACE"; \
                      ccache -s'
 
       # musl binaries are built inside Alpine and won't run on the glibc host
