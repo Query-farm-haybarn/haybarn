@@ -66,8 +66,11 @@ OVERRIDE_GIT_DESCRIBE=v1.5.2 make release
 ## Distribution
 
 - **Binaries:** GitHub Releases under `Query-farm-haybarn/haybarn`, with
-  `SHA256SUMS` + GPG + cosign signatures. OS-native code signing (Apple/Windows)
-  is not wired up yet — TODOs are marked in `.github/workflows/haybarn-*.yml`.
+  `SHA256SUMS` + detached GPG signature + GitHub SLSA build-provenance
+  attestations (each artifact bound to its commit/workflow/run; verified via
+  `gh attestation verify <file> --repo Query-farm-haybarn/haybarn`).
+  OS-native code signing (Apple/Windows) is not wired up yet — TODOs are marked
+  in `.github/workflows/haybarn-*.yml`.
 - **Extensions:** Cloudflare R2, split across two buckets:
   - Core: `https://haybarn-extensions.query.farm/core` (this repo, via
     `haybarn-extensions.yml`).
@@ -128,8 +131,13 @@ key prefixes. The bearer token is `HAYBARN_VCPKG_TOKEN` (org-level secret).
   extensions), and the same tag on each downstream client repo fires their
   workflows.
 - Engine release artifacts: `release/` directory uploaded to GH Releases by
-  `haybarn-release.yml`. The `Haybarn Publish` workflow runs on `workflow_run`
-  after Release succeeds, doing `SHA256SUMS` + GPG-detach-sign + cosign-sign.
+  `haybarn-release.yml`, which also attaches a SLSA build-provenance
+  attestation (`actions/attest-build-provenance`) to every artifact at build
+  time. The `Haybarn Publish` workflow runs on `workflow_run` after Release
+  succeeds, doing `SHA256SUMS` + GPG-detach-sign and creating the GitHub
+  Release. (cosign `sign-blob` was dropped in rc7 — the attestation supersedes
+  it and is verifiable against this repo specifically, whereas the cosign
+  recipe had an unpinnable `.*` identity regex.)
 - **GPG key gotcha**: the `HAYBARN_GPG_PRIVATE_KEY` org secret is stored
   hex-encoded (`gpg --export-secret-keys ... | xxd -p`), NOT ASCII-armored.
   The publish workflow probes 6 shapes (armored, armored-with-`\n`-escapes,
@@ -167,7 +175,14 @@ Haybarn is multi-repo. Each is pinned by SHA where another consumes it.
 
 ## Recent state (as of 2026-05-16)
 
-Current rc series: **`haybarn-v1.5.2-rc6`**. Major work this cycle:
+Current rc series: **`haybarn-v1.5.2-rc7`**. Major work this cycle:
+
+- SLSA build-provenance attestations added to `haybarn-release.yml` (all 4 jobs)
+  via `actions/attest-build-provenance@v2`; cosign `sign-blob` dropped from
+  `haybarn-publish.yml` along with the misleading `.*` identity-regex recipe
+  in the release notes. GPG signature retained for the traditional audience.
+
+Earlier (rc6) work this series:
 
 - Two-bucket distribution split: core (`/core` path on `haybarn-extensions.query.farm`)
   vs community (own subdomain `haybarn-community-extensions.query.farm`).
