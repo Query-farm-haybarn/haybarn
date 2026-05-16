@@ -67,42 +67,67 @@ jobs:
           HAYBARN_GPG_PRIVATE_KEY: ${{ secrets.HAYBARN_GPG_PRIVATE_KEY }}
           HAYBARN_GPG_PASSPHRASE: ${{ secrets.HAYBARN_GPG_PASSPHRASE }}
         run: |
-          # gpg --batch --import requires either:
-          #   (a) ASCII-armored text starting with "-----BEGIN PGP PRIVATE KEY BLOCK-----"
-          #   (b) raw binary key bytes
-          # GitHub Action secrets preserve embedded newlines but can be stored
-          # in a few different shapes:
-          #   - ASCII-armored text (most common; works with stdin)
-          #   - Base64 of the binary key (often when copy/pasted from clipboard
-          #     utilities that strip newlines)
-          # The previous `echo "$VAR" | gpg --import` failed with
-          # "no valid OpenPGP data found" on multiple rc publish runs — so
-          # the stored value is one of those non-direct shapes. Try the most
-          # common forms in order; whichever produces a real OpenPGP packet
-          # wins. Be careful never to print the key value or any prefix of
-          # it (one detected byte could narrow the keyspace).
-          set -euo pipefail
+          # GPG import resilience — see haybarn-publish.yml history for why.
+          # The secret value's shape was forgotten and the first attempt
+          # (assume ASCII-armored) failed. Try every plausible shape in
+          # order, importing the FIRST one that gpg accepts. If all fail,
+          # emit a character-class profile (counts only, no key bytes ever
+          # leave the workflow) so we can diagnose how the secret was stored.
+          set -uo pipefail
           KEYFILE="$(mktemp)"
           trap 'shred -u "$KEYFILE" 2>/dev/null || rm -f "$KEYFILE"' EXIT
 
-          first_char=$(printf '%s' "$HAYBARN_GPG_PRIVATE_KEY" | head -c 1)
-          if [ "$first_char" = "-" ]; then
-            shape="ascii-armored"
-            printf '%s\n' "$HAYBARN_GPG_PRIVATE_KEY" > "$KEYFILE"
-          else
-            # Not "-" → not armored. Try base64 decode first; if it succeeds AND
-            # yields a valid OpenPGP packet, use it. Otherwise fall back to the
-            # raw bytes (rare but documented).
-            if printf '%s' "$HAYBARN_GPG_PRIVATE_KEY" | base64 -d > "$KEYFILE" 2>/dev/null && [ -s "$KEYFILE" ]; then
-              shape="base64-decoded"
-            else
-              shape="raw-bytes"
-              printf '%s' "$HAYBARN_GPG_PRIVATE_KEY" > "$KEYFILE"
+          try_import() {
+            local label="$1"
+            if gpg --batch --import "$KEYFILE" 2>/tmp/gpg.err; then
+              echo "✅ imported as: $label"
+              return 0
             fi
-          fi
-          echo "GPG key shape detected: $shape ($(wc -c <"$KEYFILE") bytes)"
+            echo "✗ $label: $(head -c 200 /tmp/gpg.err)"
+            return 1
+          }
 
-          gpg --batch --import "$KEYFILE"
+          # 1. Direct (ASCII-armored, embedded newlines preserved).
+          printf '%s\n' "$HAYBARN_GPG_PRIVATE_KEY" > "$KEYFILE"
+          if try_import "ascii-armored (direct, $(wc -c <"$KEYFILE") bytes)"; then : ;
+          # 2. Literal `\n` escape sequences → real newlines.
+          elif printf '%s' "$HAYBARN_GPG_PRIVATE_KEY" | sed $'s/\\\\n/\\\n/g' > "$KEYFILE" && try_import "armored with \\n escape sequences ($(wc -c <"$KEYFILE") bytes)"; then : ;
+          # 3. Base64 (no framing) → binary key.
+          elif printf '%s' "$HAYBARN_GPG_PRIVATE_KEY" | tr -d '[:space:]' | base64 -d > "$KEYFILE" 2>/dev/null && [ -s "$KEYFILE" ] && try_import "base64-decoded ($(wc -c <"$KEYFILE") bytes)"; then : ;
+          # 4. Base64 of armored text (one-line "safe paste" pattern).
+          elif printf '%s' "$HAYBARN_GPG_PRIVATE_KEY" | tr -d '[:space:]' | base64 -d 2>/dev/null > "$KEYFILE" && head -c 5 "$KEYFILE" | grep -q '^-----' && try_import "base64-of-armored ($(wc -c <"$KEYFILE") bytes)"; then : ;
+          # 5. Hex-encoded binary.
+          elif printf '%s' "$HAYBARN_GPG_PRIVATE_KEY" | tr -d '[:space:]' | xxd -r -p > "$KEYFILE" 2>/dev/null && [ -s "$KEYFILE" ] && try_import "hex-decoded ($(wc -c <"$KEYFILE") bytes)"; then : ;
+          # 6. Raw bytes (last resort).
+          elif printf '%s' "$HAYBARN_GPG_PRIVATE_KEY" > "$KEYFILE" && try_import "raw-bytes ($(wc -c <"$KEYFILE") bytes)"; then : ;
+          else
+            # ALL paths failed — emit non-leaky character-class diagnostics.
+            v="$HAYBARN_GPG_PRIVATE_KEY"
+            total=${#v}
+            echo "----- Cannot decode HAYBARN_GPG_PRIVATE_KEY. Diagnostic profile (counts only): -----"
+            count_class() {
+              local label="$1" re="$2"
+              printf '%s' "$v" | tr -cd "$re" | wc -c | awk -v l="$label" -v t="$total" '{printf "  %-25s %d / %d (%.1f%%)\n", l, $1, t, ($1*100.0/t)}'
+            }
+            echo "  total bytes:              $total"
+            count_class "dashes (-)"          '-'
+            count_class "equals (=)"          '='
+            count_class "uppercase A-Z"       'A-Z'
+            count_class "lowercase a-z"       'a-z'
+            count_class "digits 0-9"          '0-9'
+            count_class "hex chars [0-9a-f]"  '0-9a-f'
+            count_class "+/* (base64 extras)" '+/*'
+            count_class "newlines (\\n)"      '\n'
+            count_class "carriage returns"    '\r'
+            count_class "spaces"              ' '
+            count_class "backslashes"         '\\'
+            echo "  first byte (hex):         $(printf '%s' "$v" | head -c 1 | xxd -p)"
+            echo "  last byte (hex):          $(printf '%s' "$v" | tail -c 1 | xxd -p)"
+            echo "  contains '\\n' literal:    $(printf '%s' "$v" | grep -c '\\n' || true)"
+            echo "  starts with -----:         $(printf '%s' "$v" | head -c 5 | grep -cF -- '-----' || true)"
+            echo "-----------------------------------------------------------------------------------"
+            exit 1
+          fi
           gpg --batch --yes --pinentry-mode loopback \
             --passphrase "$HAYBARN_GPG_PASSPHRASE" \
             --armor --detach-sign --output release/SHA256SUMS.asc release/SHA256SUMS
