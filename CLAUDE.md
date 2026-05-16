@@ -60,10 +60,16 @@ OVERRIDE_GIT_DESCRIBE=v1.5.2 make release
 - **Binaries:** GitHub Releases under `Query-farm-haybarn/haybarn`, with
   `SHA256SUMS` + GPG + cosign signatures. OS-native code signing (Apple/Windows)
   is not wired up yet — TODOs are marked in `.github/workflows/haybarn-*.yml`.
-- **Extensions:** Cloudflare R2, served at `https://haybarn-extensions.query.farm/core` and
-  `/community`. Signed with the Haybarn extension key
-  (`HAYBARN_EXTENSION_SIGNING_PK` secret; public half embedded in
-  `extension_helper.cpp`).
+- **Extensions:** Cloudflare R2, split across two buckets:
+  - Core: `https://haybarn-extensions.query.farm/core` (this repo, via
+    `haybarn-extensions.yml`).
+  - Community: `https://haybarn-community-extensions.query.farm` (separate repo
+    `Query-farm-haybarn/haybarn-community-extensions`, mirror of upstream's
+    ~150 community extensions rebuilt against the Haybarn engine).
+  Both signed with the SAME Haybarn extension key (`HAYBARN_EXTENSION_SIGNING_PK`
+  secret; public half embedded in `extension_helper.cpp` as
+  `HAYBARN_TRUST_ROOT`, referenced by both `public_keys[]` and
+  `community_public_keys[]`). One trust root, two distribution channels.
 - Release tags are `haybarn-v<version>`; the `haybarn-*.yml` workflows trigger on
   them. The upstream `OnTag.yml` (matches `v*.*.*`) is intentionally left alone —
   it never matches Haybarn tags.
