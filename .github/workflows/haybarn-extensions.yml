@@ -129,6 +129,13 @@ jobs:
           python3 -m pip install awscli
           # $2 is the target bucket+prefix; the R2 bucket is fronted by
           # haybarn-extensions.query.farm with a top-level core/ prefix.
+          # NOTE: the upload script's `for version_dir in $BASE_DIR/*` adds
+          # its own trailing `/*`. If we passed `/tmp/haybarn-repository/*`
+          # here, the loop iterates two levels deep, conflates arch with
+          # version, and silently uploads nothing visible. (Run 25969696452
+          # appeared green but no `Processing extension:` line appeared, and
+          # haybarn-extensions.query.farm/core/v1.5.2/<arch>/<ext> returns
+          # 404.) Pass the base directory without a glob.
           ./scripts/extension-upload-repository.sh \
-            "/tmp/haybarn-repository/*" "${{ secrets.R2_BUCKET }}/core"
+            "/tmp/haybarn-repository" "${{ secrets.R2_BUCKET }}/core"
 # Haybarn fork — workflow re-index marker.
