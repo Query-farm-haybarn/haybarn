@@ -21,6 +21,11 @@ concurrency:
   group: haybarn-release-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  id-token: write       # OIDC for build-provenance attestation signing
+  attestations: write   # write to the GitHub attestations API
+  contents: read
+
 env:
   # Haybarn is built from a specific upstream DuckDB tag. The version string the
   # binary reports stays the upstream version (e.g. v1.5.2) for storage and
@@ -159,6 +164,14 @@ jobs:
             haybarn_cli-linux-*.gz
             libhaybarn-linux-*.zip
 
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            haybarn_cli-linux-*.zip
+            haybarn_cli-linux-*.gz
+            libhaybarn-linux-*.zip
+
   osx:
     name: macOS (universal)
     runs-on: macos-15
@@ -234,6 +247,14 @@ jobs:
         with:
           name: haybarn-osx
           path: |
+            haybarn_cli-osx-*.zip
+            haybarn_cli-osx-*.gz
+            libhaybarn-osx-universal.zip
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
             haybarn_cli-osx-*.zip
             haybarn_cli-osx-*.gz
             libhaybarn-osx-universal.zip
@@ -321,6 +342,13 @@ jobs:
             haybarn_cli-windows-*.zip
             libhaybarn-windows-*.zip
 
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            haybarn_cli-windows-*.zip
+            libhaybarn-windows-*.zip
+
   src-amalgamation:
     name: libhaybarn source amalgamation
     runs-on: ubuntu-24.04
@@ -338,4 +366,9 @@ jobs:
         with:
           name: haybarn-src
           path: libhaybarn-src.zip
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: libhaybarn-src.zip
 # Haybarn fork — workflow re-index marker.
