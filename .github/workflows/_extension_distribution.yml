@@ -45,7 +45,13 @@ jobs:
     # substitute it into the binary-sources URL via the `{0}` placeholder
     # (works around GH Actions blocking `secrets` in `with:` of nested
     # workflow_call).
-    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/_extension_distribution.yml@e4647c6862e94866bf957aa971c866f315f808df
+    # SHA b80a787 includes:
+    #   - Phase A: GHCR image publish workflow (haybarn-<arch>-<variant>:v1.5.2)
+    #   - Phase B: use_prebuilt_images / image_variant inputs (Linux only)
+    #   - vcpkg cache default switched to readwrite Haybarn cache
+    #   - wasm ccache upgraded to 4.13.6 (fixes HTTP backend bearer auth)
+    #   - GHCR docker login before pulling pre-built images
+    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/_extension_distribution.yml@b80a7878481081d9d881c1210f64885ffe7a1d31
     with:
       # We piggy-back extension-template to build the extensions in extension_config, it's hacky, but it works ¯\_(ツ)_/¯
       override_repository: duckdb/extension-template
@@ -61,7 +67,16 @@ jobs:
 
       # Match the `uses:` above so the cloned CI tools tree matches the called workflow.
       override_ci_tools_repository: Query-farm-haybarn/haybarn-extension-ci-tools
-      ci_tools_version: e4647c6862e94866bf957aa971c866f315f808df
+      ci_tools_version: b80a7878481081d9d881c1210f64885ffe7a1d31
+
+      # Phase C: pull the pre-built Linux build image from GHCR instead of
+      # `docker build`-ing it inline on every leg. Core extensions need rust
+      # (delta, ducklake) and unixODBC (odbc_scanner) — the `full` variant
+      # ships both plus go, fortran, parser_tools, multimedia.
+      # ~5-8 min × 4 Linux archs of `docker build` setup → ~30s × 4 of pull.
+      # macOS / Windows / wasm legs are unaffected.
+      use_prebuilt_images: true
+      image_variant: full
 
       exclude_archs: ${{ inputs.exclude_archs }}
       opt_in_archs: ${{ inputs.opt_in_archs }}
