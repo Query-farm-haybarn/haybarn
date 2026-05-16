@@ -881,7 +881,7 @@ def test_open_non_database(shell, generated_file):
         .add_argument(generated_file.as_posix())
     )
     result = test.run()
-    result.check_stderr('not a valid DuckDB database file')
+    result.check_stderr('not a valid Haybarn database file')
 
 def test_enable_profiling(shell):
     test = (
