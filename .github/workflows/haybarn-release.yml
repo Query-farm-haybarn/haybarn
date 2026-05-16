@@ -61,69 +61,55 @@ jobs:
           restore-keys: |
             ccache-release-linux-${{ matrix.config.arch }}-${{ matrix.config.libc }}-
 
-      - name: Build (glibc / manylinux)
-        if: matrix.config.libc == 'glibc'
-        shell: bash
-        env:
-          CCACHE_REMOTE_STORAGE: "http://haybarn-vcpkg-cache.rusty-bb6.workers.dev/ccache|bearer-token=${{ secrets.HAYBARN_VCPKG_TOKEN }}|connect-timeout=10000|operation-timeout=30000"
-        run: |
-          export PWD=`pwd`
-          docker run \
-            -v$PWD:$PWD \
-            -e GEN=ninja \
-            -e CC='ccache gcc' -e CXX='ccache g++' -e CCACHE_DIR=$PWD/.ccache \
-            -e CCACHE_BASEDIR=$PWD -e CCACHE_NOHASHDIR=1 \
-            -e CCACHE_SLOPPINESS=time_macros,include_file_mtime,pch_defines \
-            -e CCACHE_COMPILERCHECK=content \
-            -e CCACHE_REMOTE_STORAGE \
-            -e OVERRIDE_GIT_DESCRIBE=$OVERRIDE_GIT_DESCRIBE \
-            -e HAYBARN_GIT_DESCRIBE \
-            -e EXTENSION_CONFIGS="$PWD/.github/config/in_tree_extensions.cmake" \
-            -e ENABLE_EXTENSION_AUTOLOADING=1 -e ENABLE_EXTENSION_AUTOINSTALL=1 \
-            quay.io/pypa/manylinux_2_28_${{ matrix.config.image }}:2026.05.13-1 \
-            bash -c 'set -e; \
-                     CCACHE_VERSION=4.13.6; \
-                     case "${{ matrix.config.image }}" in x86_64) CCACHE_ARCH=x86_64;; aarch64) CCACHE_ARCH=aarch64;; esac; \
-                     curl -fsSL "https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/ccache-${CCACHE_VERSION}-linux-${CCACHE_ARCH}-musl-static.tar.xz" -o /tmp/ccache.tar.xz; \
-                     tar -xJf /tmp/ccache.tar.xz -C /tmp; \
-                     install -m 0755 "/tmp/ccache-${CCACHE_VERSION}-linux-${CCACHE_ARCH}-musl-static/ccache" /usr/local/bin/ccache; \
-                     ccache --version; \
-                     dnf install -y ninja-build perl-IPC-Cmd; \
-                     git config --global --add safe.directory '"$PWD"'; \
-                     make -C '"$PWD"'; \
-                     ccache -s'
+      # Phase A images already have cmake, ninja, ccache 4.13.6, perl-IPC-Cmd,
+      # git, and the full build toolchain pre-installed (built from
+      # haybarn-extension-ci-tools/docker/<arch>{,_musl}/Dockerfile). The
+      # release build only needs in-tree C++ extensions (no Rust/ODBC), so
+      # the `base` variant is sufficient. ~2-3 min of dnf/apk/curl setup per
+      # leg → ~30s of docker pull.
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build (musl / alpine)
-        if: matrix.config.libc == 'musl'
+      - name: Pick GHCR image for this matrix leg
+        id: image
+        shell: bash
+        run: |
+          # Image taxonomy: haybarn-linux_<arch>{,_musl}-base:<engine_version>
+          case "${{ matrix.config.libc }}" in
+            glibc) suffix='' ;;
+            musl)  suffix='_musl' ;;
+          esac
+          echo "ref=ghcr.io/query-farm-haybarn/haybarn-linux_${{ matrix.config.arch }}${suffix}-base:v1.5.2" >> "$GITHUB_OUTPUT"
+
+      - name: Build (Linux glibc + musl, pre-built image)
         shell: bash
         env:
           CCACHE_REMOTE_STORAGE: "http://haybarn-vcpkg-cache.rusty-bb6.workers.dev/ccache|bearer-token=${{ secrets.HAYBARN_VCPKG_TOKEN }}|connect-timeout=10000|operation-timeout=30000"
         run: |
-          export PWD=`pwd`
+          export PWD=$(pwd)
+          docker pull "${{ steps.image.outputs.ref }}"
           docker run \
-            -v$PWD:$PWD \
+            -v"$PWD":"$PWD" \
             -e GEN=ninja \
-            -e CC='ccache gcc' -e CXX='ccache g++' -e CCACHE_DIR=$PWD/.ccache \
-            -e CCACHE_BASEDIR=$PWD -e CCACHE_NOHASHDIR=1 \
+            -e CC='ccache gcc' -e CXX='ccache g++' -e CCACHE_DIR="$PWD/.ccache" \
+            -e CCACHE_BASEDIR="$PWD" -e CCACHE_NOHASHDIR=1 \
             -e CCACHE_SLOPPINESS=time_macros,include_file_mtime,pch_defines \
             -e CCACHE_COMPILERCHECK=content \
             -e CCACHE_REMOTE_STORAGE \
-            -e OVERRIDE_GIT_DESCRIBE=$OVERRIDE_GIT_DESCRIBE \
+            -e OVERRIDE_GIT_DESCRIBE="$OVERRIDE_GIT_DESCRIBE" \
             -e HAYBARN_GIT_DESCRIBE \
             -e EXTENSION_CONFIGS="$PWD/.github/config/in_tree_extensions.cmake" \
             -e ENABLE_EXTENSION_AUTOLOADING=1 -e ENABLE_EXTENSION_AUTOINSTALL=1 \
-            alpine:3.22 \
-            sh -c 'set -e; \
-                   CCACHE_VERSION=4.13.6; \
-                   case "${{ matrix.config.arch }}" in amd64) CCACHE_ARCH=x86_64;; arm64) CCACHE_ARCH=aarch64;; esac; \
-                   apk add cmake curl g++ git make samurai xz; \
-                   curl -fsSL "https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/ccache-${CCACHE_VERSION}-linux-${CCACHE_ARCH}-musl-static.tar.xz" -o /tmp/ccache.tar.xz; \
-                   tar -xJf /tmp/ccache.tar.xz -C /tmp; \
-                   install -m 0755 "/tmp/ccache-${CCACHE_VERSION}-linux-${CCACHE_ARCH}-musl-static/ccache" /usr/local/bin/ccache; \
-                   ccache --version; \
-                   git config --global --add safe.directory '"$PWD"'; \
-                   make -C '"$PWD"'; \
-                   ccache -s'
+            "${{ steps.image.outputs.ref }}" \
+            bash -c 'set -e; \
+                     ccache --version; \
+                     git config --global --add safe.directory "$PWD"; \
+                     make -C "$PWD"; \
+                     ccache -s'
 
       # musl binaries are built inside Alpine and won't run on the glibc host
       # runner, so steps that *execute* the binary are glibc-only. The musl
