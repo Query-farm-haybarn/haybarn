@@ -1314,10 +1314,13 @@ static constexpr ExtensionEntry EXTENSION_SECRET_PROVIDERS[] = {
     {"mysql/config", "mysql_scanner"},
     {"postgres/config", "postgres_scanner"}}; // EXTENSION_SECRET_PROVIDERS
 
+// Haybarn: motherduck removed — proprietary product, not appropriate to advertise as a
+// Haybarn-autoloadable extension. See extension_helper.cpp internal_extensions for the
+// matching removal + rationale.
 static constexpr const char *AUTOLOADABLE_EXTENSIONS[] = {
-    "autocomplete", "avro",       "aws",           "azure",   "core_functions",   "delta", "ducklake",
-    "encodings",    "excel",      "fts",           "httpfs",  "iceberg",          "icu",   "inet",
-    "json",         "motherduck", "mysql_scanner", "parquet", "postgres_scanner", "quack", "sqlite_scanner",
-    "sqlsmith",     "tpcds",      "tpch",          "ui",      "unity_catalog"}; // END_OF_AUTOLOADABLE_EXTENSIONS
+    "autocomplete", "avro",          "aws",     "azure",            "core_functions", "delta", "ducklake",
+    "encodings",    "excel",         "fts",     "httpfs",           "iceberg",        "icu",   "inet",
+    "json",         "mysql_scanner", "parquet", "postgres_scanner", "quack",          "sqlite_scanner",
+    "sqlsmith",     "tpcds",         "tpch",    "ui",               "unity_catalog"}; // END_OF_AUTOLOADABLE_EXTENSIONS
 
 } // namespace duckdb

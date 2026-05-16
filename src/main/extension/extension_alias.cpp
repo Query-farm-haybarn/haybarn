@@ -2,9 +2,10 @@
 
 namespace duckdb {
 
+// Haybarn: 'md' → 'motherduck' alias removed alongside motherduck itself.
+// See extension_helper.cpp internal_extensions / auto_install for rationale.
 static const ExtensionAlias internal_aliases[] = {{"http", "httpfs"}, // httpfs
                                                   {"https", "httpfs"},
-                                                  {"md", "motherduck"},       // motherduck
                                                   {"mysql", "mysql_scanner"}, // mysql
                                                   {"odbc", "odbc_scanner"},   // odbc
                                                   {"s3", "httpfs"},
