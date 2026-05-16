@@ -1268,7 +1268,10 @@ static constexpr const char *AUTOLOADABLE_EXTENSIONS[] = {"avro",
                                                           "inet",
                                                           "icu",
                                                           "json",
-                                                          "motherduck",
+                                                          // Haybarn: motherduck removed — proprietary product, not
+                                                          // appropriate to advertise as a Haybarn-autoloadable
+                                                          // extension. See extension_helper.cpp internal_extensions
+                                                          // for the matching removal + rationale.
                                                           "mysql_scanner",
                                                           "parquet",
                                                           "sqlite_scanner",

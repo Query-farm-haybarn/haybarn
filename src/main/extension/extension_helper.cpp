@@ -110,7 +110,10 @@ static const DefaultExtension internal_extensions[] = {
     {"json", "Adds support for JSON operations", DUCKDB_EXTENSION_JSON_LINKED},
     {"jemalloc", "Overwrites system allocator with JEMalloc", DUCKDB_EXTENSION_JEMALLOC_LINKED},
     {"autocomplete", "Adds support for autocomplete in the shell", DUCKDB_EXTENSION_AUTOCOMPLETE_LINKED},
-    {"motherduck", "Enables motherduck integration with the system", false},
+    // Haybarn: motherduck removed — it's a proprietary cloud product specific
+    // to MotherDuck Inc., not appropriate to advertise as a Haybarn extension.
+    // Users who need it can manually INSTALL/LOAD against the DuckDB upstream
+    // repository.
     {"mysql_scanner", "Adds support for connecting to a MySQL database", false},
     {"odbc_scanner", "Adds support for connecting to remote databases over ODBC", false},
     {"sqlite_scanner", "Adds support for reading and writing SQLite database files", false},
@@ -126,8 +129,10 @@ static const DefaultExtension internal_extensions[] = {
     {"fts", "Adds support for Full-Text Search Indexes", false},
     {"ui", "Adds local UI for DuckDB", false},
     {"ducklake", "Adds support for DuckLake, SQL as a Lakehouse Format", false},
-    {"vortex", "Adds support for reading and writing files using the Vortex file format", false},
-    {"lance", "Adds support for querying Lance datasets", false},
+    // Haybarn: vortex + lance removed — both are commercial products with
+    // upstream packages that wouldn't verify against the Haybarn trust root.
+    // Users who need them can manually INSTALL/LOAD against the upstream
+    // DuckDB repository.
     {nullptr, nullptr, false}};
 
 idx_t ExtensionHelper::DefaultExtensionCount() {
@@ -145,9 +150,11 @@ DefaultExtension ExtensionHelper::GetDefaultExtension(idx_t index) {
 //===--------------------------------------------------------------------===//
 // Allow Auto-Install Extensions
 //===--------------------------------------------------------------------===//
+// Haybarn: motherduck dropped from the auto-install allow list (see comment
+// in internal_extensions above). The rest mirror upstream.
 static const char *const auto_install[] = {
-    "motherduck", "postgres_scanner", "mysql_scanner", "odbc_scanner", "sqlite_scanner",
-    "delta",      "iceberg",          "unity_catalog", "ui",           "ducklake",
+    "postgres_scanner", "mysql_scanner", "odbc_scanner", "sqlite_scanner",
+    "delta",            "iceberg",       "unity_catalog", "ui",       "ducklake",
     nullptr};
 
 // TODO: unify with new autoload mechanism
