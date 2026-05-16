@@ -1,0 +1,244 @@
+# Haybarn: publish the release CLI binaries to npm as @haybarn/cli-* leaves
+# and a `haybarn` meta-package. Triggers after Haybarn Publish completes a
+# tag-driven release.
+#
+# Layout (esbuild / swc / biome pattern):
+#   haybarn                       (meta, contains bin/haybarn.cjs shim only)
+#     ├ optionalDependencies:
+#     │   @haybarn/cli-linux-x64
+#     │   @haybarn/cli-linux-arm64
+#     │   @haybarn/cli-linux-x64-musl
+#     │   @haybarn/cli-linux-arm64-musl
+#     │   @haybarn/cli-darwin-x64
+#     │   @haybarn/cli-darwin-arm64
+#     │   @haybarn/cli-win32-x64
+#
+# Each leaf publishes a single `haybarn` binary (`haybarn.exe` on Windows)
+# with platform-pinned `os`/`cpu`/`libc` so npm only installs the one
+# matching the user's runtime.
+#
+# Auth model: npm "Trusted Publishers" via GitHub OIDC. No NPM_TOKEN secret.
+# Provenance attestations are attached (--provenance) so consumers can run
+# `npm audit signatures` / `npm view haybarn provenance` and see the build
+# attested back to this workflow + commit.
+name: Haybarn npm publish
+
+on:
+  # Fire only after Haybarn Publish completes successfully for a tag push.
+  workflow_run:
+    workflows: ["Haybarn Publish"]
+    types: [completed]
+  # Manual republish for a previously-released tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish (e.g. haybarn-v1.5.2-rc7)'
+        type: string
+        required: true
+
+permissions:
+  contents: read       # gh release download
+  id-token: write      # npm Trusted Publisher OIDC
+
+concurrency:
+  group: haybarn-npm-publish-${{ inputs.tag || github.event.workflow_run.head_branch }}
+  cancel-in-progress: false   # don't cancel a partially-published release
+
+jobs:
+  publish:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       startsWith(github.event.workflow_run.head_branch, 'haybarn-v'))
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ inputs.tag || github.event.workflow_run.head_branch }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Derive npm version + dist-tag from the release tag
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Tag format: haybarn-v<MAJOR>.<MINOR>.<PATCH>[-rc<N>]
+          # Strip the 'haybarn-v' prefix and convert the prerelease suffix
+          # into the standard npm semver shape. npm accepts '-rc7' as a
+          # prerelease identifier without further punctuation.
+          VERSION="${TAG#haybarn-v}"
+          if [[ "$VERSION" == *-rc* ]]; then
+            DIST_TAG="rc"
+          else
+            DIST_TAG="latest"
+          fi
+          echo "version=${VERSION}"   >> "$GITHUB_OUTPUT"
+          echo "dist_tag=${DIST_TAG}" >> "$GITHUB_OUTPUT"
+          echo "Resolved npm version ${VERSION} (dist-tag: ${DIST_TAG})"
+
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p release-assets
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" \
+            --dir release-assets \
+            --pattern 'haybarn_cli-*.zip'
+          ls -la release-assets/
+
+      - name: Assemble + publish per-platform leaf packages
+        env:
+          NPM_CONFIG_PROVENANCE: 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION='${{ steps.ver.outputs.version }}'
+          DIST_TAG='${{ steps.ver.outputs.dist_tag }}'
+
+          # asset zipfile  → npm leaf name           → os / cpu / libc
+          declare -A LEAVES=(
+            ["haybarn_cli-linux-amd64.zip"]="cli-linux-x64|linux|x64|glibc"
+            ["haybarn_cli-linux-arm64.zip"]="cli-linux-arm64|linux|arm64|glibc"
+            ["haybarn_cli-linux-amd64-musl.zip"]="cli-linux-x64-musl|linux|x64|musl"
+            ["haybarn_cli-linux-arm64-musl.zip"]="cli-linux-arm64-musl|linux|arm64|musl"
+            ["haybarn_cli-osx-amd64.zip"]="cli-darwin-x64|darwin|x64|"
+            ["haybarn_cli-osx-arm64.zip"]="cli-darwin-arm64|darwin|arm64|"
+            ["haybarn_cli-windows-amd64.zip"]="cli-win32-x64|win32|x64|"
+          )
+
+          for ZIP in "${!LEAVES[@]}"; do
+            SRC="release-assets/$ZIP"
+            if [[ ! -f "$SRC" ]]; then
+              echo "::warning::missing release asset $ZIP — skipping its leaf"
+              continue
+            fi
+
+            IFS='|' read -r LEAF_SLUG OS CPU LIBC <<< "${LEAVES[$ZIP]}"
+            PKG="@haybarn/$LEAF_SLUG"
+            STAGE="stage/$LEAF_SLUG"
+
+            mkdir -p "$STAGE/bin"
+            unzip -j -o "$SRC" -d "$STAGE/bin/"
+            # Binary name inside the zip matches the binary name we want;
+            # windows zip contains haybarn.exe, others contain haybarn.
+            ls -la "$STAGE/bin/"
+
+            # libc field is honored by npm 10+; older clients ignore it and
+            # may try installing both glibc + musl leaves. The shim's runtime
+            # detection handles that gracefully (only loads the right one).
+            LIBC_JSON='[]'
+            [[ -n "$LIBC" ]] && LIBC_JSON="[\"$LIBC\"]"
+
+            cat > "$STAGE/package.json" <<JSON
+            {
+              "name": "$PKG",
+              "version": "$VERSION",
+              "description": "Haybarn CLI for $OS/$CPU${LIBC:+ ($LIBC)}. Installed automatically by the \`haybarn\` meta-package; use that, not this leaf, in your dependencies.",
+              "homepage": "https://github.com/Query-farm-haybarn/haybarn",
+              "repository": {
+                "type": "git",
+                "url": "git+https://github.com/Query-farm-haybarn/haybarn.git"
+              },
+              "license": "MIT",
+              "os": ["$OS"],
+              "cpu": ["$CPU"],
+              "libc": $LIBC_JSON,
+              "files": ["bin"],
+              "publishConfig": { "access": "public" }
+            }
+            JSON
+
+            # Strip the heredoc indent.
+            sed -i 's/^            //' "$STAGE/package.json"
+            cat "$STAGE/package.json"
+
+            echo ">>> publishing $PKG @ $VERSION (dist-tag: $DIST_TAG)"
+            (cd "$STAGE" && npm publish --provenance --access public --tag "$DIST_TAG")
+          done
+
+      - name: Assemble + publish meta package
+        env:
+          NPM_CONFIG_PROVENANCE: 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION='${{ steps.ver.outputs.version }}'
+          DIST_TAG='${{ steps.ver.outputs.dist_tag }}'
+
+          STAGE="stage/meta"
+          mkdir -p "$STAGE/bin"
+          cp tools/npm/bin/haybarn.cjs "$STAGE/bin/"
+          chmod +x "$STAGE/bin/haybarn.cjs"
+          cp tools/npm/README.md "$STAGE/"
+          cp LICENSE "$STAGE/"
+
+          # Construct optionalDependencies map. Only include leaves whose
+          # source zip was present in this release — if a platform leg
+          # failed to build we still want users on the other platforms to
+          # be able to install haybarn.
+          cat > /tmp/leaves.txt <<'EOF'
+          haybarn_cli-linux-amd64.zip cli-linux-x64
+          haybarn_cli-linux-arm64.zip cli-linux-arm64
+          haybarn_cli-linux-amd64-musl.zip cli-linux-x64-musl
+          haybarn_cli-linux-arm64-musl.zip cli-linux-arm64-musl
+          haybarn_cli-osx-amd64.zip cli-darwin-x64
+          haybarn_cli-osx-arm64.zip cli-darwin-arm64
+          haybarn_cli-windows-amd64.zip cli-win32-x64
+          EOF
+
+          OPT_DEPS=""
+          while read -r ZIP LEAF; do
+            [[ -n "$ZIP" ]] || continue
+            if [[ -f "release-assets/$ZIP" ]]; then
+              [[ -n "$OPT_DEPS" ]] && OPT_DEPS+=$',\n'
+              OPT_DEPS+="    \"@haybarn/$LEAF\": \"$VERSION\""
+            fi
+          done < /tmp/leaves.txt
+
+          cat > "$STAGE/package.json" <<JSON
+          {
+            "name": "haybarn",
+            "version": "$VERSION",
+            "description": "Haybarn — an independent derived distribution of DuckDB. Run via \`npx haybarn\`. Published by Query Farm LLC.",
+            "homepage": "https://github.com/Query-farm-haybarn/haybarn",
+            "repository": {
+              "type": "git",
+              "url": "git+https://github.com/Query-farm-haybarn/haybarn.git"
+            },
+            "license": "MIT",
+            "bin": { "haybarn": "bin/haybarn.cjs" },
+            "files": ["bin", "README.md", "LICENSE"],
+            "engines": { "node": ">=18" },
+            "keywords": ["haybarn", "duckdb", "cli", "olap", "sql"],
+            "optionalDependencies": {
+          $OPT_DEPS
+            },
+            "publishConfig": { "access": "public" }
+          }
+          JSON
+
+          sed -i 's/^          //' "$STAGE/package.json"
+          cat "$STAGE/package.json"
+
+          echo ">>> publishing haybarn @ $VERSION (dist-tag: $DIST_TAG)"
+          (cd "$STAGE" && npm publish --provenance --access public --tag "$DIST_TAG")
+
+      - name: Verify
+        shell: bash
+        run: |
+          VERSION='${{ steps.ver.outputs.version }}'
+          DIST_TAG='${{ steps.ver.outputs.dist_tag }}'
+          echo "haybarn $VERSION is on npm under the $DIST_TAG dist-tag."
+          echo "Users can run:"
+          if [[ "$DIST_TAG" == "rc" ]]; then
+            echo "  npx haybarn@rc -c \"PRAGMA version;\""
+          else
+            echo "  npx haybarn -c \"PRAGMA version;\""
+          fi
+# Haybarn fork — workflow re-index marker.
