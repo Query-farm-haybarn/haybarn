@@ -97,36 +97,59 @@ roll the pin forward deliberately. The where/why/how is in
 
 The Linux build environment is centrally maintained:
 
-- **Pre-built images on GHCR** at `ghcr.io/query-farm-haybarn/haybarn-linux_<arch>-{base,rust,full}:v1.5.2`.
+- **Pre-built images on GHCR** at `ghcr.io/query-farm-haybarn/haybarn-<arch>-<variant>:v1.5.2`.
   Built from `Query-farm-haybarn/haybarn-extension-ci-tools/docker/<arch>/Dockerfile`
-  by `.github/workflows/publish-build-images.yml` in that repo. 12 images
-  (4 archs × 3 toolchain variants). Public packages.
-- Consumers — `haybarn-release.yml` here, `haybarn-extensions.yml` here, and
+  by `.github/workflows/publish-build-images.yml` in that repo. Public packages.
+  - **Linux**: 12 images — `haybarn-linux_{amd64,arm64,amd64_musl,arm64_musl}-{base,rust,full}:v1.5.2`.
+  - **wasm**: 1 image — `haybarn-wasm:v1.5.2` (Phase D, ubuntu 24.04 base + emsdk 3.1.71
+    + vcpkg + ccache 4.13.6, no arch/variant fan-out). Consumers opt in via
+    `use_prebuilt_wasm_image: true`. Removes per-run `mymindstorm/setup-emsdk`
+    (~30-60s × 3 wasm legs) AND stabilises the emcc path inside the container
+    so ccache hashes repeat across runs (verified: 100% combined hit rate on
+    back-to-back same-SHA runs).
+- Consumers — `haybarn-release.yml` here, `haybarn-extensions.yml` here, the
+  four build-fork extension repos (iceberg/ducklake/delta/httpfs), and
   `haybarn-community-extensions/build.yml` — `docker pull` these instead of
-  `docker build`-ing inline. Saves ~5–8 min × 4 Linux archs per build.
-- Variant selection: `base` (no toolchains), `-rust` (Rust toolchain),
+  `docker build`-ing inline. Saves ~5–8 min × 4 Linux archs per build, and
+  another ~30s × 3 wasm legs.
+- Variant selection (Linux only): `base` (no toolchains), `-rust` (Rust),
   `-full` (rust + go + fortran + parser_tools + unixodbc + multimedia).
-  Engine release uses `base`; core extensions use `full` (delta/ducklake
-  need Rust; odbc_scanner needs unixodbc).
-- macOS / Windows / wasm jobs still run native on GH runners — no Docker.
+  Engine release uses `base`; core extensions use `full`. Community-extensions
+  reads each descriptor's `requires_toolchains` field and picks variant
+  accordingly.
+- macOS / Windows jobs still run native on GH runners — no Docker.
 
 ccache is wired through R2 (`http://haybarn-vcpkg-cache.rusty-bb6.workers.dev/ccache`)
 for cross-leg and cross-repo hits:
 
-- **Linux**: ccache 4.13.6 baked into the Phase A images (musl-static binary
-  from upstream GitHub release).
+- **Linux Docker + wasm Docker**: ccache 4.13.6 baked into the GHCR images
+  (musl-static binary from upstream GitHub release).
 - **macOS**: Homebrew ships 4.13+, works as-is.
-- **Windows + wasm**: `hendrikmuhs/ccache-action` installs 4.9.1 from
-  chocolatey/apt, whose HTTP backend silently fails bearer-auth PUTs. The
-  reusable workflow drops a 4.13.6 binary over the installed copy after
-  the action runs.
+- **Windows**: `hendrikmuhs/ccache-action` installs 4.9.1 from chocolatey,
+  whose HTTP backend silently fails bearer-auth PUTs. The reusable workflow
+  drops a 4.13.6 binary over the installed copy after the action runs.
+- **No L1 GitHub Actions cache.** Empirically thrashing under high-churn
+  community-ext builds (10 GB per-repo cap, LRU evictions faster than the
+  cache could populate). R2 is the only ccache backend. The
+  `hendrikmuhs/ccache-action` invocations on the non-Docker legs are set to
+  `save: false, read-only: true` so the action still installs the binary
+  but doesn't push to the L1 cache.
 
-The R2 bucket holds both vcpkg binaries and ccache objects under different
-key prefixes. The bearer token is `HAYBARN_VCPKG_TOKEN` (org-level secret).
+The R2 bucket holds vcpkg binaries and ccache objects under different
+key prefixes. The bearer token is `HAYBARN_VCPKG_TOKEN` (org-level secret;
+mapped to the lowercase `vcpkg_token` callee secret via explicit `secrets:`
+mapping — `secrets: inherit` doesn't rename).
+
+**ccache measurement gotcha** (learned the hard way): cache keys are
+sensitive to more than source code — environment variable ordering, CCACHE_*
+config flags, the workflow file contents, all factor in. When measuring
+hit-rate after a change, always fire two consecutive runs on the same
+ci-tools SHA before drawing conclusions. A "0% remote hit" reading on a
+fresh SHA just means nothing was warm yet, not that writes are broken.
 
 ## Distribution / release flow
 
-- Release tag pattern: `haybarn-v<version>` (e.g. `haybarn-v1.5.2-rc6`). Fires
+- Release tag pattern: `haybarn-v<version>` (e.g. `haybarn-v1.5.2-rc9`). Fires
   `haybarn-release.yml` (engine binaries) and `haybarn-extensions.yml` (core
   extensions), and the same tag on each downstream client repo fires their
   workflows.
@@ -138,6 +161,18 @@ key prefixes. The bearer token is `HAYBARN_VCPKG_TOKEN` (org-level secret).
   Release. (cosign `sign-blob` was dropped in rc7 — the attestation supersedes
   it and is verifiable against this repo specifically, whereas the cosign
   recipe had an unpinnable `.*` identity regex.)
+- After `Haybarn Publish` lands, two more workflows fan-out from its
+  `workflow_run` signal:
+  - `haybarn-npm-publish.yml` — downloads the release zips, assembles 7
+    per-platform leaves `@haybarn/cli-*` + one meta `haybarn`, publishes to
+    npm via Trusted Publisher OIDC (`actions/setup-node@v6` with Node 24,
+    which ships npm 11; npm 10's `--provenance` signs Sigstore but skips
+    the publish-authorizing token exchange).
+  - `haybarn-pypi-cli-publish.yml` — builds one platform-tagged wheel per
+    release zip into the `haybarn-cli` PyPI project, published via PyPI
+    Trusted Publisher OIDC.
+  Result: every tag push automatically lands on GitHub Releases + npm +
+  PyPI. Users run `npx haybarn@rc` or `uvx haybarn-cli==<version>`.
 - **GPG key gotcha**: the `HAYBARN_GPG_PRIVATE_KEY` org secret is stored
   hex-encoded (`gpg --export-secret-keys ... | xxd -p`), NOT ASCII-armored.
   The publish workflow probes 6 shapes (armored, armored-with-`\n`-escapes,
@@ -175,12 +210,54 @@ Haybarn is multi-repo. Each is pinned by SHA where another consumes it.
 
 ## Recent state (as of 2026-05-16)
 
-Current rc series: **`haybarn-v1.5.2-rc7`**. Major work this cycle:
+Current rc series: **`haybarn-v1.5.2-rc9`**. Major work this cycle:
 
-- SLSA build-provenance attestations added to `haybarn-release.yml` (all 4 jobs)
-  via `actions/attest-build-provenance@v2`; cosign `sign-blob` dropped from
-  `haybarn-publish.yml` along with the misleading `.*` identity-regex recipe
-  in the release notes. GPG signature retained for the traditional audience.
+- **rc9 — branding cleanup in autoload lists.** Removed `motherduck`,
+  `lance`, and `vortex` from `internal_extensions[]`, `auto_install[]`,
+  and `AUTOLOADABLE_EXTENSIONS[]`. Also dropped the `md` → `motherduck`
+  alias. These were upstream-DuckDB-only listings that would never load
+  against the Haybarn trust root anyway; advertising them as autoloadable
+  produced confusing signature-error UX. Users can still INSTALL/LOAD
+  them manually against the upstream DuckDB repo.
+- **rc8 — extension cache directory.** Flipped the CMakeLists.txt
+  `EXTENSION_DIRECTORIES` CACHE default from `~/.duckdb/extensions` to
+  `~/.haybarn/extensions`. The C++ `#define` fallback in
+  `extension_install.cpp` was already correct but dead — CMake stamps
+  this value into a compile-time macro via `target_compile_definitions`
+  that wins. Every Haybarn build through rc7 was silently writing to
+  `~/.duckdb/`, where signature verification would always fail.
+- **rc7 — SLSA build-provenance attestations.** Added to
+  `haybarn-release.yml` (all 4 jobs) via `actions/attest-build-provenance@v2`;
+  cosign `sign-blob` dropped from `haybarn-publish.yml` along with the
+  misleading `.*` identity-regex recipe in the release notes. GPG
+  signature retained for the traditional audience.
+
+This-session adjacent work (not engine-versioned):
+
+- **npm publishing wired up** end-to-end. `npx haybarn@rc` works as of
+  the rc7 smoke test; rc8/rc9 will land automatically via the
+  `haybarn-npm-publish.yml` workflow that fires on `workflow_run` after
+  `Haybarn Publish` completes. Layout: `haybarn` meta package +
+  `@haybarn/cli-<plat>` leaves (linux x64/arm64 glibc+musl, darwin
+  x64/arm64, win32 x64). OIDC Trusted Publisher; no NPM_TOKEN secret.
+- **PyPI `haybarn-cli` publishing wired up** end-to-end. `uvx
+  haybarn-cli==<version>` works. Same trigger model
+  (`haybarn-pypi-cli-publish.yml` on `workflow_run`). One project, seven
+  platform-tagged wheels (`manylinux_2_28_*`, `musllinux_1_2_*`,
+  `macosx_11_0_*`, `win_amd64`). OIDC Trusted Publisher + PEP 740
+  attestations.
+- **Wasm Phase D image** published at `ghcr.io/.../haybarn-wasm:v1.5.2`.
+  Confirmed 100% combined ccache hit rate on back-to-back runs once
+  callers opt into `use_prebuilt_wasm_image: true`. Predicted to save
+  ~30-50 CI hours per full `build_all` against the 240-extension catalog.
+- **haybarn-status worker** live at <https://haybarn-status.query.farm>;
+  uses display_title (set by build.yml's run-name when
+  `extension_name` is an input) as the primary signal for per-extension
+  attribution in the community matrix.
+- **GitHub Actions version bumps** in extension-ci-tools — Node-20-era
+  pins (`actions/checkout@v2/v4`, `actions/setup-python@v5`,
+  `actions/download-artifact@v4`) → current. Other repos still need
+  the same sweep.
 
 Earlier (rc6) work this series:
 
@@ -200,8 +277,12 @@ Earlier (rc6) work this series:
 What's known broken / not yet done: see `~/.claude/projects/.../memory/haybarn-status.md`
 for the latest "pending" list. Engine client repos (`haybarn-jdbc`,
 `haybarn-node-neo`) need their submodule bumps + first tag pushes; PyPI/NPM
-publishing for haybarn-python is gated on a workflow_dispatch with
-`publish=pypi`.
+publishing for haybarn-python (the *library*, distinct from `haybarn-cli`)
+is gated on a workflow_dispatch with `publish=pypi`. Also: `sync_from_upstream`
+on haybarn-community-extensions needs the repo's Actions setting flipped to
+"Allow GitHub Actions to create and approve pull requests" before it can open
+the 240-descriptor import PR; once that's flipped and the PR merges,
+`build_all.yml` can fan out per-extension builds across the full catalog.
 
 ## Local layout
 
