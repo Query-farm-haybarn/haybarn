@@ -67,7 +67,42 @@ jobs:
           HAYBARN_GPG_PRIVATE_KEY: ${{ secrets.HAYBARN_GPG_PRIVATE_KEY }}
           HAYBARN_GPG_PASSPHRASE: ${{ secrets.HAYBARN_GPG_PASSPHRASE }}
         run: |
-          echo "$HAYBARN_GPG_PRIVATE_KEY" | gpg --batch --import
+          # gpg --batch --import requires either:
+          #   (a) ASCII-armored text starting with "-----BEGIN PGP PRIVATE KEY BLOCK-----"
+          #   (b) raw binary key bytes
+          # GitHub Action secrets preserve embedded newlines but can be stored
+          # in a few different shapes:
+          #   - ASCII-armored text (most common; works with stdin)
+          #   - Base64 of the binary key (often when copy/pasted from clipboard
+          #     utilities that strip newlines)
+          # The previous `echo "$VAR" | gpg --import` failed with
+          # "no valid OpenPGP data found" on multiple rc publish runs — so
+          # the stored value is one of those non-direct shapes. Try the most
+          # common forms in order; whichever produces a real OpenPGP packet
+          # wins. Be careful never to print the key value or any prefix of
+          # it (one detected byte could narrow the keyspace).
+          set -euo pipefail
+          KEYFILE="$(mktemp)"
+          trap 'shred -u "$KEYFILE" 2>/dev/null || rm -f "$KEYFILE"' EXIT
+
+          first_char=$(printf '%s' "$HAYBARN_GPG_PRIVATE_KEY" | head -c 1)
+          if [ "$first_char" = "-" ]; then
+            shape="ascii-armored"
+            printf '%s\n' "$HAYBARN_GPG_PRIVATE_KEY" > "$KEYFILE"
+          else
+            # Not "-" → not armored. Try base64 decode first; if it succeeds AND
+            # yields a valid OpenPGP packet, use it. Otherwise fall back to the
+            # raw bytes (rare but documented).
+            if printf '%s' "$HAYBARN_GPG_PRIVATE_KEY" | base64 -d > "$KEYFILE" 2>/dev/null && [ -s "$KEYFILE" ]; then
+              shape="base64-decoded"
+            else
+              shape="raw-bytes"
+              printf '%s' "$HAYBARN_GPG_PRIVATE_KEY" > "$KEYFILE"
+            fi
+          fi
+          echo "GPG key shape detected: $shape ($(wc -c <"$KEYFILE") bytes)"
+
+          gpg --batch --import "$KEYFILE"
           gpg --batch --yes --pinentry-mode loopback \
             --passphrase "$HAYBARN_GPG_PASSPHRASE" \
             --armor --detach-sign --output release/SHA256SUMS.asc release/SHA256SUMS
