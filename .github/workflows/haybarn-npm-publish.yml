@@ -93,68 +93,39 @@ jobs:
       - name: Assemble + publish per-platform leaf packages
         env:
           NPM_CONFIG_PROVENANCE: 'true'
+          VERSION: ${{ steps.ver.outputs.version }}
+          DIST_TAG: ${{ steps.ver.outputs.dist_tag }}
         shell: bash
         run: |
           set -euo pipefail
 
-          VERSION='${{ steps.ver.outputs.version }}'
-          DIST_TAG='${{ steps.ver.outputs.dist_tag }}'
-
-          # asset zipfile  → npm leaf name           → os / cpu / libc
-          declare -A LEAVES=(
-            ["haybarn_cli-linux-amd64.zip"]="cli-linux-x64|linux|x64|glibc"
-            ["haybarn_cli-linux-arm64.zip"]="cli-linux-arm64|linux|arm64|glibc"
-            ["haybarn_cli-linux-amd64-musl.zip"]="cli-linux-x64-musl|linux|x64|musl"
-            ["haybarn_cli-linux-arm64-musl.zip"]="cli-linux-arm64-musl|linux|arm64|musl"
-            ["haybarn_cli-osx-amd64.zip"]="cli-darwin-x64|darwin|x64|"
-            ["haybarn_cli-osx-arm64.zip"]="cli-darwin-arm64|darwin|arm64|"
-            ["haybarn_cli-windows-amd64.zip"]="cli-win32-x64|win32|x64|"
+          # ZIP_BASENAME LEAF_SLUG OS CPU LIBC
+          LEAVES=(
+            "haybarn_cli-linux-amd64.zip          cli-linux-x64         linux  x64    glibc"
+            "haybarn_cli-linux-arm64.zip          cli-linux-arm64       linux  arm64  glibc"
+            "haybarn_cli-linux-amd64-musl.zip     cli-linux-x64-musl    linux  x64    musl"
+            "haybarn_cli-linux-arm64-musl.zip     cli-linux-arm64-musl  linux  arm64  musl"
+            "haybarn_cli-osx-amd64.zip            cli-darwin-x64        darwin x64    -"
+            "haybarn_cli-osx-arm64.zip            cli-darwin-arm64      darwin arm64  -"
+            "haybarn_cli-windows-amd64.zip        cli-win32-x64         win32  x64    -"
           )
 
-          for ZIP in "${!LEAVES[@]}"; do
+          for row in "${LEAVES[@]}"; do
+            read -r ZIP LEAF_SLUG OS CPU LIBC <<< "$row"
             SRC="release-assets/$ZIP"
             if [[ ! -f "$SRC" ]]; then
               echo "::warning::missing release asset $ZIP — skipping its leaf"
               continue
             fi
 
-            IFS='|' read -r LEAF_SLUG OS CPU LIBC <<< "${LEAVES[$ZIP]}"
-            PKG="@haybarn/$LEAF_SLUG"
-            STAGE="stage/$LEAF_SLUG"
-
+            export PKG="@haybarn/$LEAF_SLUG"
+            export STAGE="stage/$LEAF_SLUG"
+            export OS CPU LIBC
             mkdir -p "$STAGE/bin"
             unzip -j -o "$SRC" -d "$STAGE/bin/"
-            # Binary name inside the zip matches the binary name we want;
-            # windows zip contains haybarn.exe, others contain haybarn.
             ls -la "$STAGE/bin/"
 
-            # libc field is honored by npm 10+; older clients ignore it and
-            # may try installing both glibc + musl leaves. The shim's runtime
-            # detection handles that gracefully (only loads the right one).
-            LIBC_JSON='[]'
-            [[ -n "$LIBC" ]] && LIBC_JSON="[\"$LIBC\"]"
-
-            cat > "$STAGE/package.json" <<JSON
-            {
-              "name": "$PKG",
-              "version": "$VERSION",
-              "description": "Haybarn CLI for $OS/$CPU${LIBC:+ ($LIBC)}. Installed automatically by the \`haybarn\` meta-package; use that, not this leaf, in your dependencies.",
-              "homepage": "https://github.com/Query-farm-haybarn/haybarn",
-              "repository": {
-                "type": "git",
-                "url": "git+https://github.com/Query-farm-haybarn/haybarn.git"
-              },
-              "license": "MIT",
-              "os": ["$OS"],
-              "cpu": ["$CPU"],
-              "libc": $LIBC_JSON,
-              "files": ["bin"],
-              "publishConfig": { "access": "public" }
-            }
-            JSON
-
-            # Strip the heredoc indent.
-            sed -i 's/^            //' "$STAGE/package.json"
+            python3 tools/npm/build_leaf.py
             cat "$STAGE/package.json"
 
             echo ">>> publishing $PKG @ $VERSION (dist-tag: $DIST_TAG)"
@@ -164,66 +135,27 @@ jobs:
       - name: Assemble + publish meta package
         env:
           NPM_CONFIG_PROVENANCE: 'true'
+          VERSION: ${{ steps.ver.outputs.version }}
+          DIST_TAG: ${{ steps.ver.outputs.dist_tag }}
         shell: bash
         run: |
           set -euo pipefail
 
-          VERSION='${{ steps.ver.outputs.version }}'
-          DIST_TAG='${{ steps.ver.outputs.dist_tag }}'
-
-          STAGE="stage/meta"
+          export STAGE="stage/meta"
           mkdir -p "$STAGE"
           cp tools/npm/haybarn.cjs "$STAGE/"
           chmod +x "$STAGE/haybarn.cjs"
           cp tools/npm/README.md "$STAGE/"
           cp LICENSE "$STAGE/"
 
-          # Construct optionalDependencies map. Only include leaves whose
-          # source zip was present in this release — if a platform leg
-          # failed to build we still want users on the other platforms to
-          # be able to install haybarn.
-          cat > /tmp/leaves.txt <<'EOF'
-          haybarn_cli-linux-amd64.zip cli-linux-x64
-          haybarn_cli-linux-arm64.zip cli-linux-arm64
-          haybarn_cli-linux-amd64-musl.zip cli-linux-x64-musl
-          haybarn_cli-linux-arm64-musl.zip cli-linux-arm64-musl
-          haybarn_cli-osx-amd64.zip cli-darwin-x64
-          haybarn_cli-osx-arm64.zip cli-darwin-arm64
-          haybarn_cli-windows-amd64.zip cli-win32-x64
-          EOF
+          # PRESENT_ZIPS = comma-joined list of release-asset basenames
+          # actually present on disk. build_meta.py uses this to decide
+          # which optional deps to declare — a platform that didn't build
+          # in this release is omitted, not declared with a missing version.
+          export PRESENT_ZIPS=$(cd release-assets && ls *.zip 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+          echo "PRESENT_ZIPS=$PRESENT_ZIPS"
 
-          OPT_DEPS=""
-          while read -r ZIP LEAF; do
-            [[ -n "$ZIP" ]] || continue
-            if [[ -f "release-assets/$ZIP" ]]; then
-              [[ -n "$OPT_DEPS" ]] && OPT_DEPS+=$',\n'
-              OPT_DEPS+="    \"@haybarn/$LEAF\": \"$VERSION\""
-            fi
-          done < /tmp/leaves.txt
-
-          cat > "$STAGE/package.json" <<JSON
-          {
-            "name": "haybarn",
-            "version": "$VERSION",
-            "description": "Haybarn — an independent derived distribution of DuckDB. Run via \`npx haybarn\`. Published by Query Farm LLC.",
-            "homepage": "https://github.com/Query-farm-haybarn/haybarn",
-            "repository": {
-              "type": "git",
-              "url": "git+https://github.com/Query-farm-haybarn/haybarn.git"
-            },
-            "license": "MIT",
-            "bin": { "haybarn": "haybarn.cjs" },
-            "files": ["haybarn.cjs", "README.md", "LICENSE"],
-            "engines": { "node": ">=18" },
-            "keywords": ["haybarn", "duckdb", "cli", "olap", "sql"],
-            "optionalDependencies": {
-          $OPT_DEPS
-            },
-            "publishConfig": { "access": "public" }
-          }
-          JSON
-
-          sed -i 's/^          //' "$STAGE/package.json"
+          python3 tools/npm/build_meta.py
           cat "$STAGE/package.json"
 
           echo ">>> publishing haybarn @ $VERSION (dist-tag: $DIST_TAG)"
