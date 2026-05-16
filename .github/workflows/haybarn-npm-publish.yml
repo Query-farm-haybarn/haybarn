@@ -56,21 +56,21 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # Node 24 ships with npm 11.x bundled. npm 11.5+ is required for
+      # the OIDC Trusted Publisher token-exchange flow that actually
+      # authorizes publishes — older npm only signs Sigstore provenance
+      # and falls back to NODE_AUTH_TOKEN for the publish PUT, which is
+      # empty in our setup → registry 404. (Attempted `npm install -g
+      # npm@latest` on top of Node 22 first and hit the classic self-
+      # replace bootstrap corruption: `Cannot find module 'promise-retry'`.
+      # Bumping the runtime is the clean fix.)
       - uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
-      # Trusted Publisher OIDC exchange requires npm 11.5+ for the token
-      # exchange to actually authorize publishes. Node 22's bundled npm
-      # (10.x) signs Sigstore provenance fine but falls back to
-      # NODE_AUTH_TOKEN for the publish PUT, which is empty in our setup —
-      # so the registry returns 404 with no clue. Bumping to the latest
-      # npm fixes both paths in one step.
-      - name: Ensure npm 11.5+ (Trusted Publisher requirement)
-        run: |
-          npm install -g npm@latest
-          npm --version
+      - name: Sanity-check npm version
+        run: npm --version
 
       - name: Derive npm version + dist-tag from the release tag
         id: ver
