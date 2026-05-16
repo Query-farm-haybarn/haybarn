@@ -194,7 +194,14 @@ option(FORCE_WARN_UNUSED "Unused code objects lead to compiler warnings." FALSE)
 option(ENABLE_EXTENSION_AUTOLOADING "Enable extension auto-loading by default." FALSE)
 option(ENABLE_EXTENSION_AUTOINSTALL "Enable extension auto-installing by default." FALSE)
 option(EXTENSION_TESTS_ONLY "Only load the tests for extensions, don't actually build them; useful for testing loadable extensions" FALSE)
-set(EXTENSION_DIRECTORIES "~/.duckdb/extensions" CACHE STRING "Default extension directories (;-separated list on win, : on unix)")
+# Haybarn: extension cache lives under ~/.haybarn/extensions/ to keep clear
+# of any coexisting upstream duckdb install. The .duckdb-signed extension
+# cache would never load against Haybarn's trust root anyway, so sharing
+# the directory would just litter ~/.duckdb with unloadable .duckdb_extension
+# files. The C++ fallback in extension_install.cpp matches; this CMake
+# default is the value that actually wins because target_compile_definitions
+# below stamps it into DUCKDB_EXTENSION_DIRECTORIES at build time.
+set(EXTENSION_DIRECTORIES "~/.haybarn/extensions" CACHE STRING "Default extension directories (;-separated list on win, : on unix)")
 option(WASM_LOADABLE_EXTENSIONS "WebAssembly build with loadable extensions." FALSE)
 option(ENABLE_SANITIZER "Enable address sanitizer." TRUE)
 option(ENABLE_THREAD_SANITIZER "Enable thread sanitizer." FALSE)
