@@ -365,3 +365,6 @@ generated_extension_loader_package_build.cpp
 
 # clangd tidy/format cache
 .cache
+
+# CF wrangler local state (not part of the haybarn engine repo)
+.wrangler/
