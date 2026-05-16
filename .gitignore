@@ -357,3 +357,6 @@ extension_external
 test/sql/pragma/output.json
 tools/pythonpkg/duckdb_build/
 generated_extension_loader_package_build.cpp
+
+# CF wrangler local state (not part of the haybarn engine repo)
+.wrangler/
