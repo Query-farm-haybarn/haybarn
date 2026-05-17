@@ -71,12 +71,14 @@ OVERRIDE_GIT_DESCRIBE=v1.5.2 make release
   `gh attestation verify <file> --repo Query-farm-haybarn/haybarn`).
   OS-native code signing (Apple/Windows) is not wired up yet — TODOs are marked
   in `.github/workflows/haybarn-*.yml`.
-- **Extensions:** Cloudflare R2, split across two buckets:
+- **Extensions:** Cloudflare R2, single bucket fronted by
+  `haybarn-extensions.query.farm`, segregated by top-level path prefix:
   - Core: `https://haybarn-extensions.query.farm/core` (this repo, via
     `haybarn-extensions.yml`).
-  - Community: `https://haybarn-community-extensions.query.farm` (separate repo
-    `Query-farm-haybarn/haybarn-community-extensions`, mirror of upstream's
-    ~150 community extensions rebuilt against the Haybarn engine).
+  - Community: `https://haybarn-extensions.query.farm/community` (separate
+    repo `Query-farm-haybarn/haybarn-community-extensions`, mirror of
+    upstream's ~150 community extensions rebuilt against the Haybarn
+    engine; deploys to the same bucket under the `community/` prefix).
   Both signed with the SAME Haybarn extension key (`HAYBARN_EXTENSION_SIGNING_PK`
   secret; public half embedded in `extension_helper.cpp` as
   `HAYBARN_TRUST_ROOT`, referenced by both `public_keys[]` and
@@ -261,8 +263,10 @@ This-session adjacent work (not engine-versioned):
 
 Earlier (rc6) work this series:
 
-- Two-bucket distribution split: core (`/core` path on `haybarn-extensions.query.farm`)
-  vs community (own subdomain `haybarn-community-extensions.query.farm`).
+- Single-bucket distribution split on `haybarn-extensions.query.farm`:
+  core under `/core`, community under `/community`. (Earlier in the series
+  community had its own `haybarn-community-extensions.query.farm`
+  subdomain; consolidated to one custom domain for simpler ops.)
 - Pre-built GHCR build-environment images for all Linux platforms (3 toolchain variants × 4 archs).
 - Community-extensions repo bootstrapped with `waddle` smoke extension; first
   end-to-end validation deployed 9 platform binaries to R2 and verified
