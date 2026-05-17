@@ -14,6 +14,7 @@ env:
   BRANCHES_TO_BE_CACHED: ${{ github.repository == 'duckdb/duckdb' && '["refs/heads/main", "refs/heads/v1.4-andium", "refs/heads/v1.5-variegata"]' || ''}}
   REDUCE_SYMBOLS: 1
   PYTHONUNBUFFERED: 1
+  X_VCPKG_ASSET_SOURCES: 'clear;x-azurl,https://haybarn-vcpkg-cache.rusty-bb6.workers.dev/assets/,,read'
 
 jobs:
   check-draft:
