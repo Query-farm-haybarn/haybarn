@@ -62,10 +62,23 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           SHA="${{ github.event.workflow_run.head_sha }}"
-          LOOKUP=$(gh api "repos/$GITHUB_REPOSITORY/git/refs/tags" \
-                     --jq ".[] | select(.object.sha == \"$SHA\") | .ref" \
+          # Walk haybarn-v* tag refs, dereferencing annotated tags. For an
+          # annotated tag (`object.type == "tag"`), the ref's `object.sha`
+          # is the tag-object SHA — NOT the commit. We must follow the tag
+          # object to its `.object.sha` to find the commit. Skipping this
+          # was rc10's specific failure mode (annotated tag, no match).
+          LOOKUP=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/haybarn-v" \
+                     --jq '.[] | "\(.ref) \(.object.type) \(.object.sha)"' \
+                   | while read ref kind obj_sha; do
+                       commit_sha="$obj_sha"
+                       if [[ "$kind" == "tag" ]]; then
+                         commit_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$obj_sha" --jq .object.sha)
+                       fi
+                       if [[ "$commit_sha" == "$SHA" ]]; then
+                         echo "$ref"
+                       fi
+                     done \
                    | sed 's|refs/tags/||' \
-                   | grep '^haybarn-v' \
                    | head -1)
           if [[ -z "$LOOKUP" ]]; then
             echo "::error::head_sha $SHA doesn't correspond to a haybarn-v* tag — nothing to publish"
