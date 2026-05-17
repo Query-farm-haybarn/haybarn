@@ -13,6 +13,7 @@ env:
   DUCKDB_WASM_VERSION: "cf2048bd6d669ffa05c56d7d453e09e99de8b87e"
   REDUCE_SYMBOLS: 1
   PYTHONUNBUFFERED: 1
+  X_VCPKG_ASSET_SOURCES: 'clear;x-azurl,https://haybarn-vcpkg-cache.rusty-bb6.workers.dev/assets/,,read'
 
 jobs:
   check-draft:
