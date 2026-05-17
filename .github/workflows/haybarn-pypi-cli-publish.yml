@@ -42,13 +42,37 @@ jobs:
   build-and-publish:
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       startsWith(github.event.workflow_run.head_branch, 'haybarn-v'))
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     env:
       TAG: ${{ inputs.tag || github.event.workflow_run.head_branch }}
     steps:
       - uses: actions/checkout@v6
+
+      # Chained workflow_run events on GitHub Actions don't reliably
+      # propagate the originating tag name into head_branch — Haybarn
+      # Publish (workflow_run on Haybarn Release) sees head_branch='haybarn'
+      # (the branch the workflow file lives on) instead of the tag that
+      # triggered the original Haybarn Release. The commit SHA is propagated
+      # correctly though, so we re-derive the tag via a refs/tags lookup
+      # when TAG doesn't already look like one.
+      - name: Re-derive TAG from head_sha if needed
+        if: ${{ github.event_name == 'workflow_run' && !startsWith(env.TAG, 'haybarn-v') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA="${{ github.event.workflow_run.head_sha }}"
+          LOOKUP=$(gh api "repos/$GITHUB_REPOSITORY/git/refs/tags" \
+                     --jq ".[] | select(.object.sha == \"$SHA\") | .ref" \
+                   | sed 's|refs/tags/||' \
+                   | grep '^haybarn-v' \
+                   | head -1)
+          if [[ -z "$LOOKUP" ]]; then
+            echo "::error::head_sha $SHA doesn't correspond to a haybarn-v* tag — nothing to publish"
+            exit 1
+          fi
+          echo "::notice::Re-derived TAG via head_sha lookup: $LOOKUP"
+          echo "TAG=$LOOKUP" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v6
         with:
