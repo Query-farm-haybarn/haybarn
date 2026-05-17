@@ -65,14 +65,24 @@ def main() -> int:
         "use that, not this leaf, in your dependencies."
     )
 
+    # Repository URL must match the GitHub repo the npm provenance
+    # attestation was signed from, otherwise npm rejects publish with
+    # E422 "Error verifying sigstore provenance bundle". GITHUB_REPOSITORY
+    # is set automatically by GitHub Actions to the right slug for whichever
+    # repo is running this workflow (haybarn / haybarn-community-extensions /
+    # any build-fork). Fallback for local testing.
+    repo_slug = os.environ.get("GITHUB_REPOSITORY",
+                               "Query-farm-haybarn/haybarn-community-extensions")
+    repo_url = f"https://github.com/{repo_slug}"
+
     spec = {
         "name": pkg,
         "version": version,
         "description": desc,
-        "homepage": "https://github.com/Query-farm-haybarn/haybarn-community-extensions",
+        "homepage": repo_url,
         "repository": {
             "type": "git",
-            "url": "git+https://github.com/Query-farm-haybarn/haybarn-community-extensions.git",
+            "url": f"git+{repo_url}.git",
         },
         "license": "MIT",
         "os": [host_os],
