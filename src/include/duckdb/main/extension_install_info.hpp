@@ -55,15 +55,12 @@ public:
 
 struct ExtensionRepository {
 	//! All currently available repositories. Haybarn hosts its own signed
-	//! extension repositories on Cloudflare R2, fronted by query.farm subdomains.
-	//! Core and community live in separate buckets (and therefore separate
-	//! subdomains) so they can be operated independently — community has a much
-	//! larger surface area (~150 third-party extensions, rebuilt via the
-	//! Query-farm-haybarn/haybarn-community-extensions mirror) and we want its
-	//! deploy / cache-purge churn to never affect the core bucket.
+	//! extension repositories on Cloudflare R2, fronted by the single
+	//! `haybarn-extensions.query.farm` custom domain. Core and community share
+	//! one bucket, segregated by top-level path prefix (/core, /community).
 	//! The upstream nightly repository concept is intentionally dropped.
 	static constexpr const char *CORE_REPOSITORY_URL = "https://haybarn-extensions.query.farm/core";
-	static constexpr const char *COMMUNITY_REPOSITORY_URL = "https://haybarn-community-extensions.query.farm";
+	static constexpr const char *COMMUNITY_REPOSITORY_URL = "https://haybarn-extensions.query.farm/community";
 
 	//! Debugging repositories (target local, relative paths that are produced by DuckDB's build system)
 	static constexpr const char *BUILD_DEBUG_REPOSITORY_PATH = "./build/debug/repository";
