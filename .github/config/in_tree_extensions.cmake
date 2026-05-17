@@ -12,6 +12,15 @@ duckdb_extension_load(json)
 duckdb_extension_load(parquet)
 duckdb_extension_load(tpcds)
 duckdb_extension_load(tpch)
+# Haybarn: statically link httpfs so the engine can fetch other
+# extensions over HTTPS without needing to bootstrap httpfs first.
+# extension_install.cpp's HTTPUtil::IsHTTPProtocol only matches http://
+# (not https://), so for the default https://haybarn-extensions.query.farm
+# repository the install falls through to DirectInstallExtension →
+# fs.FileExists(<https URL>) which requires httpfs to already be loaded
+# — circular dependency for the bootstrap install of httpfs itself.
+# Upstream DuckDB releases include httpfs the same way for the same reason.
+duckdb_extension_load(httpfs)
 
 # Test extension for the upcoming C CAPI extensions
 duckdb_extension_load(demo_capi DONT_LINK)
