@@ -58,6 +58,12 @@ def main() -> int:
 
     optional = {f"{pkg}-{slug}": version for slug in present_leaves}
 
+    # See npm_build_leaf.py — repository URL has to match the source
+    # repo from the npm provenance attestation.
+    repo_slug = os.environ.get("GITHUB_REPOSITORY",
+                               "Query-farm-haybarn/haybarn-community-extensions")
+    repo_url = f"https://github.com/{repo_slug}"
+
     spec = {
         "name": pkg,
         "version": version,
@@ -66,10 +72,10 @@ def main() -> int:
             f"{haybarn_version}. Install this meta-package; npm will pull "
             "only the binary leaf matching your platform."
         ),
-        "homepage": "https://github.com/Query-farm-haybarn/haybarn-community-extensions",
+        "homepage": repo_url,
         "repository": {
             "type": "git",
-            "url": "git+https://github.com/Query-farm-haybarn/haybarn-community-extensions.git",
+            "url": f"git+{repo_url}.git",
         },
         "license": "MIT",
         "keywords": ["haybarn", "duckdb", "extension", extension],
