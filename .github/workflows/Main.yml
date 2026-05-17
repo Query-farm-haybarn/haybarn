@@ -10,6 +10,11 @@ concurrency:
 
 env:
   GH_TOKEN: ${{ secrets.GH_TOKEN }}
+  # Haybarn vcpkg ASSET cache (read-only). Mirrors source-tarball downloads
+  # via the same Worker + R2 bucket as the binary cache. Read-only here
+  # because this workflow's triggers can include untrusted contexts; the
+  # extension-distribution path handles writes from trusted runs.
+  X_VCPKG_ASSET_SOURCES: 'clear;x-azurl,https://haybarn-vcpkg-cache.rusty-bb6.workers.dev/assets/,,read'
 
 jobs:
  check-draft:
