@@ -222,116 +222,27 @@ jobs:
           if-no-files-found: error
 
   # ------------------------------------------------------------------
-  # Aggregate publish: pip wheels and npm packages. Both gated on
-  # deploy=true (same as the publish job). HAYBARN_PYPI_TOKEN +
-  # HAYBARN_NPM_TOKEN org secrets handle auth (same pattern as
-  # haybarn-community-extensions/.github/workflows/_extension_deploy.yml).
-  # id-token: write is for provenance attestations, not for the publish
-  # auth itself.
+  # Registry publish (PyPI + npm) is delegated to a separate reusable
+  # workflow so the two jobs can be re-dispatched independently when
+  # PyPI's anti-spam project-creation rate limit ("429 too many new
+  # projects") bounces an earlier attempt — no rebuild required.
+  #
+  # Retry recipe:
+  #   gh workflow run "_extension_registry_publish.yml" \\
+  #     --repo Query-farm-haybarn/haybarn --ref <branch> \\
+  #     -f source_run_id=<the failed run's id>
   # ------------------------------------------------------------------
-  publish_pypi:
-    name: Publish PyPI (core)
+  call_publish_registries:
+    name: Publish PyPI + npm
     needs: publish
     if: ${{ inputs.deploy == 'true' }}
-    runs-on: ubuntu-24.04
+    uses: ./.github/workflows/_extension_registry_publish.yml
     permissions:
       contents: read
-      id-token: write    # PEP 740 attestations
-    concurrency:
-      group: haybarn-extensions-pypi-${{ github.ref }}
-      cancel-in-progress: false
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: core-pypi-wheels
-          path: dist/
-      - run: ls -la dist/
-      - uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: dist/
-          password: ${{ secrets.HAYBARN_PYPI_TOKEN }}
-          attestations: true
-          skip-existing: true
-          verbose: true
-
-  publish_npm:
-    name: Publish npm (core)
-    needs: publish
-    if: ${{ inputs.deploy == 'true' }}
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      id-token: write    # --provenance attestations
-    concurrency:
-      group: haybarn-extensions-npm-${{ github.ref }}
-      cancel-in-progress: false
-    steps:
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
-      - uses: actions/download-artifact@v4
-        with:
-          name: core-npm-packages
-          path: dist/
-      - name: List staged packages
-        run: |
-          echo "leaves:"; ls dist/npm-leaves/ 2>/dev/null || echo "(none)"
-          echo "metas:"; ls dist/npm-metas/  2>/dev/null || echo "(none)"
-      - name: Publish leaves
-        env:
-          NPM_CONFIG_PROVENANCE: 'true'
-          NODE_AUTH_TOKEN: ${{ secrets.HAYBARN_NPM_TOKEN }}
-        shell: bash
-        run: |
-          set -uo pipefail
-          n_ok=0; n_skip=0; n_fail=0
-          for leaf in dist/npm-leaves/*/; do
-            [[ -d "$leaf" ]] || continue
-            pkg=$(python3 -c "import json; print(json.load(open('$leaf/package.json'))['name'])")
-            ver=$(python3 -c "import json; print(json.load(open('$leaf/package.json'))['version'])")
-            echo "::group::$pkg@$ver"
-            if (cd "$leaf" && npm publish --provenance --access public --tag latest 2>/tmp/npm.err); then
-              n_ok=$((n_ok+1))
-              echo "  → published"
-            elif grep -qiE 'previously published|EPUBLISHCONFLICT|cannot publish over' /tmp/npm.err; then
-              n_skip=$((n_skip+1))
-              echo "  → already published, skipping"
-            else
-              n_fail=$((n_fail+1))
-              cat /tmp/npm.err
-              echo "::error::publish failed for $pkg@$ver"
-            fi
-            echo "::endgroup::"
-          done
-          echo "leaves: ok=$n_ok skip=$n_skip fail=$n_fail"
-          [[ $n_fail -eq 0 ]]
-      - name: Publish metas
-        env:
-          NPM_CONFIG_PROVENANCE: 'true'
-          NODE_AUTH_TOKEN: ${{ secrets.HAYBARN_NPM_TOKEN }}
-        shell: bash
-        run: |
-          set -uo pipefail
-          n_ok=0; n_skip=0; n_fail=0
-          for meta in dist/npm-metas/*/; do
-            [[ -d "$meta" ]] || continue
-            pkg=$(python3 -c "import json; print(json.load(open('$meta/package.json'))['name'])")
-            ver=$(python3 -c "import json; print(json.load(open('$meta/package.json'))['version'])")
-            echo "::group::$pkg@$ver"
-            if (cd "$meta" && npm publish --provenance --access public --tag latest 2>/tmp/npm.err); then
-              n_ok=$((n_ok+1))
-              echo "  → published"
-            elif grep -qiE 'previously published|EPUBLISHCONFLICT|cannot publish over' /tmp/npm.err; then
-              n_skip=$((n_skip+1))
-              echo "  → already published, skipping"
-            else
-              n_fail=$((n_fail+1))
-              cat /tmp/npm.err
-              echo "::error::publish failed for $pkg@$ver"
-            fi
-            echo "::endgroup::"
-          done
-          echo "metas: ok=$n_ok skip=$n_skip fail=$n_fail"
-          [[ $n_fail -eq 0 ]]
+      actions:  read
+      id-token: write
+    secrets: inherit
+    with:
+      # Empty source_run_id → publish from this run's just-uploaded artifacts.
+      source_run_id: ''
 # Haybarn fork — workflow re-index marker.
