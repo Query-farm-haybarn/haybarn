@@ -167,7 +167,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: 'Query-farm-haybarn/haybarn-extension-ci-tools'
-          ref: a2b04e6a2fdf0fe2feabc406a801c670fa5ca2e0
+          ref: 36583a882ec1f6e3324ef5d0ab35bc1c02dc9d06
           path: ci-tools
 
       - name: Capture engine commit + timestamp (for CalVer + manifest)
@@ -252,7 +252,7 @@ jobs:
     name: Publish PyPI + npm
     needs: publish
     if: ${{ inputs.deploy == 'true' }}
-    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/_extension_registry_publish.yml@a2b04e6a2fdf0fe2feabc406a801c670fa5ca2e0
+    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/_extension_registry_publish.yml@36583a882ec1f6e3324ef5d0ab35bc1c02dc9d06
     permissions:
       contents: read
       actions:  read
@@ -260,6 +260,9 @@ jobs:
     secrets: inherit
     with:
       artifact_shape: bundled
+      # MUST match the `@<SHA>` pinned in the `uses:` line above — the
+      # called workflow uses this to checkout its own scripts/publish/.
+      ci_tools_ref: 36583a882ec1f6e3324ef5d0ab35bc1c02dc9d06
       # Empty source_run_id → publish from this run's just-uploaded artifacts.
       source_run_id: ''
 # Haybarn fork — workflow re-index marker.
