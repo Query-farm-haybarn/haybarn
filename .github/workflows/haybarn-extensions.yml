@@ -160,6 +160,16 @@ jobs:
       # extensions are exact; build-fork extensions iceberg/ducklake/
       # delta/httpfs use this as an approximation for now).
       # ------------------------------------------------------------------
+      # ci-tools checkout (under ci-tools/) supplies the shared publish
+      # helpers from scripts/publish/ — same workflow + scripts that
+      # haybarn-community-extensions uses. Pinned to the consolidation
+      # SHA so engine and community stay in lockstep on the publish path.
+      - uses: actions/checkout@v6
+        with:
+          repository: 'Query-farm-haybarn/haybarn-extension-ci-tools'
+          ref: a2b04e6a2fdf0fe2feabc406a801c670fa5ca2e0
+          path: ci-tools
+
       - name: Capture engine commit + timestamp (for CalVer + manifest)
         id: engine
         shell: bash
@@ -189,7 +199,7 @@ jobs:
         run: |
           # awscli + brotli already installed by the previous step / runner.
           which brotli || sudo apt-get install -y --no-install-recommends brotli
-          python3 scripts/publish_core_extensions.py \
+          python3 ci-tools/scripts/publish/publish_core_extensions.py \
             --repo-dir          /tmp/haybarn-repository \
             --engine-commit     '${{ steps.engine.outputs.commit }}' \
             --engine-commit-ts  '${{ steps.engine.outputs.commit_ts }}' \
@@ -222,27 +232,34 @@ jobs:
           if-no-files-found: error
 
   # ------------------------------------------------------------------
-  # Registry publish (PyPI + npm) is delegated to a separate reusable
-  # workflow so the two jobs can be re-dispatched independently when
-  # PyPI's anti-spam project-creation rate limit ("429 too many new
-  # projects") bounces an earlier attempt — no rebuild required.
+  # Registry publish (PyPI + npm) is the consolidated reusable workflow
+  # in ci-tools — same workflow haybarn-community-extensions calls.
+  # We pass artifact_shape=bundled so it downloads core-pypi-wheels +
+  # core-npm-packages (the artifacts the publish job above uploaded),
+  # as opposed to the per-extension matrix-artifact shape that the
+  # community catalog uses.
   #
-  # Retry recipe:
-  #   gh workflow run "_extension_registry_publish.yml" \\
-  #     --repo Query-farm-haybarn/haybarn --ref <branch> \\
-  #     -f source_run_id=<the failed run's id>
+  # Independent dispatch (e.g. for retry after a PyPI "429 Too many new
+  # projects" rate-limit bounce) is supported by calling the upstream
+  # workflow directly:
+  #   gh workflow run "_extension_registry_publish.yml" \
+  #     -R Query-farm-haybarn/haybarn-extension-ci-tools --ref haybarn \
+  #     -f artifact_shape=bundled -f source_run_id=<this-run-id> \
+  #     -f duckdb_version=v1.5.2 -f version=<calver> -f ext_commit=<sha> \
+  #     -f extension_version_label=
   # ------------------------------------------------------------------
   call_publish_registries:
     name: Publish PyPI + npm
     needs: publish
     if: ${{ inputs.deploy == 'true' }}
-    uses: ./.github/workflows/_extension_registry_publish.yml
+    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/_extension_registry_publish.yml@a2b04e6a2fdf0fe2feabc406a801c670fa5ca2e0
     permissions:
       contents: read
       actions:  read
       id-token: write
     secrets: inherit
     with:
+      artifact_shape: bundled
       # Empty source_run_id → publish from this run's just-uploaded artifacts.
       source_run_id: ''
 # Haybarn fork — workflow re-index marker.
