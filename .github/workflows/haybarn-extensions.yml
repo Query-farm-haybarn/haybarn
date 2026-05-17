@@ -123,6 +123,12 @@ jobs:
           # actually deploy), so it never surfaced — until the parallel
           # haybarn-community-extensions wiring exercised the same path.
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_KEY_ID }}
+          # R2 needs these to play nicely with the AWS SDK — region=auto +
+          # pre-2024 checksum behavior. Mirrors the community deploy
+          # workflow; without these, PutObject returns AccessDenied.
+          AWS_DEFAULT_REGION: auto
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
           # for_real => actually upload; anything else => dry run.
           DUCKDB_DEPLOY_SCRIPT_MODE: ${{ inputs.deploy == 'true' && 'for_real' || 'dry_run' }}
         run: |
@@ -138,4 +144,194 @@ jobs:
           # 404.) Pass the base directory without a glob.
           ./scripts/extension-upload-repository.sh \
             "/tmp/haybarn-repository" "${{ secrets.R2_BUCKET }}/core"
+
+      # ------------------------------------------------------------------
+      # Per-commit immutable R2 layout + pip wheel + npm leaf/meta staging.
+      # Iterates every (extension, arch) in /tmp/haybarn-repository and:
+      #   - re-signs + compresses the binary (deterministic; same bytes
+      #     as the legacy upload above)
+      #   - writes + GPG-signs manifest.json next to the binary at the
+      #     per-commit immutable R2 path s3://<bucket>/core/<dv>/<arch>/<ext>/<short_sha>/
+      #   - writes + GPG-signs current.json pointer at
+      #     s3://<bucket>/core/<dv>/<arch>/<ext>/current.json
+      #   - stages pip wheels and npm package dirs for the publish_pypi /
+      #     publish_npm jobs below.
+      # All core extensions share ext_commit = engine_commit (in-tree
+      # extensions are exact; build-fork extensions iceberg/ducklake/
+      # delta/httpfs use this as an approximation for now).
+      # ------------------------------------------------------------------
+      - name: Capture engine commit + timestamp (for CalVer + manifest)
+        id: engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          C=$(git log -1 --format=%H)
+          T=$(git log -1 --format=%ct)
+          {
+            echo "commit=$C"
+            echo "commit_ts=$T"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice::engine commit $C (ts=$T)"
+
+      - name: Per-commit immutable layout + stage pip/npm artifacts
+        if: ${{ inputs.deploy == 'true' }}
+        shell: bash
+        env:
+          DUCKDB_EXTENSION_SIGNING_PK: ${{ secrets.HAYBARN_EXTENSION_SIGNING_PK }}
+          HAYBARN_GPG_PRIVATE_KEY:     ${{ secrets.HAYBARN_GPG_PRIVATE_KEY }}
+          HAYBARN_GPG_PASSPHRASE:      ${{ secrets.HAYBARN_GPG_PASSPHRASE }}
+          AWS_ENDPOINT_URL:            ${{ secrets.R2_ENDPOINT }}
+          AWS_ACCESS_KEY_ID:           ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY:       ${{ secrets.R2_SECRET_KEY_ID }}
+          AWS_DEFAULT_REGION:          auto
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        run: |
+          # awscli + brotli already installed by the previous step / runner.
+          which brotli || sudo apt-get install -y --no-install-recommends brotli
+          python3 scripts/publish_core_extensions.py \
+            --repo-dir          /tmp/haybarn-repository \
+            --engine-commit     '${{ steps.engine.outputs.commit }}' \
+            --engine-commit-ts  '${{ steps.engine.outputs.commit_ts }}' \
+            --haybarn-version   '1.5.2' \
+            --duckdb-version    'v1.5.2' \
+            --r2-bucket         '${{ secrets.R2_BUCKET }}' \
+            --r2-prefix         core \
+            --license           LICENSE \
+            --dist-dir          dist/ \
+            --signed-by         haybarn-extension-signing-2026 \
+            --channels          'r2-core,pypi,npm' \
+            --deploy            true
+
+      - name: Upload pip wheels as artifact
+        if: ${{ inputs.deploy == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-pypi-wheels
+          path: dist/pypi/
+          if-no-files-found: error
+
+      - name: Upload npm leaves + metas as artifact
+        if: ${{ inputs.deploy == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-npm-packages
+          path: |
+            dist/npm-leaves/
+            dist/npm-metas/
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------
+  # Aggregate publish: pip wheels and npm packages. Both gated on
+  # deploy=true (same as the publish job). HAYBARN_PYPI_TOKEN +
+  # HAYBARN_NPM_TOKEN org secrets handle auth (same pattern as
+  # haybarn-community-extensions/.github/workflows/_extension_deploy.yml).
+  # id-token: write is for provenance attestations, not for the publish
+  # auth itself.
+  # ------------------------------------------------------------------
+  publish_pypi:
+    name: Publish PyPI (core)
+    needs: publish
+    if: ${{ inputs.deploy == 'true' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write    # PEP 740 attestations
+    concurrency:
+      group: haybarn-extensions-pypi-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-pypi-wheels
+          path: dist/
+      - run: ls -la dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          password: ${{ secrets.HAYBARN_PYPI_TOKEN }}
+          attestations: true
+          skip-existing: true
+          verbose: true
+
+  publish_npm:
+    name: Publish npm (core)
+    needs: publish
+    if: ${{ inputs.deploy == 'true' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write    # --provenance attestations
+    concurrency:
+      group: haybarn-extensions-npm-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-npm-packages
+          path: dist/
+      - name: List staged packages
+        run: |
+          echo "leaves:"; ls dist/npm-leaves/ 2>/dev/null || echo "(none)"
+          echo "metas:"; ls dist/npm-metas/  2>/dev/null || echo "(none)"
+      - name: Publish leaves
+        env:
+          NPM_CONFIG_PROVENANCE: 'true'
+          NODE_AUTH_TOKEN: ${{ secrets.HAYBARN_NPM_TOKEN }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          n_ok=0; n_skip=0; n_fail=0
+          for leaf in dist/npm-leaves/*/; do
+            [[ -d "$leaf" ]] || continue
+            pkg=$(python3 -c "import json; print(json.load(open('$leaf/package.json'))['name'])")
+            ver=$(python3 -c "import json; print(json.load(open('$leaf/package.json'))['version'])")
+            echo "::group::$pkg@$ver"
+            if (cd "$leaf" && npm publish --provenance --access public --tag latest 2>/tmp/npm.err); then
+              n_ok=$((n_ok+1))
+              echo "  → published"
+            elif grep -qiE 'previously published|EPUBLISHCONFLICT|cannot publish over' /tmp/npm.err; then
+              n_skip=$((n_skip+1))
+              echo "  → already published, skipping"
+            else
+              n_fail=$((n_fail+1))
+              cat /tmp/npm.err
+              echo "::error::publish failed for $pkg@$ver"
+            fi
+            echo "::endgroup::"
+          done
+          echo "leaves: ok=$n_ok skip=$n_skip fail=$n_fail"
+          [[ $n_fail -eq 0 ]]
+      - name: Publish metas
+        env:
+          NPM_CONFIG_PROVENANCE: 'true'
+          NODE_AUTH_TOKEN: ${{ secrets.HAYBARN_NPM_TOKEN }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          n_ok=0; n_skip=0; n_fail=0
+          for meta in dist/npm-metas/*/; do
+            [[ -d "$meta" ]] || continue
+            pkg=$(python3 -c "import json; print(json.load(open('$meta/package.json'))['name'])")
+            ver=$(python3 -c "import json; print(json.load(open('$meta/package.json'))['version'])")
+            echo "::group::$pkg@$ver"
+            if (cd "$meta" && npm publish --provenance --access public --tag latest 2>/tmp/npm.err); then
+              n_ok=$((n_ok+1))
+              echo "  → published"
+            elif grep -qiE 'previously published|EPUBLISHCONFLICT|cannot publish over' /tmp/npm.err; then
+              n_skip=$((n_skip+1))
+              echo "  → already published, skipping"
+            else
+              n_fail=$((n_fail+1))
+              cat /tmp/npm.err
+              echo "::error::publish failed for $pkg@$ver"
+            fi
+            echo "::endgroup::"
+          done
+          echo "metas: ok=$n_ok skip=$n_skip fail=$n_fail"
+          [[ $n_fail -eq 0 ]]
 # Haybarn fork — workflow re-index marker.
