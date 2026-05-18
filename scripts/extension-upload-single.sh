@@ -79,6 +79,18 @@ fi
 # (e.g. EXTENSION_UPLOAD_ACL='--acl public-read') for a real S3 bucket instead.
 ACL_PARAM="${EXTENSION_UPLOAD_ACL:-}"
 
+# Haybarn: Cache-Control on the served object.
+# - Versioned paths (`<bucket>/<ext>/<ext_ver>/<dv>/<arch>/...`) are IMMUTABLE
+#   once written — same content for the life of the URL — so they can be
+#   cached for ever.
+# - Latest paths (`<bucket>/<dv>/<arch>/...`) are MUTABLE — every merge to
+#   the engine/extension haybarn branch overwrites them — so a short TTL is
+#   required, otherwise the Cloudflare edge holds the prior binary for the
+#   zone-default 4h and `INSTALL <ext>` keeps resolving stale.
+# Override via env if a fork wants different policy.
+CACHE_CONTROL_VERSIONED="${EXTENSION_UPLOAD_CACHE_CONTROL_VERSIONED:-public, max-age=31536000, immutable}"
+CACHE_CONTROL_LATEST="${EXTENSION_UPLOAD_CACHE_CONTROL_LATEST:-public, max-age=10, must-revalidate}"
+
 # upload versioned version
 if [[ $7 = 'true' ]]; then
   if [ -z "$3" ]; then
@@ -88,18 +100,18 @@ if [[ $7 = 'true' ]]; then
   fi
 
   if [[ $4 == wasm* ]]; then
-    aws s3 cp $ext.compressed s3://$5/$1/$2/$3/$4/$1.duckdb_extension.wasm $DRY_RUN_PARAM $ACL_PARAM --content-encoding br --content-type="application/wasm"
+    aws s3 cp $ext.compressed s3://$5/$1/$2/$3/$4/$1.duckdb_extension.wasm $DRY_RUN_PARAM $ACL_PARAM --content-encoding br --content-type="application/wasm" --cache-control "$CACHE_CONTROL_VERSIONED"
   else
-    aws s3 cp $ext.compressed s3://$5/$1/$2/$3/$4/$1.duckdb_extension.gz $DRY_RUN_PARAM $ACL_PARAM
+    aws s3 cp $ext.compressed s3://$5/$1/$2/$3/$4/$1.duckdb_extension.gz $DRY_RUN_PARAM $ACL_PARAM --cache-control "$CACHE_CONTROL_VERSIONED"
   fi
 fi
 
 # upload to latest version
 if [[ $6 = 'true' ]]; then
   if [[ $4 == wasm* ]]; then
-    aws s3 cp $ext.compressed s3://$5/$3/$4/$1.duckdb_extension.wasm $DRY_RUN_PARAM $ACL_PARAM --content-encoding br --content-type="application/wasm"
+    aws s3 cp $ext.compressed s3://$5/$3/$4/$1.duckdb_extension.wasm $DRY_RUN_PARAM $ACL_PARAM --content-encoding br --content-type="application/wasm" --cache-control "$CACHE_CONTROL_LATEST"
   else
-    aws s3 cp $ext.compressed s3://$5/$3/$4/$1.duckdb_extension.gz $DRY_RUN_PARAM $ACL_PARAM
+    aws s3 cp $ext.compressed s3://$5/$3/$4/$1.duckdb_extension.gz $DRY_RUN_PARAM $ACL_PARAM --cache-control "$CACHE_CONTROL_LATEST"
   fi
 fi
 
