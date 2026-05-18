@@ -121,6 +121,7 @@ fi
 
 upload_extension() {
   local destination="$1"
+  local cache_control="$2"
   local s3_provider="${S3_PROVIDER:-AWS}"
   if [[ "${AWS_ENDPOINT_URL}" == *"r2.cloudflarestorage.com"* ]]; then
     s3_provider="Cloudflare"
@@ -147,9 +148,22 @@ upload_extension() {
     --s3-no-head \
     "${rclone_s3_args[@]}" \
     "${extra_upload_args[@]}" \
+    --header-upload "Cache-Control: ${cache_control}" \
     "$ext.compressed" \
     ":s3,env_auth=true:${destination}"
 }
+
+# Haybarn: Cache-Control on the served object.
+# - Versioned paths (`<bucket>/<ext>/<ext_ver>/<dv>/<arch>/...`) are IMMUTABLE
+#   once written — same content for the life of the URL — so they can be
+#   cached for ever.
+# - Latest paths (`<bucket>/<dv>/<arch>/...`) are MUTABLE — every merge to
+#   the engine/extension haybarn branch overwrites them — so a short TTL is
+#   required, otherwise the Cloudflare edge holds the prior binary for the
+#   zone-default 4h and `INSTALL <ext>` keeps resolving stale.
+# Override via env if a fork wants different policy.
+CACHE_CONTROL_VERSIONED="${EXTENSION_UPLOAD_CACHE_CONTROL_VERSIONED:-public, max-age=31536000, immutable}"
+CACHE_CONTROL_LATEST="${EXTENSION_UPLOAD_CACHE_CONTROL_LATEST:-public, max-age=10, must-revalidate}"
 
 # upload versioned version
 if [[ $7 = 'true' ]]; then
@@ -160,14 +174,14 @@ if [[ $7 = 'true' ]]; then
   fi
 
   if [ "${DUCKDB_DEPLOY_SCRIPT_MODE:-}" == "for_real" ]; then
-    upload_extension "$5/$1/$2/$3/$4/$1.duckdb_extension.$dest_extension"
+    upload_extension "$5/$1/$2/$3/$4/$1.duckdb_extension.$dest_extension" "$CACHE_CONTROL_VERSIONED"
   fi
 fi
 
 # upload to latest version
 if [[ $6 = 'true' ]]; then
   if [ "${DUCKDB_DEPLOY_SCRIPT_MODE:-}" == "for_real" ]; then
-    upload_extension "$5/$3/$4/$1.duckdb_extension.$dest_extension"
+    upload_extension "$5/$3/$4/$1.duckdb_extension.$dest_extension" "$CACHE_CONTROL_LATEST"
   fi
 fi
 
