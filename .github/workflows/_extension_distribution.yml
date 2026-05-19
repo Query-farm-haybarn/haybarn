@@ -75,9 +75,19 @@ jobs:
       # (delta, ducklake) and unixODBC (odbc_scanner) — the `full` variant
       # ships both plus go, fortran, parser_tools, multimedia.
       # ~5-8 min × 4 Linux archs of `docker build` setup → ~30s × 4 of pull.
-      # macOS / Windows / wasm legs are unaffected.
+      # macOS / Windows legs are unaffected.
       use_prebuilt_images: true
       image_variant: full
+
+      # Phase D: same idea for the wasm legs — pull haybarn-wasm-rust:<tag>
+      # (emsdk 3.1.71 + vcpkg + ccache 4.13.6 + rust + wasm32-unknown-emscripten
+      # baked in) instead of running `mymindstorm/setup-emsdk@v13` + installing
+      # vcpkg inline. Eliminates the ~30-60s emsdk download per wasm leg AND
+      # stabilises the emcc path inside the container so ccache hashes repeat
+      # across runs. `rust` variant chosen so unity_catalog (and any future
+      # rust-based core extension) builds; superset of base.
+      use_prebuilt_wasm_image: true
+      wasm_image_variant: rust
 
       exclude_archs: ${{ inputs.exclude_archs }}
       opt_in_archs: ${{ inputs.opt_in_archs }}
