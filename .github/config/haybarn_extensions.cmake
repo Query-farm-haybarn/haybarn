@@ -81,7 +81,7 @@ if (NOT MINGW)
     duckdb_extension_load(iceberg
             DONT_LINK
             GIT_URL https://github.com/Query-farm-haybarn/haybarn-iceberg
-            GIT_TAG e24fd533cb33180e28a1d1d7776489b407ae73ab
+            GIT_TAG 9ed58be8cb2361c66b63bbfd46657c3fad954175
             )
 endif()
 
