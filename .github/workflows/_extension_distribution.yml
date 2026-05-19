@@ -54,7 +54,7 @@ jobs:
     #   - GHCR docker login before pulling pre-built images
     #   - Phase D: use_prebuilt_wasm_image + wasm_image_variant inputs
     #     (haybarn-wasm-{base,rust}:<tag>)
-    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/_extension_distribution.yml@8b8612c264639f1ff0cd48172f3210496e7b2e9a
+    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/_extension_distribution.yml@10f3698eec64a8b7a76a9334ad401ec5eb4d0664
     with:
       # We piggy-back extension-template to build the extensions in extension_config, it's hacky, but it works ¯\_(ツ)_/¯
       override_repository: duckdb/extension-template
@@ -70,7 +70,7 @@ jobs:
 
       # Match the `uses:` above so the cloned CI tools tree matches the called workflow.
       override_ci_tools_repository: Query-farm-haybarn/haybarn-extension-ci-tools
-      ci_tools_version: 8b8612c264639f1ff0cd48172f3210496e7b2e9a
+      ci_tools_version: 10f3698eec64a8b7a76a9334ad401ec5eb4d0664
 
       # Phase C: pull the pre-built Linux build image from GHCR instead of
       # `docker build`-ing it inline on every leg. Core extensions need rust
