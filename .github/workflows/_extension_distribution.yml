@@ -40,21 +40,14 @@ on:
 jobs:
   build:
     name: Build
-    # Haybarn fork of extension-ci-tools, pinned by SHA. The fork carries one
-    # patch: accept the vcpkg bearer token via `secrets.vcpkg_token` and
-    # substitute it into the binary-sources URL via the `{0}` placeholder
-    # (works around GH Actions blocking `secrets` in `with:` of nested
-    # workflow_call).
-    # SHA 0578852 includes (cumulative since rc1):
-    #   - Phase A: GHCR image publish workflow (haybarn-<arch>-<variant>:v1.5.2)
-    #   - Phase B: use_prebuilt_images / image_variant inputs (Linux only)
-    #   - vcpkg cache default switched to readwrite Haybarn cache
-    #   - wasm ccache upgraded 4.9.1 → 4.13.6 (HTTP backend bearer auth fix)
-    #   - Windows ccache same upgrade (writes were silently failing too)
-    #   - GHCR docker login before pulling pre-built images
-    #   - Phase D: use_prebuilt_wasm_image + wasm_image_variant inputs
-    #     (haybarn-wasm-{base,rust}:<tag>)
-    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/_extension_distribution.yml@3e39de2d77149b60f7d0d9aee697897d35af1109
+    # Haybarn fork of extension-ci-tools. We intentionally track the `haybarn`
+    # branch tip rather than pinning a SHA, so extension builds always pick up
+    # the latest CI-tools fixes (e.g. the wasm_threads shared-memory link flags).
+    # The fork carries the vcpkg bearer-token patch: it accepts the token via
+    # `secrets.vcpkg_token` and substitutes it into the binary-sources URL via
+    # the `{0}` placeholder (works around GH Actions blocking `secrets` in
+    # `with:` of nested workflow_call).
+    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/_extension_distribution.yml@haybarn
     with:
       # We piggy-back extension-template to build the extensions in extension_config, it's hacky, but it works ¯\_(ツ)_/¯
       override_repository: duckdb/extension-template
@@ -70,7 +63,7 @@ jobs:
 
       # Match the `uses:` above so the cloned CI tools tree matches the called workflow.
       override_ci_tools_repository: Query-farm-haybarn/haybarn-extension-ci-tools
-      ci_tools_version: 3e39de2d77149b60f7d0d9aee697897d35af1109
+      ci_tools_version: haybarn
 
       # Phase C: pull the pre-built Linux build image from GHCR instead of
       # `docker build`-ing it inline on every leg. Core extensions need rust
