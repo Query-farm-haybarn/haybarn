@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       override_git_describe:
-        description: 'Version string to embed (defaults to the upstream tag, e.g. v1.5.2)'
+        description: 'Version string to embed (defaults to the upstream tag, e.g. v1.5.3)'
         type: string
       skip_tests:
         description: 'Pass "true" to skip tests'
@@ -28,13 +28,13 @@ permissions:
 
 env:
   # Haybarn is built from a specific upstream DuckDB tag. The version string the
-  # binary reports stays the upstream version (e.g. v1.5.2) for storage and
+  # binary reports stays the upstream version (e.g. v1.5.3) for storage and
   # extension-path compatibility; see the plan's branding decisions.
-  OVERRIDE_GIT_DESCRIBE: ${{ inputs.override_git_describe || 'v1.5.2' }}
+  OVERRIDE_GIT_DESCRIBE: ${{ inputs.override_git_describe || 'v1.5.3' }}
   # Haybarn-specific version string that drives the startup banner + `-version`
   # flag (distinct from the upstream OVERRIDE_GIT_DESCRIBE above which dictates
   # storage compat). On tag push (`refs/tags/haybarn-v...`) GITHUB_REF_NAME is
-  # the tag itself ("haybarn-v1.5.2-rc1"); on workflow_dispatch it's empty, and
+  # the tag itself ("haybarn-v1.5.3-rc1"); on workflow_dispatch it's empty, and
   # CMake will derive it from `git describe --match 'haybarn-v*'` instead.
   HAYBARN_GIT_DESCRIBE: ${{ startsWith(github.ref, 'refs/tags/haybarn-v') && github.ref_name || '' }}
 
@@ -88,7 +88,7 @@ jobs:
             glibc) suffix='' ;;
             musl)  suffix='_musl' ;;
           esac
-          echo "ref=ghcr.io/query-farm-haybarn/haybarn-linux_${{ matrix.config.arch }}${suffix}-base:v1.5.2" >> "$GITHUB_OUTPUT"
+          echo "ref=ghcr.io/query-farm-haybarn/haybarn-linux_${{ matrix.config.arch }}${suffix}-base:v1.5.3" >> "$GITHUB_OUTPUT"
 
       - name: Build (Linux glibc + musl, pre-built image)
         shell: bash

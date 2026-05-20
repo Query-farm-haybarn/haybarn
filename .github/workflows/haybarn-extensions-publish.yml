@@ -193,8 +193,8 @@ jobs:
             --repo-dir          /tmp/haybarn-repository \
             --engine-commit     '${{ steps.engine.outputs.commit }}' \
             --engine-commit-ts  '${{ steps.engine.outputs.commit_ts }}' \
-            --haybarn-version   '1.5.2' \
-            --duckdb-version    'v1.5.2' \
+            --haybarn-version   '1.5.3' \
+            --duckdb-version    'v1.5.3' \
             --r2-bucket         '${{ secrets.R2_BUCKET }}' \
             --r2-prefix         core \
             --license           LICENSE \
@@ -235,7 +235,7 @@ jobs:
   #   gh workflow run "_extension_registry_publish.yml" \
   #     -R Query-farm-haybarn/haybarn-extension-ci-tools --ref haybarn \
   #     -f artifact_shape=bundled -f source_run_id=<this-run-id> \
-  #     -f duckdb_version=v1.5.2 -f version=<calver> -f ext_commit=<sha> \
+  #     -f duckdb_version=v1.5.3 -f version=<calver> -f ext_commit=<sha> \
   #     -f extension_version_label=
   # ------------------------------------------------------------------
   call_publish_registries:
