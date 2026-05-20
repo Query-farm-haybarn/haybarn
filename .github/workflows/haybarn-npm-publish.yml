@@ -32,7 +32,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag to publish (e.g. haybarn-v1.5.2-rc7)'
+        description: 'Release tag to publish (e.g. haybarn-v1.5.3-rc7)'
         type: string
         required: true
 

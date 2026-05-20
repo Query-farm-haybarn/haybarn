@@ -6,7 +6,7 @@ Guidance for Claude Code (and humans) working in this repository.
 
 **Haybarn** is an independent derived distribution of DuckDB ("Haybarn, powered
 by DuckDB"), published by Query Farm LLC. This repo is a **hard fork** of
-`duckdb/duckdb`, currently based on the upstream **`v1.5.2`** tag.
+`duckdb/duckdb`, currently based on the upstream **`v1.5.3`** tag.
 
 All Haybarn-specific changes are a small, curated **commit stack** on top of the
 upstream tag — not scattered edits. Keep it that way: the stack must stay easy to
@@ -37,7 +37,7 @@ rebase onto future DuckDB releases. See `HAYBARN/REBASE.md`.
   `test/api/test_api.cpp:569,576` asserting `ex.what()` contains `"DuckDB"`.
   Branding sweeps have multi-language test surface.
 
-## The Haybarn commit stack (on top of `v1.5.2`)
+## The Haybarn commit stack (on top of `v1.5.3`)
 
 | Concern | Key files |
 |---|---|
@@ -60,7 +60,7 @@ For a build whose `version()` reports the release version (not a `git describe`
 dev string), pin it the way CI does:
 
 ```sh
-OVERRIDE_GIT_DESCRIBE=v1.5.2 make release
+OVERRIDE_GIT_DESCRIBE=v1.5.3 make release
 ```
 
 ## Distribution
@@ -99,11 +99,11 @@ roll the pin forward deliberately. The where/why/how is in
 
 The Linux build environment is centrally maintained:
 
-- **Pre-built images on GHCR** at `ghcr.io/query-farm-haybarn/haybarn-<arch>-<variant>:v1.5.2`.
+- **Pre-built images on GHCR** at `ghcr.io/query-farm-haybarn/haybarn-<arch>-<variant>:v1.5.3`.
   Built from `Query-farm-haybarn/haybarn-extension-ci-tools/docker/<arch>/Dockerfile`
   by `.github/workflows/publish-build-images.yml` in that repo. Public packages.
-  - **Linux**: 12 images — `haybarn-linux_{amd64,arm64,amd64_musl,arm64_musl}-{base,rust,full}:v1.5.2`.
-  - **wasm**: 1 image — `haybarn-wasm:v1.5.2` (Phase D, ubuntu 24.04 base + emsdk 3.1.71
+  - **Linux**: 12 images — `haybarn-linux_{amd64,arm64,amd64_musl,arm64_musl}-{base,rust,full}:v1.5.3`.
+  - **wasm**: 1 image — `haybarn-wasm:v1.5.3` (Phase D, ubuntu 24.04 base + emsdk 3.1.71
     + vcpkg + ccache 4.13.6, no arch/variant fan-out). Consumers opt in via
     `use_prebuilt_wasm_image: true`. Removes per-run `mymindstorm/setup-emsdk`
     (~30-60s × 3 wasm legs) AND stabilises the emcc path inside the container
@@ -151,7 +151,7 @@ fresh SHA just means nothing was warm yet, not that writes are broken.
 
 ## Distribution / release flow
 
-- Release tag pattern: `haybarn-v<version>` (e.g. `haybarn-v1.5.2-rc9`). Fires
+- Release tag pattern: `haybarn-v<version>` (e.g. `haybarn-v1.5.3-rc1`). Fires
   `haybarn-release.yml` (engine binaries) and `haybarn-extensions.yml` (core
   extensions), and the same tag on each downstream client repo fires their
   workflows.
@@ -216,10 +216,20 @@ Haybarn is multi-repo. Each is pinned by SHA where another consumes it.
 | `haybarn-vcpkg-worker` | Cloudflare Worker fronting R2 for vcpkg + ccache caches | manual deploy |
 | `haybarn-org-profile` | Org-level docs / landing | n/a |
 
-## Recent state (as of 2026-05-16)
+## Recent state (as of 2026-05-20)
 
-Current rc series: **`haybarn-v1.5.2-rc9`**. Major work this cycle:
+Current rc series: **`haybarn-v1.5.3-rc1`**. Major work this cycle:
 
+- **v1.5.3 rebase.** Rebased the full commit stack from `v1.5.2` onto the
+  upstream `v1.5.3` tag (`git rebase --onto v1.5.3 v1.5.2 haybarn`). Only the
+  rc9 branding commit conflicted on content: upstream reformatted the extension
+  lists and added a new built-in `quack` ("DuckDB 'Quack' Client/Server
+  Protocol") into the same block. Kept `quack` as upstream ships it; still drop
+  `motherduck`/`lance`/`vortex`. In-repo `1.5.2`→`1.5.3` reference bumps:
+  `OVERRIDE_GIT_DESCRIBE` defaults, extension version defaults, GHCR image tags,
+  README/NOTICE/SETUP/REBASE docs. Cross-repo prerequisites still pending: push
+  the pristine `v1.5.3` tag to origin, rebuild the GHCR build-env images at
+  `:v1.5.3` in `haybarn-extension-ci-tools`, bump downstream submodules/tags.
 - **rc9 — branding cleanup in autoload lists.** Removed `motherduck`,
   `lance`, and `vortex` from `internal_extensions[]`, `auto_install[]`,
   and `AUTOLOADABLE_EXTENSIONS[]`. Also dropped the `md` → `motherduck`
@@ -254,7 +264,7 @@ This-session adjacent work (not engine-versioned):
   platform-tagged wheels (`manylinux_2_28_*`, `musllinux_1_2_*`,
   `macosx_11_0_*`, `win_amd64`). OIDC Trusted Publisher + PEP 740
   attestations.
-- **Wasm Phase D image** published at `ghcr.io/.../haybarn-wasm:v1.5.2`.
+- **Wasm Phase D image** published at `ghcr.io/.../haybarn-wasm:v1.5.3`.
   Confirmed 100% combined ccache hit rate on back-to-back runs once
   callers opt into `use_prebuilt_wasm_image: true`. Predicted to save
   ~30-50 CI hours per full `build_all` against the 240-extension catalog.
