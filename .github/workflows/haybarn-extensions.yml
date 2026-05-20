@@ -1,15 +1,14 @@
-# Haybarn: builds the full Haybarn extension set, signs each extension with the
-# Haybarn extension-signing key, and publishes to the Haybarn extension
-# repository on Cloudflare R2 (served at https://haybarn-extensions.query.farm/core).
+# Haybarn: builds the full Haybarn extension set.
+#
+# This workflow is BUILD ONLY. The sign + R2 + PyPI + npm publish path lives
+# in `haybarn-extensions-publish.yml` and consumes the artifacts this workflow
+# uploads. The split exists so a flaky publish step doesn't force a full
+# rebuild — retry publish independently with workflow_dispatch + source_run_id.
 #
 # The `build` job reuses DuckDB's own reusable extension-distribution workflow
 # (./.github/workflows/_extension_distribution.yml). That workflow builds with
 # `set_caller_as_duckdb: true`, so every extension is built against THIS repo —
 # i.e. against the Haybarn build of DuckDB — and handles vcpkg + toolchains.
-#
-# The `publish` job then signs the built extensions with the Haybarn key and
-# uploads them to R2 using the upstream, bucket-parameterized helper scripts
-# (scripts/extension-upload-repository.sh -> scripts/extension-upload-single.sh).
 name: Haybarn Extensions
 
 on:
@@ -20,9 +19,6 @@ on:
     inputs:
       override_git_describe:
         description: 'Version string to embed (defaults to v1.5.2)'
-        type: string
-      deploy:
-        description: 'Pass "true" to actually upload to R2 (otherwise dry-run)'
         type: string
 
 concurrency:
@@ -73,196 +69,4 @@ jobs:
       # S3, ...). Build first; enable targeted tests later.
       skip_tests: true
     secrets: inherit
-
-  publish:
-    name: Sign and publish to R2
-    needs: build
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Download built extensions
-        uses: actions/download-artifact@v8
-        with:
-          # The reusable build workflow prefixes its artifacts with
-          # `artifact_prefix` (haybarn) and each contains a
-          # <version>/<platform>/ repository tree.
-          pattern: haybarn-*
-          path: /tmp/staged
-          merge-multiple: true
-
-      - name: Assemble merged repository
-        shell: bash
-        run: |
-          mkdir -p /tmp/haybarn-repository
-          # Flatten the per-artifact <version>/<platform>/ trees into one.
-          cp -r /tmp/staged/* /tmp/haybarn-repository/ 2>/dev/null || true
-          find /tmp/haybarn-repository -name '*.duckdb_extension*' -print
-          if [ -z "$(find /tmp/haybarn-repository -name '*.duckdb_extension*' -print -quit)" ]; then
-            echo "No built extensions found to publish" >&2
-            exit 1
-          fi
-
-      - name: Sign and upload to R2 (core repository)
-        shell: bash
-        env:
-          # Private key whose public half is embedded in
-          # src/main/extension/extension_helper.cpp.
-          DUCKDB_EXTENSION_SIGNING_PK: ${{ secrets.HAYBARN_EXTENSION_SIGNING_PK }}
-          AWS_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          # NOTE: the org secret is named `R2_SECRET_KEY_ID` (not the more
-          # conventional `_SECRET_ACCESS_KEY`). The previous reference to a
-          # non-existent `R2_SECRET_ACCESS_KEY` resolved to empty string and
-          # `extension-upload-repository.sh` silently bailed with
-          # "No AWS key found, skipping" — so the deploy-step was green for
-          # weeks without ever writing to R2. The engine ran in dry_run
-          # mode for tag-triggered builds (deploy='true' is required to
-          # actually deploy), so it never surfaced — until the parallel
-          # haybarn-community-extensions wiring exercised the same path.
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_KEY_ID }}
-          # R2 needs these to play nicely with the AWS SDK — region=auto +
-          # pre-2024 checksum behavior. Mirrors the community deploy
-          # workflow; without these, PutObject returns AccessDenied.
-          AWS_DEFAULT_REGION: auto
-          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
-          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
-          # for_real => actually upload; anything else => dry run.
-          DUCKDB_DEPLOY_SCRIPT_MODE: ${{ inputs.deploy == 'true' && 'for_real' || 'dry_run' }}
-        run: |
-          python3 -m pip install awscli
-          # $2 is the target bucket+prefix; the R2 bucket is fronted by
-          # haybarn-extensions.query.farm with a top-level core/ prefix.
-          # NOTE: the upload script's `for version_dir in $BASE_DIR/*` adds
-          # its own trailing `/*`. If we passed `/tmp/haybarn-repository/*`
-          # here, the loop iterates two levels deep, conflates arch with
-          # version, and silently uploads nothing visible. (Run 25969696452
-          # appeared green but no `Processing extension:` line appeared, and
-          # haybarn-extensions.query.farm/core/v1.5.2/<arch>/<ext> returns
-          # 404.) Pass the base directory without a glob.
-          ./scripts/extension-upload-repository.sh \
-            "/tmp/haybarn-repository" "${{ secrets.R2_BUCKET }}/core"
-
-      # ------------------------------------------------------------------
-      # Per-commit immutable R2 layout + pip wheel + npm leaf/meta staging.
-      # Iterates every (extension, arch) in /tmp/haybarn-repository and:
-      #   - re-signs + compresses the binary (deterministic; same bytes
-      #     as the legacy upload above)
-      #   - writes + GPG-signs manifest.json next to the binary at the
-      #     per-commit immutable R2 path s3://<bucket>/core/<dv>/<arch>/<ext>/<short_sha>/
-      #   - writes + GPG-signs current.json pointer at
-      #     s3://<bucket>/core/<dv>/<arch>/<ext>/current.json
-      #   - stages pip wheels and npm package dirs for the publish_pypi /
-      #     publish_npm jobs below.
-      # All core extensions share ext_commit = engine_commit (in-tree
-      # extensions are exact; build-fork extensions iceberg/ducklake/
-      # delta/httpfs use this as an approximation for now).
-      # ------------------------------------------------------------------
-      # ci-tools checkout (under ci-tools/) supplies the shared publish
-      # helpers from scripts/publish/ — same workflow + scripts that
-      # haybarn-community-extensions uses. Pinned to the consolidation
-      # SHA so engine and community stay in lockstep on the publish path.
-      - uses: actions/checkout@v6
-        with:
-          repository: 'Query-farm-haybarn/haybarn-extension-ci-tools'
-          ref: 36583a882ec1f6e3324ef5d0ab35bc1c02dc9d06
-          path: ci-tools
-
-      - name: Capture engine commit + timestamp (for CalVer + manifest)
-        id: engine
-        shell: bash
-        run: |
-          set -euo pipefail
-          C=$(git log -1 --format=%H)
-          T=$(git log -1 --format=%ct)
-          {
-            echo "commit=$C"
-            echo "commit_ts=$T"
-          } >> "$GITHUB_OUTPUT"
-          echo "::notice::engine commit $C (ts=$T)"
-
-      - name: Per-commit immutable layout + stage pip/npm artifacts
-        if: ${{ inputs.deploy == 'true' }}
-        shell: bash
-        env:
-          DUCKDB_EXTENSION_SIGNING_PK: ${{ secrets.HAYBARN_EXTENSION_SIGNING_PK }}
-          HAYBARN_GPG_PRIVATE_KEY:     ${{ secrets.HAYBARN_GPG_PRIVATE_KEY }}
-          HAYBARN_GPG_PASSPHRASE:      ${{ secrets.HAYBARN_GPG_PASSPHRASE }}
-          AWS_ENDPOINT_URL:            ${{ secrets.R2_ENDPOINT }}
-          AWS_ACCESS_KEY_ID:           ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY:       ${{ secrets.R2_SECRET_KEY_ID }}
-          AWS_DEFAULT_REGION:          auto
-          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
-          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
-        run: |
-          # awscli + brotli already installed by the previous step / runner.
-          which brotli || sudo apt-get install -y --no-install-recommends brotli
-          python3 ci-tools/scripts/publish/publish_core_extensions.py \
-            --repo-dir          /tmp/haybarn-repository \
-            --engine-commit     '${{ steps.engine.outputs.commit }}' \
-            --engine-commit-ts  '${{ steps.engine.outputs.commit_ts }}' \
-            --haybarn-version   '1.5.2' \
-            --duckdb-version    'v1.5.2' \
-            --r2-bucket         '${{ secrets.R2_BUCKET }}' \
-            --r2-prefix         core \
-            --license           LICENSE \
-            --dist-dir          dist/ \
-            --signed-by         haybarn-extension-signing-2026 \
-            --channels          'r2-core,pypi,npm' \
-            --deploy            true
-
-      - name: Upload pip wheels as artifact
-        if: ${{ inputs.deploy == 'true' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: core-pypi-wheels
-          path: dist/pypi/
-          if-no-files-found: error
-
-      - name: Upload npm leaves + metas as artifact
-        if: ${{ inputs.deploy == 'true' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: core-npm-packages
-          path: |
-            dist/npm-leaves/
-            dist/npm-metas/
-          if-no-files-found: error
-
-  # ------------------------------------------------------------------
-  # Registry publish (PyPI + npm) is the consolidated reusable workflow
-  # in ci-tools — same workflow haybarn-community-extensions calls.
-  # We pass artifact_shape=bundled so it downloads core-pypi-wheels +
-  # core-npm-packages (the artifacts the publish job above uploaded),
-  # as opposed to the per-extension matrix-artifact shape that the
-  # community catalog uses.
-  #
-  # Independent dispatch (e.g. for retry after a PyPI "429 Too many new
-  # projects" rate-limit bounce) is supported by calling the upstream
-  # workflow directly:
-  #   gh workflow run "_extension_registry_publish.yml" \
-  #     -R Query-farm-haybarn/haybarn-extension-ci-tools --ref haybarn \
-  #     -f artifact_shape=bundled -f source_run_id=<this-run-id> \
-  #     -f duckdb_version=v1.5.2 -f version=<calver> -f ext_commit=<sha> \
-  #     -f extension_version_label=
-  # ------------------------------------------------------------------
-  call_publish_registries:
-    name: Publish PyPI + npm
-    needs: publish
-    if: ${{ inputs.deploy == 'true' }}
-    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/_extension_registry_publish.yml@36583a882ec1f6e3324ef5d0ab35bc1c02dc9d06
-    permissions:
-      contents: read
-      actions:  read
-      id-token: write
-    secrets: inherit
-    with:
-      artifact_shape: bundled
-      # MUST match the `@<SHA>` pinned in the `uses:` line above — the
-      # called workflow uses this to checkout its own scripts/publish/.
-      ci_tools_ref: 36583a882ec1f6e3324ef5d0ab35bc1c02dc9d06
-      # Empty source_run_id → publish from this run's just-uploaded artifacts.
-      source_run_id: ''
 # Haybarn fork — workflow re-index marker.
