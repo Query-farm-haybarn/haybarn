@@ -1,0 +1,259 @@
+# Haybarn: signs the extensions produced by `Haybarn Extensions` (the build
+# workflow) with the Haybarn extension-signing key and publishes them to the
+# Haybarn extension repository on Cloudflare R2 (served at
+# https://haybarn-extensions.query.farm/core), plus PyPI + npm.
+#
+# Decoupled from the build workflow on purpose: the build matrix is long
+# (~15 legs × N extensions) and the publish path is a few network calls
+# against R2 / PyPI / npm. Splitting them lets a flaky publish be retried
+# without re-running the entire build — workflow_dispatch with a
+# source_run_id pointing at a prior `Haybarn Extensions` run consumes that
+# run's artifacts directly.
+#
+# Triggers
+#   workflow_run     auto-fires after every successful `Haybarn Extensions`
+#                    run. ALWAYS dry-run — only validates the pipeline.
+#                    Real R2/PyPI/npm writes require manual dispatch.
+#   workflow_dispatch  explicit operator action. Specify which build run to
+#                      publish from (source_run_id) and whether to actually
+#                      push (deploy=true). Re-dispatch with the same
+#                      source_run_id to retry after a publish failure.
+name: Haybarn Extensions Publish
+
+on:
+  workflow_run:
+    workflows: ["Haybarn Extensions"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: '`Haybarn Extensions` run ID whose artifacts to publish'
+        type: string
+        required: true
+      deploy:
+        description: 'Pass "true" to actually upload to R2 / PyPI / npm (otherwise dry-run)'
+        type: string
+        default: 'false'
+
+permissions:
+  contents: read
+  actions: read       # download-artifact across workflow runs
+
+# Don't cancel an in-flight publish — finishing what we started is safer
+# than racing two writers against the same R2 prefix.
+concurrency:
+  group: haybarn-extensions-publish-${{ inputs.source_run_id || github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Sign and publish to R2
+    # workflow_run fires for every completion (including failures and
+    # cancellations); only proceed if the build actually succeeded.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    outputs:
+      source_run_id: ${{ steps.context.outputs.source_run_id }}
+      head_sha: ${{ steps.context.outputs.head_sha }}
+      deploy: ${{ steps.context.outputs.deploy }}
+    steps:
+      - name: Resolve source run + ref
+        id: context
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            SOURCE_RUN_ID='${{ inputs.source_run_id }}'
+            DEPLOY='${{ inputs.deploy }}'
+            HEAD_SHA=$(gh api repos/${{ github.repository }}/actions/runs/$SOURCE_RUN_ID --jq .head_sha)
+          else
+            SOURCE_RUN_ID='${{ github.event.workflow_run.id }}'
+            DEPLOY='false'
+            HEAD_SHA='${{ github.event.workflow_run.head_sha }}'
+          fi
+          {
+            echo "source_run_id=$SOURCE_RUN_ID"
+            echo "head_sha=$HEAD_SHA"
+            echo "deploy=$DEPLOY"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice::publishing artifacts from run $SOURCE_RUN_ID @ $HEAD_SHA (deploy=$DEPLOY)"
+
+      # Check out the build's commit, not the workflow's branch, so
+      # `git log -1` below sees the engine commit those artifacts came from
+      # and LICENSE / scripts match the build's state of the world.
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.context.outputs.head_sha }}
+          fetch-depth: 0
+
+      - name: Download built extensions
+        uses: actions/download-artifact@v8
+        with:
+          run-id: ${{ steps.context.outputs.source_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # The reusable build workflow prefixes its artifacts with
+          # `artifact_prefix` (haybarn) and each contains a
+          # <version>/<platform>/ repository tree.
+          pattern: haybarn-*
+          path: /tmp/staged
+          merge-multiple: true
+
+      - name: Assemble merged repository
+        shell: bash
+        run: |
+          mkdir -p /tmp/haybarn-repository
+          # Flatten the per-artifact <version>/<platform>/ trees into one.
+          cp -r /tmp/staged/* /tmp/haybarn-repository/ 2>/dev/null || true
+          find /tmp/haybarn-repository -name '*.duckdb_extension*' -print
+          if [ -z "$(find /tmp/haybarn-repository -name '*.duckdb_extension*' -print -quit)" ]; then
+            echo "No built extensions found to publish" >&2
+            exit 1
+          fi
+
+      - name: Sign and upload to R2 (core repository)
+        shell: bash
+        env:
+          # Private key whose public half is embedded in
+          # src/main/extension/extension_helper.cpp.
+          DUCKDB_EXTENSION_SIGNING_PK: ${{ secrets.HAYBARN_EXTENSION_SIGNING_PK }}
+          AWS_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          # NOTE: the org secret is named `R2_SECRET_KEY_ID` (not the more
+          # conventional `_SECRET_ACCESS_KEY`). The previous reference to a
+          # non-existent `R2_SECRET_ACCESS_KEY` resolved to empty string and
+          # `extension-upload-repository.sh` silently bailed with
+          # "No AWS key found, skipping" — so the deploy-step was green for
+          # weeks without ever writing to R2.
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_KEY_ID }}
+          # R2 needs these to play nicely with the AWS SDK — region=auto +
+          # pre-2024 checksum behavior. Mirrors the community deploy
+          # workflow; without these, PutObject returns AccessDenied.
+          AWS_DEFAULT_REGION: auto
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          # for_real => actually upload; anything else => dry run.
+          DUCKDB_DEPLOY_SCRIPT_MODE: ${{ steps.context.outputs.deploy == 'true' && 'for_real' || 'dry_run' }}
+        run: |
+          python3 -m pip install awscli
+          # $2 is the target bucket+prefix; the R2 bucket is fronted by
+          # haybarn-extensions.query.farm with a top-level core/ prefix.
+          # NOTE: the upload script's `for version_dir in $BASE_DIR/*` adds
+          # its own trailing `/*`. If we passed `/tmp/haybarn-repository/*`
+          # here, the loop iterates two levels deep, conflates arch with
+          # version, and silently uploads nothing visible. Pass the base
+          # directory without a glob.
+          ./scripts/extension-upload-repository.sh \
+            "/tmp/haybarn-repository" "${{ secrets.R2_BUCKET }}/core"
+
+      # ------------------------------------------------------------------
+      # Per-commit immutable R2 layout + pip wheel + npm leaf/meta staging.
+      # See haybarn-extensions.yml history for the per-step rationale; this
+      # block is moved verbatim across the workflow split.
+      # ------------------------------------------------------------------
+      - uses: actions/checkout@v6
+        with:
+          repository: 'Query-farm-haybarn/haybarn-extension-ci-tools'
+          ref: 3e39de2d77149b60f7d0d9aee697897d35af1109
+          path: ci-tools
+
+      - name: Capture engine commit + timestamp (for CalVer + manifest)
+        id: engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          C=$(git log -1 --format=%H)
+          T=$(git log -1 --format=%ct)
+          {
+            echo "commit=$C"
+            echo "commit_ts=$T"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice::engine commit $C (ts=$T)"
+
+      - name: Per-commit immutable layout + stage pip/npm artifacts
+        if: ${{ steps.context.outputs.deploy == 'true' }}
+        shell: bash
+        env:
+          DUCKDB_EXTENSION_SIGNING_PK: ${{ secrets.HAYBARN_EXTENSION_SIGNING_PK }}
+          HAYBARN_GPG_PRIVATE_KEY:     ${{ secrets.HAYBARN_GPG_PRIVATE_KEY }}
+          HAYBARN_GPG_PASSPHRASE:      ${{ secrets.HAYBARN_GPG_PASSPHRASE }}
+          AWS_ENDPOINT_URL:            ${{ secrets.R2_ENDPOINT }}
+          AWS_ACCESS_KEY_ID:           ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY:       ${{ secrets.R2_SECRET_KEY_ID }}
+          AWS_DEFAULT_REGION:          auto
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        run: |
+          # awscli + brotli already installed by the previous step / runner.
+          which brotli || sudo apt-get install -y --no-install-recommends brotli
+          python3 ci-tools/scripts/publish/publish_core_extensions.py \
+            --repo-dir          /tmp/haybarn-repository \
+            --engine-commit     '${{ steps.engine.outputs.commit }}' \
+            --engine-commit-ts  '${{ steps.engine.outputs.commit_ts }}' \
+            --haybarn-version   '1.5.2' \
+            --duckdb-version    'v1.5.2' \
+            --r2-bucket         '${{ secrets.R2_BUCKET }}' \
+            --r2-prefix         core \
+            --license           LICENSE \
+            --dist-dir          dist/ \
+            --signed-by         haybarn-extension-signing-2026 \
+            --channels          'r2-core,pypi,npm' \
+            --deploy            true
+
+      - name: Upload pip wheels as artifact
+        if: ${{ steps.context.outputs.deploy == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-pypi-wheels
+          path: dist/pypi/
+          if-no-files-found: error
+
+      - name: Upload npm leaves + metas as artifact
+        if: ${{ steps.context.outputs.deploy == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-npm-packages
+          path: |
+            dist/npm-leaves/
+            dist/npm-metas/
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------
+  # Registry publish (PyPI + npm) is the consolidated reusable workflow
+  # in ci-tools — same workflow haybarn-community-extensions calls. We
+  # pass artifact_shape=bundled because it downloads core-pypi-wheels +
+  # core-npm-packages (the artifacts the publish job above uploaded TO
+  # THIS RUN), as opposed to the per-extension matrix-artifact shape
+  # that the community catalog uses.
+  #
+  # Independent dispatch (e.g. for retry after a PyPI "429 Too many new
+  # projects" rate-limit bounce) is supported by calling the upstream
+  # workflow directly:
+  #   gh workflow run "_extension_registry_publish.yml" \
+  #     -R Query-farm-haybarn/haybarn-extension-ci-tools --ref haybarn \
+  #     -f artifact_shape=bundled -f source_run_id=<this-run-id> \
+  #     -f duckdb_version=v1.5.2 -f version=<calver> -f ext_commit=<sha> \
+  #     -f extension_version_label=
+  # ------------------------------------------------------------------
+  call_publish_registries:
+    name: Publish PyPI + npm
+    needs: publish
+    if: ${{ needs.publish.outputs.deploy == 'true' }}
+    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/_extension_registry_publish.yml@3e39de2d77149b60f7d0d9aee697897d35af1109
+    permissions:
+      contents: read
+      actions:  read
+      id-token: write
+    secrets: inherit
+    with:
+      artifact_shape: bundled
+      # MUST match the `@<SHA>` pinned in the `uses:` line above — the
+      # called workflow uses this to checkout its own scripts/publish/.
+      ci_tools_ref: 3e39de2d77149b60f7d0d9aee697897d35af1109
+      # Empty source_run_id → publish from this run's just-uploaded
+      # core-pypi-wheels + core-npm-packages artifacts.
+      source_run_id: ''
+# Haybarn fork — workflow re-index marker.
