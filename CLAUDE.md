@@ -183,9 +183,15 @@ fresh SHA just means nothing was warm yet, not that writes are broken.
 - **R2 secret name oddity**: the actual access-key-secret is stored under
   `R2_SECRET_KEY_ID` (the `_ID` suffix is a misnomer; the value is the SECRET
   half of the access pair). `R2_ACCESS_KEY_ID` is the ID. Both at org level.
-- Tag-triggered runs of `haybarn-extensions.yml` are in `dry_run` mode by
-  default — actual R2 deploys only happen on `workflow_dispatch` with
-  `deploy=true`. (haybarn-community-extensions deploys-on-every-push.)
+- Core extensions are split into two workflows: `haybarn-extensions.yml`
+  (build only — tag push or workflow_dispatch) and
+  `haybarn-extensions-publish.yml` (sign + R2 + PyPI + npm). The publish
+  workflow auto-fires on every successful build via `workflow_run` but in
+  dry-run mode; actual R2/PyPI/npm writes require a manual `workflow_dispatch`
+  with `source_run_id=<build run id>` and `deploy=true`. Retrying a failed
+  publish therefore doesn't re-trigger a full extension rebuild — just
+  re-dispatch with the same `source_run_id`. (haybarn-community-extensions
+  deploys-on-every-push and isn't split this way.)
 
 ## Extending the build-fork extensions
 
