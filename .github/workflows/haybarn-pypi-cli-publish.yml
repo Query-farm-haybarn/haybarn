@@ -2,13 +2,13 @@
 #
 # One package, multiple platform-tagged wheels:
 #
-#   haybarn_cli-1.5.2rc7-py3-none-manylinux_2_28_x86_64.whl
-#   haybarn_cli-1.5.2rc7-py3-none-manylinux_2_28_aarch64.whl
-#   haybarn_cli-1.5.2rc7-py3-none-musllinux_1_2_x86_64.whl
-#   haybarn_cli-1.5.2rc7-py3-none-musllinux_1_2_aarch64.whl
-#   haybarn_cli-1.5.2rc7-py3-none-macosx_11_0_x86_64.whl
-#   haybarn_cli-1.5.2rc7-py3-none-macosx_11_0_arm64.whl
-#   haybarn_cli-1.5.2rc7-py3-none-win_amd64.whl
+#   haybarn_cli-1.5.3rc7-py3-none-manylinux_2_28_x86_64.whl
+#   haybarn_cli-1.5.3rc7-py3-none-manylinux_2_28_aarch64.whl
+#   haybarn_cli-1.5.3rc7-py3-none-musllinux_1_2_x86_64.whl
+#   haybarn_cli-1.5.3rc7-py3-none-musllinux_1_2_aarch64.whl
+#   haybarn_cli-1.5.3rc7-py3-none-macosx_11_0_x86_64.whl
+#   haybarn_cli-1.5.3rc7-py3-none-macosx_11_0_arm64.whl
+#   haybarn_cli-1.5.3rc7-py3-none-win_amd64.whl
 #
 # pip / uv select the right wheel from the platform tag in the filename;
 # no meta-package + leaves dance like npm — PyPI's wheel-tag system
@@ -26,7 +26,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag to publish (e.g. haybarn-v1.5.2-rc7)'
+        description: 'Release tag to publish (e.g. haybarn-v1.5.3-rc7)'
         type: string
         required: true
 

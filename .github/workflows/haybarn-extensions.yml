@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       override_git_describe:
-        description: 'Version string to embed (defaults to v1.5.2)'
+        description: 'Version string to embed (defaults to v1.5.3)'
         type: string
 
 concurrency:
@@ -64,7 +64,7 @@ jobs:
       extra_toolchains: 'rust;unixodbc'
       # Pin the embedded DuckDB version to the upstream release Haybarn is
       # based on, matching the haybarn-release workflow.
-      override_duckdb_version: ${{ inputs.override_git_describe || 'v1.5.2' }}
+      override_duckdb_version: ${{ inputs.override_git_describe || 'v1.5.3' }}
       # Extension tests frequently need external services (postgres, mysql,
       # S3, ...). Build first; enable targeted tests later.
       skip_tests: true
