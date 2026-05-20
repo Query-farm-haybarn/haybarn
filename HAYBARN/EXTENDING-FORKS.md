@@ -80,13 +80,23 @@ git commit -am "config: bump haybarn-httpfs to $NEW_SHA"
 git push origin haybarn
 
 # Trigger an extension build with the new pin.
-gh workflow run haybarn-extensions.yml \
+BUILD_RUN_ID=$(gh workflow run haybarn-extensions.yml \
   --repo Query-farm-haybarn/haybarn --ref haybarn \
-  -f deploy=true
+  --json '{"databaseId": ""}' --jq .databaseId 2>/dev/null \
+  || gh run list --repo Query-farm-haybarn/haybarn \
+       --workflow=haybarn-extensions.yml --limit 1 --json databaseId --jq '.[0].databaseId')
+
+# After the build run finishes (gh run watch $BUILD_RUN_ID -R Query-farm-haybarn/haybarn),
+# deploy to R2 + PyPI + npm by dispatching the publish workflow.
+gh workflow run haybarn-extensions-publish.yml \
+  --repo Query-farm-haybarn/haybarn --ref haybarn \
+  -f source_run_id=$BUILD_RUN_ID -f deploy=true
 ```
 
-When the build deploys to R2, `INSTALL httpfs;` on a Haybarn CLI picks up the
+When the publish run lands, `INSTALL httpfs;` on a Haybarn CLI picks up the
 new build immediately (same extension name; Haybarn's signing key verifies it).
+If publish fails (R2 hiccup, PyPI rate-limit), re-dispatch the publish
+workflow with the same `source_run_id` — no rebuild needed.
 
 ### Pulling in newer upstream code (rebase on a new upstream release)
 
