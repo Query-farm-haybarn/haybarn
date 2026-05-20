@@ -3242,8 +3242,8 @@ int RunShell(int argc, const char **argv) {
 
 			// Haybarn: branded startup banner. HAYBARN_VERSION_STRING is
 			// derived in CMakeLists.txt from `git describe --match
-			// 'haybarn-v*'` (e.g. "1.5.2-rc1" for a tag-at-HEAD release,
-			// "1.5.2-rc1-3-g5f26f0d" for commits past it, or "dev-g5f26f0d"
+			// 'haybarn-v*'` (e.g. "1.5.3-rc1" for a tag-at-HEAD release,
+			// "1.5.3-rc1-3-g5f26f0d" for commits past it, or "dev-g5f26f0d"
 			// when no haybarn-v* tag is reachable). LibraryVersion() keeps
 			// tracking the upstream DuckDB version for the "powered by
 			// DuckDB" attribution + storage compatibility.
