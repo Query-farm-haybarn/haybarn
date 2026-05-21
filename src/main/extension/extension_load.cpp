@@ -6,6 +6,7 @@
 #include "duckdb/main/capi/capi_internal.hpp"
 #include "duckdb/main/capi/extension_api.hpp"
 #include "duckdb/main/error_manager.hpp"
+#include "duckdb/main/extension_discovery.hpp"
 #include "duckdb/main/extension_helper.hpp"
 #include "duckdb/main/extension_manager.hpp"
 #include "duckdb/main/settings.hpp"
@@ -444,9 +445,19 @@ bool ExtensionHelper::TryInitialLoad(DatabaseInstance &db, FileSystem &fs, const
 			}
 		}
 
-		// If not found in any directory, use the first directory for error reporting
+		// If not found in any local extension directory, try resolving an
+		// extension that npm installed into node_modules and load it in place
+		// (no network, no cache write; independent of autoinstall_known_extensions).
+		// Signature verification below still gates the load.
 		if (!found) {
-			filename = ComputeLocalExtensionPath(search_directories[0], extension_name);
+			string npm_path = TryDiscoverNpmExtension(db, fs, extension);
+			if (!npm_path.empty()) {
+				filename = npm_path;
+				direct_load = true;
+			} else if (!search_directories.empty()) {
+				// use the first directory for error reporting
+				filename = ComputeLocalExtensionPath(search_directories[0], extension_name);
+			}
 		}
 #endif
 	} else {
