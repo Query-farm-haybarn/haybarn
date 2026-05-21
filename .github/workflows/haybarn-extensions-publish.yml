@@ -201,7 +201,7 @@ jobs:
         run: |
           # awscli + brotli already installed by the previous step / runner.
           which brotli || sudo apt-get install -y --no-install-recommends brotli
-          python3 ci-tools/scripts/publish/publish_core_extensions.py \
+          python3 ci-tools/scripts/publish/publish_extensions.py \
             --repo-dir          /tmp/haybarn-repository \
             --engine-commit     '${{ steps.engine.outputs.commit }}' \
             --engine-commit-ts  '${{ steps.engine.outputs.commit_ts }}' \
