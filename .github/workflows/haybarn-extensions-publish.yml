@@ -84,11 +84,23 @@ jobs:
 
       # Check out the build's commit, not the workflow's branch, so
       # `git log -1` below sees the engine commit those artifacts came from
-      # and LICENSE / scripts match the build's state of the world.
+      # and LICENSE matches the build's state of the world.
       - uses: actions/checkout@v6
         with:
           ref: ${{ steps.context.outputs.head_sha }}
           fetch-depth: 0
+
+      # Overlay the deploy scripts from THIS workflow's ref (branch tip), not the
+      # build's frozen head_sha. The publish workflow exists to retry the deploy
+      # without rebuilding — that only works for deploy-SCRIPT fixes if the
+      # scripts come from a mutable ref. The head_sha checkout above still
+      # provides the engine commit/ts + LICENSE; only scripts/ is overlaid.
+      - name: Overlay current deploy scripts
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+          sparse-checkout: scripts
+          path: deploy-scripts
 
       - name: Download built extensions
         uses: actions/download-artifact@v8
@@ -138,15 +150,15 @@ jobs:
           # for_real => actually upload; anything else => dry run.
           DUCKDB_DEPLOY_SCRIPT_MODE: ${{ steps.context.outputs.deploy == 'true' && 'for_real' || 'dry_run' }}
         run: |
-          python3 -m pip install awscli
+          # awscli for the sync; cryptography for in-process RSA signing;
+          # tqdm for the sign+compress progress bar; brotli (CLI) only for the
+          # wasm compression branch.
+          python3 -m pip install awscli cryptography tqdm
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends brotli
           # $2 is the target bucket+prefix; the R2 bucket is fronted by
           # haybarn-extensions.query.farm with a top-level core/ prefix.
-          # NOTE: the upload script's `for version_dir in $BASE_DIR/*` adds
-          # its own trailing `/*`. If we passed `/tmp/haybarn-repository/*`
-          # here, the loop iterates two levels deep, conflates arch with
-          # version, and silently uploads nothing visible. Pass the base
-          # directory without a glob.
-          ./scripts/extension-upload-repository.sh \
+          python3 ./deploy-scripts/scripts/haybarn_extension_upload.py \
             "/tmp/haybarn-repository" "${{ secrets.R2_BUCKET }}/core"
 
       # ------------------------------------------------------------------
