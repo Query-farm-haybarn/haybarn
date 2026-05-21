@@ -1,7 +1,7 @@
 add_library(
   duckdb_main_extension OBJECT
-  extension_alias.cpp extension_helper.cpp extension_install.cpp
-  extension_load.cpp extension_loader.cpp)
+  extension_alias.cpp extension_discovery.cpp extension_helper.cpp
+  extension_install.cpp extension_load.cpp extension_loader.cpp)
 
 # Escape ; in the string to ensure this is treated as a plain string instead of
 # a list
