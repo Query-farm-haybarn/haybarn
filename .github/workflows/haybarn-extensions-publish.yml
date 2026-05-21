@@ -222,6 +222,9 @@ jobs:
           name: core-pypi-wheels
           path: dist/pypi/
           if-no-files-found: error
+          # Intra-run handoff to the publish job; once on PyPI it's dead weight.
+          # 2 days leaves a short retry-without-rebuild window (source_run_id).
+          retention-days: 2
 
       - name: Upload npm leaves + metas as artifact
         if: ${{ steps.context.outputs.deploy == 'true' }}
@@ -232,6 +235,8 @@ jobs:
             dist/npm-leaves/
             dist/npm-metas/
           if-no-files-found: error
+          # Intra-run handoff to the publish job; once on npm it's dead weight.
+          retention-days: 2
 
   # ------------------------------------------------------------------
   # Registry publish (PyPI + npm) is the consolidated reusable workflow
