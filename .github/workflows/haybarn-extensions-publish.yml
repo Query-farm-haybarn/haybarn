@@ -150,17 +150,14 @@ jobs:
           # for_real => actually upload; anything else => dry run.
           DUCKDB_DEPLOY_SCRIPT_MODE: ${{ steps.context.outputs.deploy == 'true' && 'for_real' || 'dry_run' }}
         run: |
-          # awscli for the sync; brotli for wasm compression (single.sh shells
-          # out to it); GNU parallel to fan sign+compress across cores (the
-          # driver falls back to xargs -P if it's absent, but installing it is
-          # cheap and keeps the fast path).
-          python3 -m pip install awscli
+          # awscli for the sync; cryptography for in-process RSA signing;
+          # brotli (CLI) only for the wasm compression branch.
+          python3 -m pip install awscli cryptography
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends brotli parallel
+          sudo apt-get install -y --no-install-recommends brotli
           # $2 is the target bucket+prefix; the R2 bucket is fronted by
-          # haybarn-extensions.query.farm with a top-level core/ prefix. Pass
-          # the base directory without a glob — the driver walks it itself.
-          ./deploy-scripts/scripts/haybarn-extension-upload-repository.sh \
+          # haybarn-extensions.query.farm with a top-level core/ prefix.
+          python3 ./deploy-scripts/scripts/haybarn_extension_upload.py \
             "/tmp/haybarn-repository" "${{ secrets.R2_BUCKET }}/core"
 
       # ------------------------------------------------------------------

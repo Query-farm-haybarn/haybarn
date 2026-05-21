@@ -60,24 +60,6 @@ rm $ext.append
 
 set -e
 
-# Haybarn: prepare-only mode. When EXTENSION_UPLOAD_STAGE_DIR is set, emit the
-# signed+compressed artifact into the destination key layout under that dir and
-# return WITHOUT doing the per-file `aws s3 cp`. The repository driver then ships
-# the whole staged tree with a single `aws s3 sync` per metadata class. This
-# lets sign+compress fan out across cores (GNU parallel) and collapses hundreds
-# of `aws` CLI cold-starts into one. Layout mirrors the mutable "latest" path
-# (`<bucket>/<duckdb_version>/<arch>/...`), which is all the driver uploads.
-if [ -n "${EXTENSION_UPLOAD_STAGE_DIR:-}" ]; then
-  if [[ $4 == wasm* ]]; then
-    out="$EXTENSION_UPLOAD_STAGE_DIR/$3/$4/$1.duckdb_extension.wasm"
-  else
-    out="$EXTENSION_UPLOAD_STAGE_DIR/$3/$4/$1.duckdb_extension.gz"
-  fi
-  mkdir -p "$(dirname "$out")"
-  mv "$ext.compressed" "$out"
-  exit 0
-fi
-
 # Abort if AWS key is not set
 if [ -z "$AWS_ACCESS_KEY_ID" ]; then
     echo "No AWS key found, skipping.."
@@ -96,13 +78,6 @@ fi
 # per-object ACLs. Default to no ACL flag; set EXTENSION_UPLOAD_ACL to override
 # (e.g. EXTENSION_UPLOAD_ACL='--acl public-read') for a real S3 bucket instead.
 ACL_PARAM="${EXTENSION_UPLOAD_ACL:-}"
-
-# Haybarn: suppress the per-file transfer progress lines that `aws s3 cp` emits
-# even in non-TTY CI logs. `--no-progress` keeps the final `upload: ...`
-# confirmation line so the deploy log still shows what was written. Set
-# EXTENSION_UPLOAD_QUIET='' to restore the progress output, or '--quiet' to
-# drop the confirmation line too.
-QUIET_PARAM="${EXTENSION_UPLOAD_QUIET:---no-progress}"
 
 # Haybarn: Cache-Control on the served object.
 # - Versioned paths (`<bucket>/<ext>/<ext_ver>/<dv>/<arch>/...`) are IMMUTABLE
@@ -125,18 +100,18 @@ if [[ $7 = 'true' ]]; then
   fi
 
   if [[ $4 == wasm* ]]; then
-    aws s3 cp $ext.compressed s3://$5/$1/$2/$3/$4/$1.duckdb_extension.wasm $DRY_RUN_PARAM $ACL_PARAM $QUIET_PARAM --content-encoding br --content-type="application/wasm" --cache-control "$CACHE_CONTROL_VERSIONED"
+    aws s3 cp $ext.compressed s3://$5/$1/$2/$3/$4/$1.duckdb_extension.wasm $DRY_RUN_PARAM $ACL_PARAM --content-encoding br --content-type="application/wasm" --cache-control "$CACHE_CONTROL_VERSIONED"
   else
-    aws s3 cp $ext.compressed s3://$5/$1/$2/$3/$4/$1.duckdb_extension.gz $DRY_RUN_PARAM $ACL_PARAM $QUIET_PARAM --cache-control "$CACHE_CONTROL_VERSIONED"
+    aws s3 cp $ext.compressed s3://$5/$1/$2/$3/$4/$1.duckdb_extension.gz $DRY_RUN_PARAM $ACL_PARAM --cache-control "$CACHE_CONTROL_VERSIONED"
   fi
 fi
 
 # upload to latest version
 if [[ $6 = 'true' ]]; then
   if [[ $4 == wasm* ]]; then
-    aws s3 cp $ext.compressed s3://$5/$3/$4/$1.duckdb_extension.wasm $DRY_RUN_PARAM $ACL_PARAM $QUIET_PARAM --content-encoding br --content-type="application/wasm" --cache-control "$CACHE_CONTROL_LATEST"
+    aws s3 cp $ext.compressed s3://$5/$3/$4/$1.duckdb_extension.wasm $DRY_RUN_PARAM $ACL_PARAM --content-encoding br --content-type="application/wasm" --cache-control "$CACHE_CONTROL_LATEST"
   else
-    aws s3 cp $ext.compressed s3://$5/$3/$4/$1.duckdb_extension.gz $DRY_RUN_PARAM $ACL_PARAM $QUIET_PARAM --cache-control "$CACHE_CONTROL_LATEST"
+    aws s3 cp $ext.compressed s3://$5/$3/$4/$1.duckdb_extension.gz $DRY_RUN_PARAM $ACL_PARAM --cache-control "$CACHE_CONTROL_LATEST"
   fi
 fi
 
