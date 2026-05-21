@@ -51,13 +51,25 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, utils
 
+try:
+    from tqdm import tqdm
+except ImportError:  # progress bar is optional — fall back to plain lines
+    tqdm = None
+
 SIGNATURE_SIZE = 256
 CHUNK = 1024 * 1024  # 1 MiB — must match the engine's IntializeAncillaryData
+
+
+def log(msg: str) -> None:
+    """Flushed stdout — CI block-buffers otherwise and nothing shows until the
+    process exits."""
+    print(msg, flush=True)
 
 
 def two_level_hash(body: bytes) -> bytes:
@@ -154,19 +166,35 @@ def main(argv: list[str]) -> int:
         print(f"No built extensions found under {args.base_dir}", file=sys.stderr)
         return 1
 
+    total = len(files)
     mode = "for_real" if not dry_run else "DRY RUN"
-    print(f"Signing+compressing {len(files)} binaries (jobs={jobs}) [{mode}]")
+    log(f"Phase 1/2: signing+compressing {total} binaries (jobs={jobs}) [{mode}]")
 
     stage_dir = pathlib.Path(tempfile.mkdtemp(prefix="haybarn-ext-stage-"))
 
     # Phase 1: parallel sign + compress (pure in-memory per file — no shared
     # temp files, so this is race-free unlike the shell chain it replaces).
+    t0 = time.monotonic()
     with ProcessPoolExecutor(max_workers=jobs) as pool:
         futs = {pool.submit(process_one, f, str(stage_dir), pem): f for f in files}
-        for fut in as_completed(futs):
-            print(f"  staged {pathlib.Path(fut.result()).relative_to(stage_dir)}")
+        done = as_completed(futs)
+        if tqdm is not None:
+            # mininterval=0.5 keeps the redraw count sane in a non-TTY CI log.
+            bar = tqdm(done, total=total, desc="sign+compress", unit="ext",
+                       mininterval=0.5)
+            for fut in bar:
+                fut.result()  # surface any worker exception
+        else:
+            # Fallback: flushed [i/N] lines so progress still streams.
+            for i, fut in enumerate(done, 1):
+                rel = pathlib.Path(fut.result()).relative_to(stage_dir)
+                log(f"  [{i}/{total}] {time.monotonic() - t0:6.1f}s  {rel}")
+    log(f"Phase 1 done: {total} binaries in {time.monotonic() - t0:.1f}s")
 
     # Phase 2: ship the staged tree. gz and wasm carry different metadata.
+    log(f"Phase 2/2: aws s3 sync -> s3://{args.target_bucket} "
+        f"(concurrency={sync_conc})")
+    t1 = time.monotonic()
     subprocess.run(["aws", "configure", "set",
                     "default.s3.max_concurrent_requests", sync_conc], check=True)
     dest = f"s3://{args.target_bucket}"
@@ -179,7 +207,7 @@ def main(argv: list[str]) -> int:
         aws_sync(stage_dir, dest, "*.duckdb_extension.wasm", dry_run, cache_control,
                  ["--content-encoding", "br", "--content-type", "application/wasm"])
 
-    print("Done.")
+    log(f"Phase 2 done in {time.monotonic() - t1:.1f}s. All done.")
     return 0
 
 

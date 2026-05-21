@@ -151,8 +151,9 @@ jobs:
           DUCKDB_DEPLOY_SCRIPT_MODE: ${{ steps.context.outputs.deploy == 'true' && 'for_real' || 'dry_run' }}
         run: |
           # awscli for the sync; cryptography for in-process RSA signing;
-          # brotli (CLI) only for the wasm compression branch.
-          python3 -m pip install awscli cryptography
+          # tqdm for the sign+compress progress bar; brotli (CLI) only for the
+          # wasm compression branch.
+          python3 -m pip install awscli cryptography tqdm
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends brotli
           # $2 is the target bucket+prefix; the R2 bucket is fronted by
