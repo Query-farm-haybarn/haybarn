@@ -148,7 +148,11 @@ install(
   DESTINATION "${INSTALL_INCLUDE_DIR}"
   FILES_MATCHING
   PATTERN "*.hpp"
-  PATTERN "*.ipp")
+  PATTERN "*.ipp"
+  # haybarn.h is a .h (not .hpp) and is #included by the installed duckdb.hpp;
+  # without this it is missing from the installed header set, breaking consumers
+  # that compile against the install tree (e.g. the wasm build).
+  PATTERN "haybarn.h")
 install(FILES "${PROJECT_SOURCE_DIR}/src/include/duckdb.hpp"
               "${PROJECT_SOURCE_DIR}/src/include/duckdb.h"
         DESTINATION "${INSTALL_INCLUDE_DIR}")
