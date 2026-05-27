@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       override_git_describe:
-        description: 'Version string to embed (defaults to v1.5.3)'
+        description: 'Engine ref to build extensions against (e.g. haybarn-v1.5.3-rc3); a haybarn-v1.5.3* ref embeds v1.5.3. Defaults to the pushed tag.'
         type: string
 
 concurrency:
@@ -62,9 +62,15 @@ jobs:
       # manylinux Dockerfile and macOS jobs install when `unixodbc` is in the
       # toolchains string — semicolon-delimited match).
       extra_toolchains: 'rust;unixodbc'
-      # Pin the embedded DuckDB version to the upstream release Haybarn is
-      # based on, matching the haybarn-release workflow.
-      override_duckdb_version: ${{ inputs.override_git_describe || 'v1.5.3' }}
+      # Check out the engine (duckdb/) at the Haybarn release ref being built, so
+      # extensions compile against the Haybarn engine — including engine API that
+      # only exists on the haybarn branch (e.g. PostRequestInfo::cancellation),
+      # not the pristine upstream v1.5.3 tag. The extension-ci-tools fork maps a
+      # `haybarn-v1.5.3*` ref back to the clean `v1.5.3` OVERRIDE_GIT_DESCRIBE, so
+      # the embedded/loadable version string still matches the released engine.
+      # On a tag push github.ref_name is the haybarn-v* tag; for workflow_dispatch
+      # pass the tag via override_git_describe.
+      override_duckdb_version: ${{ inputs.override_git_describe || github.ref_name }}
       # Extension tests frequently need external services (postgres, mysql,
       # S3, ...). Build first; enable targeted tests later.
       skip_tests: true
