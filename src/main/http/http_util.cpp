@@ -150,6 +150,10 @@ HTTPTransportReusePolicy HTTPUtil::GetTransportReusePolicy() const {
 }
 
 bool HTTPResponse::ShouldRetry() const {
+	if (cancelled) {
+		// terminal: a request aborted via its cancellation flag must never be retried
+		return false;
+	}
 	if (HasRequestError()) {
 		// request errors are eligible for retry
 		return true;
