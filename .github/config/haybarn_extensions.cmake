@@ -43,7 +43,7 @@ include("${EXTENSION_CONFIG_BASE_DIR}/fts.cmake")
 duckdb_extension_load(httpfs
         LOAD_TESTS
         GIT_URL https://github.com/Query-farm-haybarn/haybarn-httpfs
-        GIT_TAG cbfcb2e650593ff48f4a490e3599721f204a0eb4
+        GIT_TAG 3b5dab06e20c0d3970ad2dff33dd7e922b3cf2f3
 )
 include("${EXTENSION_CONFIG_BASE_DIR}/inet.cmake")
 include("${EXTENSION_CONFIG_BASE_DIR}/mysql_scanner.cmake")
