@@ -108,6 +108,10 @@ string HTTPUtil::GetName() const {
 }
 
 bool HTTPResponse::ShouldRetry() const {
+	if (cancelled) {
+		// terminal: a request aborted via its cancellation flag must never be retried
+		return false;
+	}
 	if (HasRequestError()) {
 		// always retry on request errors
 		return true;
