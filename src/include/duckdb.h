@@ -42,6 +42,11 @@
 #endif
 #endif
 
+//! Haybarn build-identity macros. Inlined copy of src/include/duckdb/haybarn.h
+//! to keep this C header self-contained -- keep the values in sync.
+#define HAYBARN             1
+#define HAYBARN_ABI_VERSION 1
+
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
