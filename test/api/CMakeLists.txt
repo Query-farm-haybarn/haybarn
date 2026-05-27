@@ -43,7 +43,8 @@ set(TEST_API_OBJECTS
     test_data_table_scan_without_row_groups.cpp)
 
 if(NOT WIN32)
-  set(TEST_API_OBJECTS ${TEST_API_OBJECTS} test_read_only.cpp)
+  set(TEST_API_OBJECTS ${TEST_API_OBJECTS} test_read_only.cpp
+                       test_http_post_cancel.cpp)
 endif()
 
 if(DUCKDB_EXTENSION_TPCH_SHOULD_LINK)
