@@ -118,7 +118,7 @@ struct HTTPResponse {
 	HTTPHeaders headers;
 	bool success = true;
 	//! Set by a backend when the request was aborted because its cancellation flag was
-	//! observed set (see PostRequestInfo::cancellation). A cancelled response is terminal:
+	//! observed set (see BaseRequest::cancellation). A cancelled response is terminal:
 	//! ShouldRetry() returns false so RunRequestWithRetry does not retry it with backoff.
 	bool cancelled = false;
 
@@ -149,6 +149,13 @@ struct BaseRequest {
 	HTTPParams &params;
 	//! Whether or not to return failed requests (instead of throwing)
 	bool try_request = false;
+	//! Optional non-owning pointer to a caller-owned cancellation flag, typically
+	//! &ClientContext::interrupted. Polled by the backend during the transfer; when it
+	//! reads true the request is aborted and the response has cancelled=true. The flag
+	//! MUST outlive the HTTPUtil::Request() call (it is read cross-thread, e.g. on the
+	//! curl-multi dispatcher thread). Honored for every HTTP method by the curl backend;
+	//! the in-tree httplib fallback cancels best-effort (see its client).
+	optional_ptr<const atomic<bool>> cancellation;
 
 	// Requests will optionally contain their timings
 	bool have_request_timing = false;
@@ -221,12 +228,6 @@ struct PostRequestInfo : public BaseRequest {
 	string buffer_out;
 	//! Used to send a GET request with a body (non-standard but supported by some servers)
 	bool send_post_as_get_request = false;
-	//! Optional non-owning pointer to a caller-owned cancellation flag, typically
-	//! &ClientContext::interrupted. Polled by the backend during the transfer; when it
-	//! reads true the request is aborted and the response has cancelled=true. The flag
-	//! MUST outlive the HTTPUtil::Request() call (it is read cross-thread, e.g. on the
-	//! curl-multi dispatcher thread). Only the curl backend cancels mid-flight today.
-	optional_ptr<const atomic<bool>> cancellation;
 };
 
 class HTTPClient {
