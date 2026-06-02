@@ -193,7 +193,13 @@ function(build_loadable_extension_directory NAME ABI_TYPE OUTPUT_DIRECTORY EXTEN
         add_custom_command(
                 TARGET ${TARGET_NAME}
                 POST_BUILD
-                COMMAND emcc $<TARGET_FILE:${TARGET_NAME}> -o $<TARGET_FILE:${TARGET_NAME}>.wasm -O3 -sSIDE_MODULE=2 -sEXPORTED_FUNCTIONS="${EXPORTED_FUNCTIONS}" ${WASM_THREAD_FLAGS} ${TO_BE_LINKED}
+                # -g2 keeps the wasm "name" section so trap/exception stack
+                # traces show (mangled) C++ function names instead of
+                # wasm-function[N]. Metadata only, independent of -O3; demangle
+                # with llvm-cxxfilt. Matches the engine-side flag in haybarn-wasm
+                # lib/CMakeLists.txt and the C-API/Rust flag in
+                # haybarn-extension-ci-tools base.Makefile.
+                COMMAND emcc $<TARGET_FILE:${TARGET_NAME}> -o $<TARGET_FILE:${TARGET_NAME}>.wasm -O3 -g2 -sSIDE_MODULE=2 -sEXPORTED_FUNCTIONS="${EXPORTED_FUNCTIONS}" ${WASM_THREAD_FLAGS} ${TO_BE_LINKED}
         )
     endif()
 
