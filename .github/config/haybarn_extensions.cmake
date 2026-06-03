@@ -38,13 +38,13 @@ include("${EXTENSION_CONFIG_BASE_DIR}/fts.cmake")
 # httpfs is a Haybarn build-fork (Query-farm-haybarn/haybarn-httpfs) so Haybarn
 # changes can land on top of upstream over time. Pinned by explicit SHA — bump it
 # when you want to roll forward (or pick up new Haybarn commits on the fork's
-# haybarn branch). Now at 05a708e: in-flight cancellation extended to all HTTP
-# methods + wired into the httpfs reader layer (relies on this engine's
-# BaseRequest::cancellation move).
+# haybarn branch). Now at 2f99b6d: fork's duckdb submodule rolled to engine
+# f6004601 (httpfs URL-ownership + %n extension-install error-path fix), on top
+# of the all-HTTP-method in-flight cancellation wired into the reader layer.
 duckdb_extension_load(httpfs
         LOAD_TESTS
         GIT_URL https://github.com/Query-farm-haybarn/haybarn-httpfs
-        GIT_TAG 05a708ea2ccec7913bbad286f0a01eb030a3a32e
+        GIT_TAG 2f99b6dd8b56ff0609d06eebbaf2200c47073d8f
 )
 include("${EXTENSION_CONFIG_BASE_DIR}/inet.cmake")
 include("${EXTENSION_CONFIG_BASE_DIR}/mysql_scanner.cmake")
