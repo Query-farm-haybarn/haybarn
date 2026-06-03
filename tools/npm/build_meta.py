@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit the haybarn meta-package's package.json into $STAGE.
+"""Emit a meta-package's package.json into $STAGE (haybarn or haybarn-unittest).
 
 Run from the npm publish workflow with:
   STAGE        destination directory (already exists)
@@ -8,6 +8,15 @@ Run from the npm publish workflow with:
                actually exist in this release (used to decide which
                optional dependencies to declare — we drop leaves that
                weren't built)
+
+Optional family knobs (defaults reproduce the `haybarn` CLI meta byte-for-byte):
+  META_NAME    package name (default "haybarn")
+  BIN_NAME     the bin command name (default "haybarn")
+  SHIM_FILE    launcher shim filename (default "haybarn.cjs")
+  ZIP_PREFIX   release-zip basename prefix (default "haybarn_cli-")
+  LEAF_PREFIX  leaf-slug prefix (default "cli-")
+  DESCRIPTION  package description (default the CLI blurb)
+  KEYWORDS     comma-separated keywords (default "haybarn,duckdb,cli,olap,sql")
 
 The meta has one bin entry (the shim) and platform leaves listed under
 optionalDependencies. Order matters for npm install-time platform
@@ -21,15 +30,17 @@ import pathlib
 import sys
 
 
-# zip basename → (leaf-slug, npm-os, npm-cpu, libc-or-'-')
-LEAVES = [
-    ("haybarn_cli-linux-amd64.zip",       "cli-linux-x64"),
-    ("haybarn_cli-linux-arm64.zip",       "cli-linux-arm64"),
-    ("haybarn_cli-linux-amd64-musl.zip",  "cli-linux-x64-musl"),
-    ("haybarn_cli-linux-arm64-musl.zip",  "cli-linux-arm64-musl"),
-    ("haybarn_cli-osx-amd64.zip",         "cli-darwin-x64"),
-    ("haybarn_cli-osx-arm64.zip",         "cli-darwin-arm64"),
-    ("haybarn_cli-windows-amd64.zip",     "cli-win32-x64"),
+# (release-zip platform suffix, leaf-slug platform suffix). The family prefixes
+# (ZIP_PREFIX / LEAF_PREFIX) are prepended below — only the prefixes differ
+# between the CLI and unittest families; the platform fan-out is identical.
+PLATFORMS = [
+    ("linux-amd64",       "linux-x64"),
+    ("linux-arm64",       "linux-arm64"),
+    ("linux-amd64-musl",  "linux-x64-musl"),
+    ("linux-arm64-musl",  "linux-arm64-musl"),
+    ("osx-amd64",         "darwin-x64"),
+    ("osx-arm64",         "darwin-arm64"),
+    ("windows-amd64",     "win32-x64"),
 ]
 
 
@@ -42,29 +53,39 @@ def main() -> int:
         print(f"build_meta: missing env var {e}", file=sys.stderr)
         return 2
 
+    meta_name = os.environ.get("META_NAME", "haybarn")
+    bin_name = os.environ.get("BIN_NAME", "haybarn")
+    shim_file = os.environ.get("SHIM_FILE", "haybarn.cjs")
+    zip_prefix = os.environ.get("ZIP_PREFIX", "haybarn_cli-")
+    leaf_prefix = os.environ.get("LEAF_PREFIX", "cli-")
+    description = os.environ.get(
+        "DESCRIPTION",
+        "Haybarn — an independent derived distribution of DuckDB. "
+        "Run via `npx haybarn`. Published by Query Farm LLC.",
+    )
+    keywords = os.environ.get("KEYWORDS", "haybarn,duckdb,cli,olap,sql").split(",")
+
     present.discard("")
     optional = {}
-    for zip_name, slug in LEAVES:
+    for zip_plat, slug_plat in PLATFORMS:
+        zip_name = f"{zip_prefix}{zip_plat}.zip"
         if zip_name in present:
-            optional[f"@haybarn/{slug}"] = version
+            optional[f"@haybarn/{leaf_prefix}{slug_plat}"] = version
 
     spec = {
-        "name": "haybarn",
+        "name": meta_name,
         "version": version,
-        "description": (
-            "Haybarn — an independent derived distribution of DuckDB. "
-            "Run via `npx haybarn`. Published by Query Farm LLC."
-        ),
+        "description": description,
         "homepage": "https://github.com/Query-farm-haybarn/haybarn",
         "repository": {
             "type": "git",
             "url": "git+https://github.com/Query-farm-haybarn/haybarn.git",
         },
         "license": "MIT",
-        "bin": {"haybarn": "haybarn.cjs"},
-        "files": ["haybarn.cjs", "README.md", "LICENSE"],
+        "bin": {bin_name: shim_file},
+        "files": [shim_file, "README.md", "LICENSE"],
         "engines": {"node": ">=18"},
-        "keywords": ["haybarn", "duckdb", "cli", "olap", "sql"],
+        "keywords": keywords,
         "optionalDependencies": optional,
         "publishConfig": {"access": "public"},
     }
