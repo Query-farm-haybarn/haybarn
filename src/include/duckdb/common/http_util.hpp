@@ -142,7 +142,13 @@ struct BaseRequest {
 	BaseRequest(RequestType type, const string &url, const HTTPHeaders &headers, HTTPParams &params);
 
 	RequestType type;
-	const string &url;
+	// Owns its URL by value. Previously a `const string &`, which dangled when
+	// the referenced string outlived its scope (e.g. on the retry/error path,
+	// where `response->url = request.url` and the error-message format args read
+	// it) — surfacing as an intermittent SIGBUS in HTTPUtil::SendRequest with the
+	// fault address being raw URL-path bytes. Owning the string removes the
+	// entire dangling-reference class; the ctor already does `: url(url)`.
+	string url;
 	string path;
 	string proto_host_port;
 	HTTPHeaders headers;
@@ -201,7 +207,8 @@ struct PutRequestInfo : public BaseRequest {
 
 	const_data_ptr_t buffer_in;
 	idx_t buffer_in_len;
-	const string &content_type;
+	// Owned by value — same dangling-reference hazard as BaseRequest::url.
+	string content_type;
 };
 
 struct HeadRequestInfo : public BaseRequest {
