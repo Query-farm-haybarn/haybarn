@@ -3,7 +3,7 @@
 The `console_scripts` entry point `haybarn-unittest = haybarn_unittest:main`
 becomes a small launcher script that, when invoked, locates the bundled binary
 inside this package and re-exec's into it. Same end-user UX as the npm
-meta-package: `uvx haybarn-unittest --test-dir . --list`.
+meta-package: `uvx haybarn-unittest --test-dir . --list-tests`.
 
 The binary is DuckDB's `unittest` test runner, rebranded `haybarn-unittest`,
 built with `-DUNITTEST_ROOT_DIRECTORY=.` so it launches from any working

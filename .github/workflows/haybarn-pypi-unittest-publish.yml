@@ -178,7 +178,7 @@ jobs:
           PEP="${{ steps.ver.outputs.pep440 }}"
           echo "haybarn-unittest ${PEP} published to PyPI."
           echo "Users can run:"
-          echo "  uvx haybarn-unittest==${PEP} --test-dir . --list"
+          echo "  uvx haybarn-unittest==${PEP} --test-dir . --list-tests"
           echo "or for the latest stable:"
-          echo "  uvx haybarn-unittest --test-dir . --list"
+          echo "  uvx haybarn-unittest --test-dir . --list-tests"
 # Haybarn fork — workflow re-index marker.
