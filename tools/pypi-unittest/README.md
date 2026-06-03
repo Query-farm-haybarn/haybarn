@@ -4,7 +4,7 @@ The [Haybarn](https://github.com/Query-farm-haybarn/haybarn) test runner —
 DuckDB's `unittest` binary, rebranded — runnable directly from PyPI:
 
 ```sh
-uvx haybarn-unittest --test-dir . --list
+uvx haybarn-unittest --test-dir . --list-tests
 # or
 pipx run haybarn-unittest --test-dir path/to/extension test/sql/my_test.test
 ```

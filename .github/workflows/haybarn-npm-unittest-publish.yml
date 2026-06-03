@@ -229,8 +229,8 @@ jobs:
           echo "haybarn-unittest $VERSION is on npm under the $DIST_TAG dist-tag."
           echo "Users can run:"
           if [[ "$DIST_TAG" == "rc" ]]; then
-            echo "  npx haybarn-unittest@rc --test-dir . --list"
+            echo "  npx haybarn-unittest@rc --test-dir . --list-tests"
           else
-            echo "  npx haybarn-unittest --test-dir . --list"
+            echo "  npx haybarn-unittest --test-dir . --list-tests"
           fi
 # Haybarn fork — workflow re-index marker.
