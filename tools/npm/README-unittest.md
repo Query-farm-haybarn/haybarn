@@ -4,7 +4,7 @@ The [Haybarn](https://github.com/Query-farm-haybarn/haybarn) test runner —
 DuckDB's `unittest` binary, rebranded — runnable directly from npm:
 
 ```sh
-npx haybarn-unittest --test-dir . --list
+npx haybarn-unittest --test-dir . --list-tests
 npx haybarn-unittest --test-dir path/to/extension test/sql/my_test.test
 ```
 
