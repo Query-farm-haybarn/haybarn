@@ -467,7 +467,7 @@ static unique_ptr<ExtensionInstallInfo> InstallFromHttpUrl(DatabaseInstance &db,
 			                  message, response->GetRequestError());
 		}
 		// if this was not a request error this means the server responded - report the response status and response
-		throw HTTPException(*response, "Failed to download extension \"%s\" at URL \"%s\" (HTTP %n)\n%s",
+		throw HTTPException(*response, "Failed to download extension \"%s\" at URL \"%s\" (HTTP %d)\n%s",
 		                    extension_name, url, int(response->status), message);
 	}
 	if (response->status == HTTPStatusCode::NotModified_304 && install_info) {
