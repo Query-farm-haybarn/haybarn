@@ -48,6 +48,7 @@ rebase onto future DuckDB releases. See `HAYBARN/REBASE.md`.
 | signing: repository URLs | `src/include/duckdb/main/extension_install_info.hpp`, `src/main/extension_install_info.cpp` |
 | ci: Haybarn workflows | `.github/workflows/haybarn-*.yml` (new files) |
 | ci: neuter upstream triggers | upstream `.github/workflows/*.yml` |
+| dist: npm + PyPI publishing | `tools/npm/` (`build_meta.py`/`build_leaf.py` are family-parametrized, defaults = CLI), `tools/pypi-cli/build_wheel.py` (same), `tools/pypi-unittest/`, `.github/workflows/haybarn-{npm,pypi-cli,npm-unittest,pypi-unittest}-*.yml` |
 | packaging: bundle outputs | `Makefile` |
 | docs | `README.md`, `NOTICE`, `HAYBARN/`, this file |
 
@@ -265,6 +266,32 @@ This-session adjacent work (not engine-versioned):
   platform-tagged wheels (`manylinux_2_28_*`, `musllinux_1_2_*`,
   `macosx_11_0_*`, `win_amd64`). OIDC Trusted Publisher + PEP 740
   attestations.
+- **`haybarn-unittest` distribution added** (npm `haybarn-unittest` +
+  `@haybarn/unittest-*` leaves; PyPI `haybarn-unittest`). Ships DuckDB's
+  `unittest` test runner (rebranded `haybarn-unittest`) so extension
+  developers can `npx`/`uvx` a binary pinned to a given engine build and
+  run their own `.test` files against it. `haybarn-release.yml` now builds
+  it on all 7 legs (Windows `BUILD_UNITTESTS` flipped 0→1), zips it as
+  `haybarn_unittest-<plat>.zip` inside the existing artifact bundles (so
+  `haybarn-publish.yml` attaches it + checksums it unchanged), and two new
+  publish workflows (`haybarn-{npm,pypi}-unittest-publish.yml`) fan out on
+  the same `workflow_run` signal. **Critical build detail:** the binary is
+  built with `-DUNITTEST_ROOT_DIRECTORY=.` (Makefile `EXTRA_CMAKE_VARIABLES`
+  on Linux/macOS, direct `-D` on Windows) — without it the binary chdir's to
+  the compile-time `DUCKDB_ROOT_DIRECTORY` (the CI checkout path) at startup
+  and aborts on any consumer machine, even for `--help`. Consumers pass
+  `--test-dir <their tests>`. The npm/PyPI generators are family-parametrized
+  with CLI-preserving defaults (verified byte-identical). **Auth:** PyPI uses
+  Trusted Publishing — set up as a PyPI *pending publisher* (configurable
+  before the project exists; creates it on first publish). npm can't do that
+  (Trusted Publishing is configured per *existing* package, and these are
+  brand-new), so `haybarn-npm-unittest-publish.yml` publishes with the
+  `HAYBARN_NPM_TOKEN` org secret (`NODE_AUTH_TOKEN`) instead — the token
+  creates the packages on first publish; `--provenance` still attaches
+  attestations. The token must be allowed to create `haybarn-unittest` +
+  `@haybarn/unittest-*` under the `@haybarn` scope. Once the packages exist
+  they can be migrated to Trusted Publishing and the token dropped. ~47MB
+  binary → may need a PyPI project-quota bump.
 - **Wasm Phase D image** published at `ghcr.io/.../haybarn-wasm:v1.5.3`.
   Confirmed 100% combined ccache hit rate on back-to-back runs once
   callers opt into `use_prebuilt_wasm_image: true`. Predicted to save
