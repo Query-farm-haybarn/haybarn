@@ -1,0 +1,236 @@
+# Haybarn: publish the release unittest binaries to npm as @haybarn/unittest-*
+# leaves and a `haybarn-unittest` meta-package. Triggers after Haybarn Publish
+# completes a tag-driven release. Sibling of haybarn-npm-publish.yml (the CLI);
+# same mechanism, different binary + package family.
+#
+# Layout (esbuild / swc / biome pattern):
+#   haybarn-unittest              (meta, contains bin/haybarn-unittest.cjs shim)
+#     ├ optionalDependencies:
+#     │   @haybarn/unittest-linux-x64
+#     │   @haybarn/unittest-linux-arm64
+#     │   @haybarn/unittest-linux-x64-musl
+#     │   @haybarn/unittest-linux-arm64-musl
+#     │   @haybarn/unittest-darwin-x64
+#     │   @haybarn/unittest-darwin-arm64
+#     │   @haybarn/unittest-win32-x64
+#
+# Each leaf publishes a single `haybarn-unittest` binary (`.exe` on Windows)
+# with platform-pinned `os`/`cpu`/`libc` so npm only installs the one matching
+# the user's runtime.
+#
+# Auth model: classic npm automation token (org secret HAYBARN_NPM_TOKEN),
+# exposed as NODE_AUTH_TOKEN on the publish steps. The CLI workflow uses npm
+# Trusted Publishing (OIDC), but that's configured per *existing* package on
+# npmjs.com — the brand-new haybarn-unittest / @haybarn/unittest-* packages
+# don't exist yet, so there's no settings page to configure until first
+# publish. The token creates them. Provenance attestations are still attached
+# (--provenance + id-token: write). Once these packages exist, they can be
+# migrated to Trusted Publishing and the token dropped.
+name: Haybarn npm unittest publish
+
+on:
+  # Fire only after Haybarn Publish completes successfully for a tag push.
+  workflow_run:
+    workflows: ["Haybarn Publish"]
+    types: [completed]
+  # Manual republish for a previously-released tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish (e.g. haybarn-v1.5.3-rc7)'
+        type: string
+        required: true
+
+permissions:
+  contents: read       # gh release download
+  id-token: write      # Sigstore OIDC for npm --provenance attestations
+
+concurrency:
+  group: haybarn-npm-unittest-publish-${{ inputs.tag || github.event.workflow_run.head_branch }}
+  cancel-in-progress: false   # don't cancel a partially-published release
+
+jobs:
+  publish:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ inputs.tag || github.event.workflow_run.head_branch }}
+    steps:
+      - uses: actions/checkout@v6
+
+      # Chained workflow_run events on GitHub Actions don't reliably
+      # propagate the originating tag name into head_branch — Haybarn
+      # Publish (workflow_run on Haybarn Release) sees head_branch='haybarn'
+      # (the branch the workflow file lives on) instead of the tag that
+      # triggered the original Haybarn Release. The commit SHA is propagated
+      # correctly though, so we re-derive the tag via a refs/tags lookup
+      # when TAG doesn't already look like one.
+      - name: Re-derive TAG from head_sha if needed
+        if: ${{ github.event_name == 'workflow_run' && !startsWith(env.TAG, 'haybarn-v') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA="${{ github.event.workflow_run.head_sha }}"
+          # Walk haybarn-v* tag refs, dereferencing annotated tags. For an
+          # annotated tag (`object.type == "tag"`), the ref's `object.sha`
+          # is the tag-object SHA — NOT the commit. We must follow the tag
+          # object to its `.object.sha` to find the commit. Same fix as the
+          # CLI npm/pypi publish workflows.
+          LOOKUP=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/haybarn-v" \
+                     --jq '.[] | "\(.ref) \(.object.type) \(.object.sha)"' \
+                   | while read ref kind obj_sha; do
+                       commit_sha="$obj_sha"
+                       if [[ "$kind" == "tag" ]]; then
+                         commit_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$obj_sha" --jq .object.sha)
+                       fi
+                       if [[ "$commit_sha" == "$SHA" ]]; then
+                         echo "$ref"
+                       fi
+                     done \
+                   | sed 's|refs/tags/||' \
+                   | head -1)
+          if [[ -z "$LOOKUP" ]]; then
+            echo "::error::head_sha $SHA doesn't correspond to a haybarn-v* tag — nothing to publish"
+            exit 1
+          fi
+          echo "::notice::Re-derived TAG via head_sha lookup: $LOOKUP"
+          echo "TAG=$LOOKUP" >> "$GITHUB_ENV"
+
+      # Node 24 / npm 11. setup-node writes an .npmrc that reads the auth token
+      # from the NODE_AUTH_TOKEN env var, which we supply from the
+      # HAYBARN_NPM_TOKEN org secret on the publish steps below. (--provenance
+      # still needs a recent npm + id-token: write — both present.)
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Sanity-check npm version
+        run: npm --version
+
+      - name: Derive npm version + dist-tag from the release tag
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Tag format: haybarn-v<MAJOR>.<MINOR>.<PATCH>[-rc<N>]
+          VERSION="${TAG#haybarn-v}"
+          if [[ "$VERSION" == *-rc* ]]; then
+            DIST_TAG="rc"
+          else
+            DIST_TAG="latest"
+          fi
+          echo "version=${VERSION}"   >> "$GITHUB_OUTPUT"
+          echo "dist_tag=${DIST_TAG}" >> "$GITHUB_OUTPUT"
+          echo "Resolved npm version ${VERSION} (dist-tag: ${DIST_TAG})"
+
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p release-assets
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" \
+            --dir release-assets \
+            --pattern 'haybarn_unittest-*.zip'
+          ls -la release-assets/
+
+      - name: Assemble + publish per-platform leaf packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.HAYBARN_NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: 'true'
+          VERSION: ${{ steps.ver.outputs.version }}
+          DIST_TAG: ${{ steps.ver.outputs.dist_tag }}
+          # build_leaf.py knobs — produce "Haybarn unittest binary for …"
+          # descriptions that point users at the haybarn-unittest meta.
+          PRODUCT: 'unittest binary'
+          META_NAME: 'haybarn-unittest'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # ZIP_BASENAME LEAF_SLUG OS CPU LIBC
+          LEAVES=(
+            "haybarn_unittest-linux-amd64.zip          unittest-linux-x64         linux  x64    glibc"
+            "haybarn_unittest-linux-arm64.zip          unittest-linux-arm64       linux  arm64  glibc"
+            "haybarn_unittest-linux-amd64-musl.zip     unittest-linux-x64-musl    linux  x64    musl"
+            "haybarn_unittest-linux-arm64-musl.zip     unittest-linux-arm64-musl  linux  arm64  musl"
+            "haybarn_unittest-osx-amd64.zip            unittest-darwin-x64        darwin x64    -"
+            "haybarn_unittest-osx-arm64.zip            unittest-darwin-arm64      darwin arm64  -"
+            "haybarn_unittest-windows-amd64.zip        unittest-win32-x64         win32  x64    -"
+          )
+
+          for row in "${LEAVES[@]}"; do
+            read -r ZIP LEAF_SLUG OS CPU LIBC <<< "$row"
+            SRC="release-assets/$ZIP"
+            if [[ ! -f "$SRC" ]]; then
+              echo "::warning::missing release asset $ZIP — skipping its leaf"
+              continue
+            fi
+
+            export PKG="@haybarn/$LEAF_SLUG"
+            export STAGE="stage/$LEAF_SLUG"
+            export OS CPU LIBC
+            mkdir -p "$STAGE/bin"
+            unzip -j -o "$SRC" -d "$STAGE/bin/"
+            ls -la "$STAGE/bin/"
+
+            python3 tools/npm/build_leaf.py
+            cat "$STAGE/package.json"
+
+            echo ">>> publishing $PKG @ $VERSION (dist-tag: $DIST_TAG)"
+            (cd "$STAGE" && npm publish --provenance --access public --tag "$DIST_TAG")
+          done
+
+      - name: Assemble + publish meta package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.HAYBARN_NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: 'true'
+          VERSION: ${{ steps.ver.outputs.version }}
+          DIST_TAG: ${{ steps.ver.outputs.dist_tag }}
+          # build_meta.py family knobs for the unittest meta-package.
+          META_NAME: 'haybarn-unittest'
+          BIN_NAME: 'haybarn-unittest'
+          SHIM_FILE: 'haybarn-unittest.cjs'
+          ZIP_PREFIX: 'haybarn_unittest-'
+          LEAF_PREFIX: 'unittest-'
+          DESCRIPTION: 'Haybarn unittest — the DuckDB unittest test runner for the Haybarn engine. Run via `npx haybarn-unittest`. Published by Query Farm LLC.'
+          KEYWORDS: 'haybarn,duckdb,unittest,testing,sql'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          export STAGE="stage/meta"
+          mkdir -p "$STAGE"
+          cp tools/npm/haybarn-unittest.cjs "$STAGE/"
+          chmod +x "$STAGE/haybarn-unittest.cjs"
+          cp tools/npm/README-unittest.md "$STAGE/README.md"
+          cp LICENSE "$STAGE/"
+
+          # PRESENT_ZIPS = comma-joined list of release-asset basenames
+          # actually present on disk. build_meta.py uses this to decide
+          # which optional deps to declare — a platform that didn't build
+          # in this release is omitted, not declared with a missing version.
+          export PRESENT_ZIPS=$(cd release-assets && ls *.zip 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+          echo "PRESENT_ZIPS=$PRESENT_ZIPS"
+
+          python3 tools/npm/build_meta.py
+          cat "$STAGE/package.json"
+
+          echo ">>> publishing haybarn-unittest @ $VERSION (dist-tag: $DIST_TAG)"
+          (cd "$STAGE" && npm publish --provenance --access public --tag "$DIST_TAG")
+
+      - name: Verify
+        shell: bash
+        run: |
+          VERSION='${{ steps.ver.outputs.version }}'
+          DIST_TAG='${{ steps.ver.outputs.dist_tag }}'
+          echo "haybarn-unittest $VERSION is on npm under the $DIST_TAG dist-tag."
+          echo "Users can run:"
+          if [[ "$DIST_TAG" == "rc" ]]; then
+            echo "  npx haybarn-unittest@rc --test-dir . --list"
+          else
+            echo "  npx haybarn-unittest --test-dir . --list"
+          fi
+# Haybarn fork — workflow re-index marker.

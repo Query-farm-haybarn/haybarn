@@ -28,11 +28,16 @@ import re
 import sys
 import zipfile
 
-PROJECT = "haybarn-cli"          # display / PyPI name (with hyphen)
-DIST = "haybarn_cli"             # PEP 503 normalized name (underscore), used in wheel filename + dist-info dir
-ENTRY_MODULE = "haybarn_cli"     # the Python package the shim lives in (matches DIST)
+# Defaults reproduce the `haybarn-cli` wheel byte-for-byte. The unittest publish
+# workflow overrides --project/--dist/--entry-module/--summary/--binary-name/
+# --script-name to build the `haybarn-unittest` wheel from the same code.
+DEFAULT_PROJECT = "haybarn-cli"          # display / PyPI name (with hyphen)
+DEFAULT_DIST = "haybarn_cli"             # PEP 503 normalized name (underscore), used in wheel filename + dist-info dir
+DEFAULT_ENTRY_MODULE = "haybarn_cli"     # the Python package the shim lives in (matches DIST)
+DEFAULT_SUMMARY = "Haybarn CLI — pre-built haybarn binary, runnable via uvx haybarn-cli or pipx run haybarn-cli."
+DEFAULT_BINARY_NAME = "haybarn"          # binary basename inside the release zip (no .exe; appended for win tags)
+DEFAULT_SCRIPT_NAMES = ["haybarn", "haybarn-cli"]  # console_scripts entry points
 
-SUMMARY = "Haybarn CLI — pre-built haybarn binary, runnable via uvx haybarn-cli or pipx run haybarn-cli."
 HOMEPAGE = "https://github.com/Query-farm-haybarn/haybarn"
 
 
@@ -72,13 +77,23 @@ def build_wheel(
     readme_path: pathlib.Path | None,
     license_path: pathlib.Path | None,
     out_dir: pathlib.Path,
+    project: str = DEFAULT_PROJECT,
+    dist: str = DEFAULT_DIST,
+    entry_module: str = DEFAULT_ENTRY_MODULE,
+    summary: str = DEFAULT_SUMMARY,
+    binary_name: str = DEFAULT_BINARY_NAME,
+    script_names: list[str] | None = None,
 ) -> pathlib.Path:
+    script_names = script_names or list(DEFAULT_SCRIPT_NAMES)
     pep_version = npm_to_pep440(version)
-    distinfo = f"{DIST}-{pep_version}.dist-info"
-    wheel_filename = f"{DIST}-{pep_version}-py3-none-{platform_tag}.whl"
-    binary_name = "haybarn.exe" if platform_tag.startswith("win") else "haybarn"
+    distinfo = f"{dist}-{pep_version}.dist-info"
+    wheel_filename = f"{dist}-{pep_version}-py3-none-{platform_tag}.whl"
+    # The binary basename inside the release zip is `binary_name`; Windows zips
+    # carry the `.exe` suffix. This drives both the lookup in the source zip and
+    # the destination arcname under `_bin/`.
+    zip_binary_name = f"{binary_name}.exe" if platform_tag.startswith("win") else binary_name
 
-    bin_data = _extract_binary(src_zip, binary_name)
+    bin_data = _extract_binary(src_zip, zip_binary_name)
     shim_data = shim_path.read_bytes()
 
     readme = readme_path.read_bytes() if readme_path and readme_path.exists() else b""
@@ -86,9 +101,9 @@ def build_wheel(
 
     metadata = (
         "Metadata-Version: 2.1\n"
-        f"Name: {PROJECT}\n"
+        f"Name: {project}\n"
         f"Version: {pep_version}\n"
-        f"Summary: {SUMMARY}\n"
+        f"Summary: {summary}\n"
         f"Home-page: {HOMEPAGE}\n"
         f"License: MIT\n"
         "License-File: LICENSE\n"
@@ -107,7 +122,7 @@ def build_wheel(
     if readme:
         metadata = metadata.encode() + readme
     else:
-        metadata = metadata.encode() + SUMMARY.encode() + b"\n"
+        metadata = metadata.encode() + summary.encode() + b"\n"
 
     wheel_meta = (
         "Wheel-Version: 1.0\n"
@@ -118,13 +133,12 @@ def build_wheel(
 
     entry_points = (
         "[console_scripts]\n"
-        f"haybarn = {ENTRY_MODULE}:main\n"
-        f"haybarn-cli = {ENTRY_MODULE}:main\n"
+        + "".join(f"{name} = {entry_module}:main\n" for name in script_names)
     ).encode()
 
     files: list[tuple[str, bytes, int]] = [
-        (f"{DIST}/__init__.py",          shim_data,     0o644),
-        (f"{DIST}/_bin/{binary_name}",   bin_data,      0o755),
+        (f"{dist}/__init__.py",            shim_data,   0o644),
+        (f"{dist}/_bin/{zip_binary_name}", bin_data,    0o755),
         (f"{distinfo}/METADATA",         metadata,      0o644),
         (f"{distinfo}/WHEEL",            wheel_meta,    0o644),
         (f"{distinfo}/entry_points.txt", entry_points,  0o644),
@@ -166,6 +180,21 @@ def main(argv: list[str]) -> int:
                     help="optional LICENSE to embed in dist-info")
     ap.add_argument("--out-dir", type=pathlib.Path, required=True,
                     help="directory to write the wheel into")
+    # Family knobs. Defaults reproduce the `haybarn-cli` wheel; the unittest
+    # publish workflow overrides them to build `haybarn-unittest`.
+    ap.add_argument("--project", default=DEFAULT_PROJECT,
+                    help="PyPI display name (default haybarn-cli)")
+    ap.add_argument("--dist", default=DEFAULT_DIST,
+                    help="normalized dist name / package dir (default haybarn_cli)")
+    ap.add_argument("--entry-module", default=DEFAULT_ENTRY_MODULE,
+                    help="Python package the shim lives in (default haybarn_cli)")
+    ap.add_argument("--summary", default=DEFAULT_SUMMARY,
+                    help="one-line summary for METADATA")
+    ap.add_argument("--binary-name", default=DEFAULT_BINARY_NAME,
+                    help="binary basename inside the release zip, no .exe (default haybarn)")
+    ap.add_argument("--script-name", action="append", default=None,
+                    help="console_scripts entry name; repeatable. "
+                         "Default: haybarn + haybarn-cli.")
     args = ap.parse_args(argv)
 
     if not args.src_zip.is_file():
@@ -183,6 +212,12 @@ def main(argv: list[str]) -> int:
         readme_path=args.readme,
         license_path=args.license,
         out_dir=args.out_dir,
+        project=args.project,
+        dist=args.dist,
+        entry_module=args.entry_module,
+        summary=args.summary,
+        binary_name=args.binary_name,
+        script_names=args.script_name,
     )
     return 0
 
