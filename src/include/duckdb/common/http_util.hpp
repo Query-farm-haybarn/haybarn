@@ -201,7 +201,8 @@ struct PutRequestInfo : public BaseRequest {
 
 	const_data_ptr_t buffer_in;
 	idx_t buffer_in_len;
-	const string &content_type;
+	// Owned by value — same dangling-reference hazard as BaseRequest::url.
+	string content_type;
 };
 
 struct HeadRequestInfo : public BaseRequest {
