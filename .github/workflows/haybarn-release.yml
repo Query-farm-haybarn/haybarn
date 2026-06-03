@@ -116,6 +116,7 @@ jobs:
             -e CCACHE_REMOTE_STORAGE \
             -e OVERRIDE_GIT_DESCRIBE="$OVERRIDE_GIT_DESCRIBE" \
             -e HAYBARN_GIT_DESCRIBE \
+            -e EXTRA_CMAKE_VARIABLES="-DUNITTEST_ROOT_DIRECTORY=." \
             -e EXTENSION_CONFIGS="$WORKSPACE/.github/config/in_tree_extensions.cmake" \
             -e ENABLE_EXTENSION_AUTOLOADING=1 -e ENABLE_EXTENSION_AUTOINSTALL=1 \
             -e WORKSPACE="$WORKSPACE" \
@@ -155,6 +156,12 @@ jobs:
           gzip -9 -k -n -c build/release/haybarn > haybarn_cli-linux-$SUFFIX.gz
           zip -j libhaybarn-linux-$SUFFIX.zip build/release/src/libhaybarn*.* \
             src/amalgamation/duckdb.hpp src/include/duckdb.h
+          # unittest binary, shipped as haybarn-unittest via npm/PyPI. Built
+          # with -DUNITTEST_ROOT_DIRECTORY=. (above) so it launches anywhere;
+          # consumers pass --test-dir <their tests>. .zip only — no .gz parity
+          # (npm/PyPI consume the zip; the GH-release zip covers manual download).
+          cp build/release/test/unittest haybarn-unittest
+          zip -j haybarn_unittest-linux-$SUFFIX.zip haybarn-unittest
 
       - uses: actions/upload-artifact@v7
         with:
@@ -162,6 +169,7 @@ jobs:
           path: |
             haybarn_cli-linux-*.zip
             haybarn_cli-linux-*.gz
+            haybarn_unittest-linux-*.zip
             libhaybarn-linux-*.zip
 
       - name: Attest build provenance
@@ -170,6 +178,7 @@ jobs:
           subject-path: |
             haybarn_cli-linux-*.zip
             haybarn_cli-linux-*.gz
+            haybarn_unittest-linux-*.zip
             libhaybarn-linux-*.zip
 
   osx:
@@ -180,6 +189,9 @@ jobs:
       ENABLE_EXTENSION_AUTOLOADING: 1
       ENABLE_EXTENSION_AUTOINSTALL: 1
       OSX_BUILD_UNIVERSAL: 1
+      # Build the unittest binary with a portable root dir so the shipped
+      # haybarn-unittest launches from any cwd (consumers pass --test-dir).
+      EXTRA_CMAKE_VARIABLES: '-DUNITTEST_ROOT_DIRECTORY=.'
       GEN: ninja
       # DuckDB's CMake auto-detects ccache as the compiler launcher when it is
       # on PATH; CCACHE_DIR points it at the cached directory.
@@ -242,6 +254,13 @@ jobs:
           gzip -9 -k -n -c build/release/haybarn        > haybarn_cli-osx-universal.gz
           gzip -9 -k -n -c build/release_arm64/haybarn  > haybarn_cli-osx-arm64.gz
           gzip -9 -k -n -c build/release_amd64/haybarn  > haybarn_cli-osx-amd64.gz
+          # unittest binary (shipped as haybarn-unittest). The build is
+          # universal; split per-arch like the CLI. Per-arch zips only — npm/
+          # PyPI consume per-arch, so no universal/.gz variants.
+          lipo -extract arm64  -output build/release_arm64/haybarn-unittest  build/release/test/unittest
+          lipo -extract x86_64 -output build/release_amd64/haybarn-unittest  build/release/test/unittest
+          zip -j haybarn_unittest-osx-arm64.zip build/release_arm64/haybarn-unittest
+          zip -j haybarn_unittest-osx-amd64.zip build/release_amd64/haybarn-unittest
 
       - uses: actions/upload-artifact@v7
         with:
@@ -249,6 +268,7 @@ jobs:
           path: |
             haybarn_cli-osx-*.zip
             haybarn_cli-osx-*.gz
+            haybarn_unittest-osx-*.zip
             libhaybarn-osx-universal.zip
 
       - name: Attest build provenance
@@ -257,6 +277,7 @@ jobs:
           subject-path: |
             haybarn_cli-osx-*.zip
             haybarn_cli-osx-*.gz
+            haybarn_unittest-osx-*.zip
             libhaybarn-osx-universal.zip
 
   windows:
@@ -313,7 +334,8 @@ jobs:
         run: |
           python scripts/windows_ci.py
           cmake -G "Ninja Multi-Config" \
-            -DCMAKE_BUILD_TYPE=Release -DBUILD_UNITTESTS=0 \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_UNITTESTS=1 \
+            -DUNITTEST_ROOT_DIRECTORY=. \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DEXTENSION_CONFIGS=.github/config/in_tree_extensions.cmake \
@@ -321,6 +343,20 @@ jobs:
             -DOVERRIDE_GIT_DESCRIBE="$OVERRIDE_GIT_DESCRIBE" -B build .
           cmake --build build --config Release
           ccache -s
+
+      # Smoke the unittest binary — Windows had no unittest coverage before we
+      # enabled BUILD_UNITTESTS, so confirm it both built and launches (the
+      # -DUNITTEST_ROOT_DIRECTORY=. fix means it shouldn't chdir-throw). Locate
+      # it via find: Ninja Multi-Config nests the test/ subtarget under
+      # build/test/Release/unittest.exe, but find avoids a hard-coded guess.
+      - name: Smoke test (unittest)
+        if: ${{ inputs.skip_tests != 'true' }}
+        shell: bash
+        run: |
+          UNITTEST="$(find build -name unittest.exe -type f | head -1)"
+          if [[ -z "$UNITTEST" ]]; then echo "::error::unittest.exe not found under build/"; ls -R build | grep -i unittest || true; exit 1; fi
+          echo "unittest.exe at: $UNITTEST"
+          "$UNITTEST" --select-tag release
 
       # NOTE: Windows code signing (Azure Trusted Signing) is intentionally not
       # wired up yet. Add a signing step here over build/Release/haybarn.exe and
@@ -334,12 +370,18 @@ jobs:
           7z a libhaybarn-windows-${{ matrix.arch }}.zip \
             ./build/src/Release/haybarn.dll ./build/src/Release/haybarn.lib \
             ./src/amalgamation/duckdb.hpp ./src/include/duckdb.h
+          # unittest binary, shipped as haybarn-unittest via npm/PyPI. Locate via
+          # find (same reason as the smoke step) and rename to the shipped name.
+          UNITTEST="$(find build -name unittest.exe -type f | head -1)"
+          cp "$UNITTEST" haybarn-unittest.exe
+          7z a haybarn_unittest-windows-${{ matrix.arch }}.zip ./haybarn-unittest.exe
 
       - uses: actions/upload-artifact@v7
         with:
           name: haybarn-windows-${{ matrix.arch }}
           path: |
             haybarn_cli-windows-*.zip
+            haybarn_unittest-windows-*.zip
             libhaybarn-windows-*.zip
 
       - name: Attest build provenance
@@ -347,6 +389,7 @@ jobs:
         with:
           subject-path: |
             haybarn_cli-windows-*.zip
+            haybarn_unittest-windows-*.zip
             libhaybarn-windows-*.zip
 
   src-amalgamation:
