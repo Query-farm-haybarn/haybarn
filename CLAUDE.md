@@ -214,6 +214,7 @@ Haybarn is multi-repo. Each is pinned by SHA where another consumes it.
 | `haybarn-python` | Python wheels — fork of `duckdb-python` | `haybarn-v*` |
 | `haybarn-jdbc` | JDBC jar — fork of `duckdb-java` | `haybarn-v*` |
 | `haybarn-node-neo` | Node bindings — fork of `duckdb-node-neo` | `haybarn-v*` |
+| `haybarn-rust` | Rust crate — fork of `duckdb-rs` (crates.io: `haybarn`/`libhaybarn-sys`/`haybarn-loadable-macros`) | `haybarn-v*` (crate-version tag `haybarn-v1.10503.x-rc.N`, not the engine version) |
 | `haybarn-iceberg`, `haybarn-ducklake`, `haybarn-delta`, `haybarn-httpfs` | Build-forks for the listed core extensions | consumed by core extension build via SHA pin |
 | `haybarn-vcpkg-worker` | Cloudflare Worker fronting R2 for vcpkg + ccache caches | manual deploy |
 | `haybarn-org-profile` | Org-level docs / landing | n/a |
