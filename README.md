@@ -32,6 +32,7 @@ This Haybarn release line is built from **DuckDB v1.5.3**.
 | Python bindings | `haybarn` | [`Query-farm-haybarn/haybarn-python`](https://github.com/Query-farm-haybarn/haybarn-python) (PyPI publish wiring in progress) |
 | Node bindings | `@haybarn/node-neo` (planned) | [`Query-farm-haybarn/haybarn-node-neo`](https://github.com/Query-farm-haybarn/haybarn-node-neo) |
 | JDBC driver | `haybarn-jdbc` (planned) | [`Query-farm-haybarn/haybarn-jdbc`](https://github.com/Query-farm-haybarn/haybarn-jdbc) |
+| Rust crate | `haybarn` (crates.io) | [`Query-farm-haybarn/haybarn-rust`](https://github.com/Query-farm-haybarn/haybarn-rust) |
 | Core extensions | Haybarn-signed | `https://haybarn-extensions.query.farm/core` |
 | Community extensions | Haybarn-signed, rebuilt against the Haybarn engine | `https://haybarn-extensions.query.farm/community` |
 
@@ -143,6 +144,7 @@ org:
 | `haybarn-python` | Python bindings — fork of `duckdb-python` |
 | `haybarn-node-neo` | Node bindings — fork of `duckdb-node-neo` |
 | `haybarn-jdbc` | JDBC driver — fork of `duckdb-java` |
+| `haybarn-rust` | Rust crate — fork of `duckdb-rs` (publishes `haybarn`, `libhaybarn-sys`, `haybarn-loadable-macros` to crates.io) |
 | `haybarn-iceberg`, `haybarn-ducklake`, `haybarn-delta`, `haybarn-httpfs` | Build-forks for those core extensions |
 | `haybarn-community-extensions` | Mirror of `duckdb/community-extensions` rebuilt against the Haybarn engine |
 | `haybarn-extension-ci-tools` | Fork of `duckdb/extension-ci-tools` with vcpkg + GHCR + ccache patches |
