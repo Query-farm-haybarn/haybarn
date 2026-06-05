@@ -22,6 +22,17 @@ Not pinned by us (deliberately): the `external/duckdb` submodule gitlink in
 `haybarn-python` is a SHA — it tracks the Haybarn core fork's `haybarn` branch
 HEAD and gets bumped explicitly when we want to.
 
+`haybarn-rust` pins the engine the same way, in two coupled places: the
+`crates/libduckdb-sys/duckdb-sources` submodule gitlink (a `haybarn-v*` commit on
+the core fork) **and** the committed, regenerated
+`crates/libduckdb-sys/duckdb.tar.gz` amalgamation that the `bundled` build
+actually compiles. On an engine roll: bump the submodule to the new
+`haybarn-vX.Y.Z-rcN`, re-run `crates/libduckdb-sys/update_sources.py` to
+regenerate the amalgamation (which re-embeds the Haybarn trust root), and bump
+the crate's `1.10503.x-rc.N` version — full procedure in that repo's `CLAUDE.md`.
+Its CI runs on `*-latest` runners (not pinned), so the runner-OS row above does
+not apply to it.
+
 ## Known un-pinned bits (drift sources we accept)
 
 These are pinnable in principle but cost more than they're worth right now.
