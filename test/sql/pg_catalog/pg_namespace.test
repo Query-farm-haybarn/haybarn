@@ -39,3 +39,18 @@ CREATE SCHEMA myschema33
 
 query I nosort pgmyschema
 SELECT * FROM pg_namespace WHERE nspname='myschema'
+
+# The pg_catalog namespace is always exposed so clients can resolve it by name
+# and so built-in types' typnamespace resolves to a present schema (pgjdbc,
+# DBeaver getSchema()). Previously pg_namespace only listed current_database()'s
+# schemas, omitting pg_catalog entirely.
+query I
+SELECT COUNT(*) FROM pg_namespace WHERE nspname='pg_catalog'
+----
+1
+
+# every pg_type row's typnamespace resolves to a row in pg_namespace
+query I
+SELECT COUNT(*) FROM pg_type t WHERE t.oid IS NOT NULL AND t.typnamespace NOT IN (SELECT oid FROM pg_namespace)
+----
+0

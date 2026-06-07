@@ -115,3 +115,35 @@ query I
 SELECT pg_catalog.format_pg_type('decimal', 'test');
 ----
 numeric
+
+# Array types are exposed with their element type (typelem) and category 'A',
+# and each base scalar links to its array type via typarray. Clients (pgjdbc,
+# DBeaver) resolve array columns by joining base.typarray -> array.oid and
+# array.typelem -> base.oid; previously typelem/typarray were always NULL and
+# no array rows existed.
+query III
+SELECT oid, typelem, typcategory FROM pg_type WHERE typname = '_int4'
+----
+1007	23	A
+
+query III
+SELECT oid, typelem, typcategory FROM pg_type WHERE typname = '_float8'
+----
+1022	701	A
+
+# _text is provided explicitly (the engine has varchar, not text); its element
+# type points at varchar so array element resolution lands on a real row.
+query III
+SELECT oid, typelem, typcategory FROM pg_type WHERE typname = '_text'
+----
+1009	1043	A
+
+query I
+SELECT typarray FROM pg_type WHERE typname = 'int4' AND oid IS NOT NULL
+----
+1007
+
+query I
+SELECT typarray FROM pg_type WHERE typname = 'varchar' AND oid IS NOT NULL
+----
+1015

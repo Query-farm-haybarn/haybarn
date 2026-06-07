@@ -82,6 +82,25 @@ SELECT * EXCLUDE(input_type, scope, aliases)
       'custom_profiling_settings'
   );
 )"},
+	{"pg_catalog", "pg_get_keywords", {}, {}, R"(
+SELECT
+   keyword_name AS word,
+   CASE keyword_category
+      WHEN 'unreserved' THEN 'U'
+      WHEN 'reserved' THEN 'R'
+      WHEN 'type_function' THEN 'T'
+      WHEN 'column_name' THEN 'C'
+      ELSE 'U'
+   END AS catcode,
+   CASE keyword_category
+      WHEN 'unreserved' THEN 'unreserved'
+      WHEN 'reserved' THEN 'reserved'
+      WHEN 'type_function' THEN 'reserved (can be function or type name)'
+      WHEN 'column_name' THEN 'unreserved (cannot be function or type name)'
+      ELSE 'unreserved'
+   END AS catdesc
+FROM duckdb_keywords()
+)"},
 	{nullptr, nullptr, {nullptr}, {{nullptr, nullptr}}, nullptr}
 	};
 // clang-format on
