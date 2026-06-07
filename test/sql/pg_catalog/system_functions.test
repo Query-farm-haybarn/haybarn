@@ -96,3 +96,20 @@ statement error
 SELECT temp.current_user()
 ----
 main.current_user
+
+# pg_get_keywords() exposes the reserved-word list in the PG shape (word,
+# catcode, catdesc) so clients (psql tab-completion, JDBC metadata) can query it.
+query TT
+SELECT word, catcode FROM pg_catalog.pg_get_keywords() WHERE word = 'select'
+----
+select	R
+
+query I
+SELECT catdesc FROM pg_catalog.pg_get_keywords() WHERE word = 'abort'
+----
+unreserved
+
+query I
+SELECT COUNT(*) > 0 FROM pg_catalog.pg_get_keywords()
+----
+true
