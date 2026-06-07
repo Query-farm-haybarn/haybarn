@@ -196,8 +196,8 @@ r	bytea	NULL	false
 s	date	NULL	false
 t	time	NULL	false
 u	timestamp	NULL	false
-v	list	NULL	false
-w	enum	NULL	false
+v	NULL	NULL	false
+w	NULL	NULL	false
 
 # get_columns with SQLAlchemy >= 2.0.45 collation lookup
 query II
