@@ -92,12 +92,26 @@ SELECT EXISTS (
 ----
 false
 
+# Built-in types live in pg_catalog (as in PostgreSQL), not the user schema, so
+# searching for int4 in 'main' is false. has_type() is only used for user-defined
+# types (enums, domains), which keep their real schema.
 query I
 SELECT EXISTS (
 	SELECT * FROM pg_catalog.pg_type t, pg_catalog.pg_namespace n
 	WHERE t.typnamespace = n.oid
 	AND t.typname = 'int4'
 	AND n.nspname = 'main'
+	)
+----
+false
+
+# int4 does resolve in pg_catalog.
+query I
+SELECT EXISTS (
+	SELECT * FROM pg_catalog.pg_type t, pg_catalog.pg_namespace n
+	WHERE t.typnamespace = n.oid
+	AND t.typname = 'int4'
+	AND n.nspname = 'pg_catalog'
 	)
 ----
 true
