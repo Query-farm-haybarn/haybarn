@@ -1,0 +1,167 @@
+# name: test/sql/pg_catalog/pg_catalog_compat.test
+# description: Standard pg_catalog tables/functions PG clients reference
+# group: [pg_catalog]
+
+# --- Tier 2: standard catalog tables (mostly empty stubs) ---
+
+# pg_roles exposes one synthetic superuser (there is no real authentication).
+query II
+SELECT rolname, rolsuper FROM pg_roles
+----
+postgres	true
+
+query I
+SELECT rolname FROM pg_catalog.pg_roles WHERE oid = 10
+----
+postgres
+
+# The remaining catalogs are empty but must be SELECT-able with their columns
+# present, so client joins/lookups parse and resolve to zero rows.
+query I
+SELECT count(*) FROM pg_extension
+----
+0
+
+query I
+SELECT count(*) FROM pg_foreign_data_wrapper
+----
+0
+
+query I
+SELECT count(*) FROM pg_foreign_server
+----
+0
+
+query I
+SELECT count(*) FROM pg_shdescription
+----
+0
+
+query I
+SELECT count(*) FROM pg_conversion
+----
+0
+
+query I
+SELECT count(*) FROM pg_aggregate
+----
+0
+
+query I
+SELECT count(*) FROM pg_trigger
+----
+0
+
+query I
+SELECT count(*) FROM pg_rewrite
+----
+0
+
+query I
+SELECT count(*) FROM pg_inherits
+----
+0
+
+query I
+SELECT count(*) FROM pg_language
+----
+0
+
+query I
+SELECT count(*) FROM pg_range
+----
+0
+
+# A representative column from each, qualified, to confirm the schema is named.
+query I
+SELECT count(*) FROM pg_catalog.pg_trigger WHERE tgname IS NOT NULL
+----
+0
+
+query I
+SELECT count(*) FROM pg_catalog.pg_range WHERE rngtypid IS NOT NULL
+----
+0
+
+# --- Tier 3: catalog functions ---
+
+query I
+SELECT pg_relation_size(0)
+----
+0
+
+query I
+SELECT pg_relation_size(0, 'main')
+----
+0
+
+query I
+SELECT pg_total_relation_size(0)
+----
+0
+
+query I
+SELECT pg_table_size(0)
+----
+0
+
+query I
+SELECT pg_indexes_size(0)
+----
+0
+
+query I
+SELECT pg_stat_get_numscans(0)
+----
+0
+
+query I
+SELECT pg_get_indexdef(0)
+----
+(empty)
+
+query I
+SELECT pg_get_indexdef(0, 1, true)
+----
+(empty)
+
+query I
+SELECT pg_get_triggerdef(0)
+----
+(empty)
+
+query I
+SELECT pg_get_triggerdef(0, true)
+----
+(empty)
+
+query I
+SELECT pg_get_ruledef(0)
+----
+(empty)
+
+query I
+SELECT pg_get_ruledef(0, true)
+----
+(empty)
+
+query I
+SELECT pg_get_userbyid(10)
+----
+postgres
+
+query I
+SELECT pg_encoding_to_char(6)
+----
+UTF8
+
+# 3-arg pg_get_expr (pretty flag) returns the node tree, like the 2-arg form.
+query I
+SELECT pg_get_expr('some_expr', 0, true)
+----
+some_expr
+
+query I
+SELECT pg_catalog.pg_get_expr('some_expr', 0)
+----
+some_expr
