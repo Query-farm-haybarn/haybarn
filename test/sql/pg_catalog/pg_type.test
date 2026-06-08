@@ -147,3 +147,56 @@ query I
 SELECT typarray FROM pg_type WHERE typname = 'varchar' AND oid IS NOT NULL
 ----
 1015
+
+# PostgreSQL declares these columns NOT NULL; strict drivers (Npgsql) read them
+# as non-nullable and crash on a NULL. They must be concrete, never NULL.
+query I
+SELECT count(*) FROM pg_type WHERE typnotnull IS NULL
+----
+0
+
+query I
+SELECT count(*) FROM pg_type WHERE typdelim IS NULL
+----
+0
+
+query I
+SELECT count(*) FROM pg_type WHERE typinput IS NULL OR typoutput IS NULL OR typreceive IS NULL OR typsend IS NULL
+----
+0
+
+query I
+SELECT DISTINCT typnotnull FROM pg_type
+----
+false
+
+query I
+SELECT DISTINCT typdelim FROM pg_type
+----
+,
+
+# Every row exposed has a non-NULL oid (rows the engine can't map to a PG oid are
+# filtered out, not emitted with a NULL oid that breaks driver type-loading).
+query I
+SELECT count(*) FROM pg_type WHERE oid IS NULL
+----
+0
+
+# Built-in types live in the pg_catalog schema, so a driver joining
+# pg_type.typnamespace -> pg_namespace.oid resolves their qualified name as
+# pg_catalog.<type> (not main.<type>), matching its built-in readers.
+query I
+SELECT n.nspname FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace WHERE t.typname = 'varchar'
+----
+pg_catalog
+
+query I
+SELECT n.nspname FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace WHERE t.typname = 'int4'
+----
+pg_catalog
+
+# User-defined enums keep their real schema (not relocated to pg_catalog).
+query I
+SELECT n.nspname FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace WHERE t.typname = 'greeting'
+----
+main

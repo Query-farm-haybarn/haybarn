@@ -60,6 +60,7 @@ static const DefaultMacro internal_macros[] = {
 	{"pg_catalog", "pg_get_constraintdef", {"constraint_oid", nullptr}, {{nullptr, nullptr}}, "(select constraint_text from duckdb_constraints() d_constraint where d_constraint.table_oid=constraint_oid//1000000 and d_constraint.constraint_index=constraint_oid%1000000)"},
 	{"pg_catalog", "pg_get_constraintdef", {"constraint_oid", "pretty_bool", nullptr}, {{nullptr, nullptr}}, "pg_get_constraintdef(constraint_oid)"},
 	{"pg_catalog", "pg_get_expr", {"pg_node_tree", "relation_oid", nullptr}, {{nullptr, nullptr}}, "pg_node_tree"},
+	{"pg_catalog", "pg_get_expr", {"pg_node_tree", "relation_oid", "pretty_bool", nullptr}, {{nullptr, nullptr}}, "pg_node_tree"},
 	{"pg_catalog", "format_pg_type", {"logical_type", "type_name", nullptr}, {{nullptr, nullptr}}, "case upper(logical_type) when 'FLOAT' then 'float4' when 'DOUBLE' then 'float8' when 'DECIMAL' then 'numeric' when 'ENUM' then lower(type_name) when 'VARCHAR' then 'varchar' when 'BLOB' then 'bytea' when 'TIMESTAMP' then 'timestamp' when 'TIME' then 'time' when 'TIMESTAMP WITH TIME ZONE' then 'timestamptz' when 'TIME WITH TIME ZONE' then 'timetz' when 'SMALLINT' then 'int2' when 'INTEGER' then 'int4' when 'BIGINT' then 'int8' when 'BOOLEAN' then 'bool' else lower(logical_type) end"},
 	{"pg_catalog", "format_type", {"type_oid", "typemod", nullptr}, {{nullptr, nullptr}}, "COALESCE((select format_pg_type(logical_type, type_name) from duckdb_types() t where map_to_pg_oid(t.type_name)=type_oid limit 1), (select format_pg_type(logical_type, type_name) from duckdb_types() t where t.type_oid=type_oid limit 1)) || case when typemod>0 then concat('(', typemod//1000, ',', typemod%1000, ')') else '' end"},
 	{"pg_catalog", "map_to_pg_oid", {"type_name", nullptr}, {{nullptr, nullptr}}, "case type_name when 'bool' then 16 when 'int16' then 21 when 'int' then 23 when 'bigint' then 20 when 'date' then 1082 when 'time' then 1083 when 'datetime' then 1114 when 'dec' then 1700 when 'float' then 700 when 'double' then 701 when 'bpchar' then 1043 when 'binary' then 17 when 'interval' then 1186 when 'timestamptz' then 1184 when 'timestamp with time zone' then 1184 when 'timetz' then 1266 when 'time with time zone' then 1266 when 'bit' then 1560 when 'guid' then 2950 else null end"}, // map duckdb_oid to pg_oid. If no corresponding type, return null
@@ -87,6 +88,28 @@ static const DefaultMacro internal_macros[] = {
 
 	{"pg_catalog", "pg_size_pretty", {"bytes", nullptr}, {{nullptr, nullptr}}, "format_bytes(bytes)"},
 	{"pg_catalog", "pg_sleep", {"seconds", nullptr}, {{nullptr, nullptr}}, "sleep_ms(CAST(seconds * 1000 AS BIGINT))"},
+
+	// Object size / stat functions. The engine has no on-disk relation sizes
+	// (tables may be backed by remote workers), so report zero rather than error
+	// — PG clients (DBeaver, pgAdmin) call these on table/index expand.
+	{"pg_catalog", "pg_relation_size", {"relation_oid", nullptr}, {{nullptr, nullptr}}, "0::bigint"},
+	{"pg_catalog", "pg_relation_size", {"relation_oid", "fork", nullptr}, {{nullptr, nullptr}}, "0::bigint"},
+	{"pg_catalog", "pg_total_relation_size", {"relation_oid", nullptr}, {{nullptr, nullptr}}, "0::bigint"},
+	{"pg_catalog", "pg_table_size", {"relation_oid", nullptr}, {{nullptr, nullptr}}, "0::bigint"},
+	{"pg_catalog", "pg_indexes_size", {"relation_oid", nullptr}, {{nullptr, nullptr}}, "0::bigint"},
+	{"pg_catalog", "pg_stat_get_numscans", {"relation_oid", nullptr}, {{nullptr, nullptr}}, "0::bigint"},
+	// DDL reconstruction the engine can't synthesize — return empty text so the
+	// catalog rows still list; only the generated-DDL tab is blank.
+	{"pg_catalog", "pg_get_indexdef", {"index_oid", nullptr}, {{nullptr, nullptr}}, "''"},
+	{"pg_catalog", "pg_get_indexdef", {"index_oid", "column_no", "pretty_bool", nullptr}, {{nullptr, nullptr}}, "''"},
+	{"pg_catalog", "pg_get_triggerdef", {"trigger_oid", nullptr}, {{nullptr, nullptr}}, "''"},
+	{"pg_catalog", "pg_get_triggerdef", {"trigger_oid", "pretty_bool", nullptr}, {{nullptr, nullptr}}, "''"},
+	{"pg_catalog", "pg_get_ruledef", {"rule_oid", nullptr}, {{nullptr, nullptr}}, "''"},
+	{"pg_catalog", "pg_get_ruledef", {"rule_oid", "pretty_bool", nullptr}, {{nullptr, nullptr}}, "''"},
+	// No real authentication: a single synthetic superuser, and the server
+	// encoding is always UTF8.
+	{"pg_catalog", "pg_get_userbyid", {"role_oid", nullptr}, {{nullptr, nullptr}}, "'postgres'"},
+	{"pg_catalog", "pg_encoding_to_char", {"encoding", nullptr}, {{nullptr, nullptr}}, "'UTF8'"},
 
 	{DEFAULT_SCHEMA, "round_even", {"x", "n", nullptr}, {{nullptr, nullptr}}, "CASE ((abs(x) * power(10, n+1)) % 10) WHEN 5 THEN round(x/2, n) * 2 ELSE round(x, n) END"},
 	{DEFAULT_SCHEMA, "roundbankers", {"x", "n", nullptr}, {{nullptr, nullptr}}, "round_even(x, n)"},
