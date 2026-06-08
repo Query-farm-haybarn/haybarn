@@ -110,8 +110,7 @@ static const DefaultView internal_views[] = {
      "FROM duckdb_indexes()"},
     {"pg_catalog", "pg_namespace",
      "SELECT oid, schema_name nspname, 0 nspowner, NULL nspacl FROM duckdb_schemas() where "
-     "database_name=current_database() OR schema_name IN ('pg_catalog', 'information_schema') OR oid IN (SELECT "
-     "schema_oid FROM duckdb_types() WHERE type_oid IS NOT NULL)"},
+     "database_name=current_database() OR schema_name IN ('pg_catalog', 'information_schema')"},
     {"pg_catalog", "pg_proc",
      "SELECT f.function_oid oid, function_name proname, s.oid pronamespace,  NULL proowner, NULL prolang, 0 procost, 0 "
      "prorows, varargs provariadic,  0 prosupport, CASE function_type WHEN 'aggregate' THEN 'a' ELSE 'f' END prokind, "
@@ -138,37 +137,55 @@ static const DefaultView internal_views[] = {
     {"pg_catalog", "pg_tablespace", "SELECT 0 oid, 'pg_default' spcname, 0 spcowner, NULL spcacl, NULL spcoptions"},
     {"pg_catalog", "pg_type",
      "SELECT CASE WHEN type_oid IS NULL THEN NULL WHEN logical_type = 'ENUM' AND type_name <> 'enum' THEN type_oid "
-     "ELSE map_to_pg_oid(type_name) END oid, format_pg_type(logical_type, type_name) typname, schema_oid typnamespace, "
+     "ELSE map_to_pg_oid(type_name) END oid, format_pg_type(logical_type, type_name) typname, CASE WHEN internal THEN "
+     "(SELECT oid FROM duckdb_schemas() WHERE schema_name='pg_catalog' LIMIT 1) ELSE schema_oid END typnamespace, "
      "0 typowner, type_size typlen, false typbyval, CASE WHEN logical_type='ENUM' THEN 'e' else 'b' end typtype, CASE "
      "WHEN type_category='NUMERIC' THEN 'N' WHEN type_category='STRING' THEN 'S' WHEN type_category='DATETIME' THEN "
      "'D' WHEN type_category='BOOLEAN' THEN 'B' WHEN type_category='COMPOSITE' THEN 'C' WHEN type_category='USER' THEN "
-     "'U' ELSE 'X' END typcategory, false typispreferred, true typisdefined, NULL typdelim, NULL typrelid, NULL "
+     "'U' ELSE 'X' END typcategory, false typispreferred, true typisdefined, ',' typdelim, NULL typrelid, NULL "
      "typsubscript, NULL typelem, CASE map_to_pg_oid(type_name) WHEN 16 THEN 1000 WHEN 17 THEN 1001 WHEN 20 THEN "
      "1016 WHEN 21 THEN 1005 WHEN 23 THEN 1007 WHEN 700 THEN 1021 WHEN 701 THEN 1022 WHEN 1043 THEN 1015 WHEN 1082 "
      "THEN 1182 WHEN 1083 THEN 1183 WHEN 1114 THEN 1115 WHEN 1184 THEN 1185 WHEN 1186 THEN 1187 WHEN 1266 THEN 1270 "
-     "WHEN 1700 THEN 1231 WHEN 2950 THEN 2951 ELSE NULL END typarray, NULL typinput, NULL typoutput, NULL typreceive, "
-     "NULL typsend, NULL "
-     "typmodin, NULL typmodout, NULL typanalyze, 'd' typalign, 'p' typstorage, NULL typnotnull, NULL typbasetype, NULL "
+     "WHEN 1700 THEN 1231 WHEN 2950 THEN 2951 ELSE NULL END typarray, 0 typinput, 0 typoutput, 0 typreceive, 0 "
+     "typsend, NULL typmodin, NULL typmodout, NULL typanalyze, 'd' typalign, 'p' typstorage, false typnotnull, NULL "
+     "typbasetype, NULL "
      "typtypmod, NULL typndims, NULL typcollation, NULL typdefaultbin, NULL typdefault, NULL typacl FROM "
-     "duckdb_types() WHERE type_oid IS NOT NULL UNION ALL SELECT CASE map_to_pg_oid(type_name) WHEN 16 THEN 1000 "
+     "duckdb_types() WHERE type_oid IS NOT NULL AND ((logical_type = 'ENUM' AND type_name <> 'enum') OR "
+     "map_to_pg_oid(type_name) IS NOT NULL) UNION ALL SELECT CASE map_to_pg_oid(type_name) WHEN 16 THEN 1000 "
      "WHEN 17 THEN 1001 WHEN 20 THEN 1016 WHEN 21 THEN 1005 WHEN 23 THEN 1007 WHEN 700 THEN 1021 WHEN 701 THEN 1022 "
      "WHEN 1043 THEN 1015 WHEN 1082 THEN 1182 WHEN 1083 THEN 1183 WHEN 1114 THEN 1115 WHEN 1184 THEN 1185 WHEN 1186 "
      "THEN 1187 WHEN 1266 THEN 1270 WHEN 1700 THEN 1231 WHEN 2950 THEN 2951 END oid, '_' || "
-     "format_pg_type(logical_type, type_name) typname, schema_oid typnamespace, 0 typowner, -1 typlen, false typbyval, "
-     "'b' typtype, 'A' typcategory, false typispreferred, true typisdefined, NULL typdelim, NULL typrelid, NULL "
-     "typsubscript, map_to_pg_oid(type_name) typelem, NULL typarray, NULL typinput, NULL typoutput, NULL typreceive, "
-     "NULL typsend, NULL typmodin, NULL typmodout, NULL typanalyze, 'd' typalign, 'p' typstorage, NULL typnotnull, "
+     "format_pg_type(logical_type, type_name) typname, CASE WHEN internal THEN (SELECT oid FROM duckdb_schemas() "
+     "WHERE schema_name='pg_catalog' LIMIT 1) ELSE schema_oid END typnamespace, 0 typowner, -1 typlen, false typbyval, "
+     "'b' typtype, 'A' typcategory, false typispreferred, true typisdefined, ',' typdelim, NULL typrelid, NULL "
+     "typsubscript, map_to_pg_oid(type_name) typelem, NULL typarray, 0 typinput, 0 typoutput, 0 typreceive, 0 typsend, "
+     "NULL typmodin, NULL typmodout, NULL typanalyze, 'd' typalign, 'p' typstorage, false typnotnull, "
      "NULL typbasetype, NULL typtypmod, NULL typndims, NULL typcollation, NULL typdefaultbin, NULL typdefault, NULL "
      "typacl FROM duckdb_types() WHERE type_oid IS NOT NULL AND map_to_pg_oid(type_name) IN "
      "(16,17,20,21,23,700,701,1043,1082,1083,1114,1184,1186,1266,1700,2950) UNION ALL SELECT 1009 oid, '_text' "
-     "typname, schema_oid typnamespace, 0 typowner, -1 typlen, false typbyval, 'b' typtype, 'A' typcategory, false "
-     "typispreferred, true typisdefined, NULL typdelim, NULL typrelid, NULL typsubscript, 1043 typelem, NULL "
-     "typarray, NULL typinput, NULL typoutput, NULL typreceive, NULL typsend, NULL typmodin, NULL typmodout, NULL "
-     "typanalyze, 'd' typalign, 'p' typstorage, NULL typnotnull, NULL typbasetype, NULL typtypmod, NULL typndims, "
+     "typname, CASE WHEN internal THEN (SELECT oid FROM duckdb_schemas() WHERE schema_name='pg_catalog' LIMIT 1) "
+     "ELSE schema_oid END typnamespace, 0 typowner, -1 typlen, false typbyval, 'b' typtype, 'A' typcategory, false "
+     "typispreferred, true typisdefined, ',' typdelim, NULL typrelid, NULL typsubscript, 1043 typelem, NULL typarray, "
+     "0 typinput, 0 typoutput, 0 typreceive, 0 typsend, NULL typmodin, NULL typmodout, NULL typanalyze, 'd' typalign, "
+     "'p' typstorage, false typnotnull, NULL typbasetype, NULL typtypmod, NULL typndims, "
      "NULL typcollation, NULL typdefaultbin, NULL typdefault, NULL typacl FROM duckdb_types() WHERE type_oid IS NOT "
      "NULL AND type_name = 'bpchar';"},
     {"pg_catalog", "pg_views",
      "SELECT schema_name schemaname, view_name viewname, 'duckdb' viewowner, sql definition FROM duckdb_views()"},
+    // Empty compatibility catalogs used by PostgreSQL administration clients.
+    // pg_roles exposes the single synthetic role used by the wire server.
+    {"pg_catalog", "pg_roles", "SELECT 10::bigint AS oid, 'postgres' AS rolname, true AS rolsuper, true AS rolinherit, true AS rolcreaterole, true AS rolcreatedb, true AS rolcanlogin, false AS rolreplication, false AS rolbypassrls, -1 AS rolconnlimit, NULL::timestamp AS rolvaliduntil, NULL::varchar[] AS rolconfig, '********' AS rolpassword"},
+    {"pg_catalog", "pg_extension", "SELECT NULL::bigint AS oid, NULL::varchar AS extname, NULL::bigint AS extowner, NULL::bigint AS extnamespace, false AS extrelocatable, NULL::varchar AS extversion, NULL::bigint[] AS extconfig, NULL::varchar[] AS extcondition WHERE false"},
+    {"pg_catalog", "pg_foreign_data_wrapper", "SELECT NULL::bigint AS oid, NULL::varchar AS fdwname, NULL::bigint AS fdwowner, NULL::bigint AS fdwhandler, NULL::bigint AS fdwvalidator, NULL::varchar[] AS fdwacl, NULL::varchar[] AS fdwoptions WHERE false"},
+    {"pg_catalog", "pg_foreign_server", "SELECT NULL::bigint AS oid, NULL::varchar AS srvname, NULL::bigint AS srvowner, NULL::bigint AS srvfdw, NULL::varchar AS srvtype, NULL::varchar AS srvversion, NULL::varchar[] AS srvacl, NULL::varchar[] AS srvoptions WHERE false"},
+    {"pg_catalog", "pg_shdescription", "SELECT NULL::bigint AS objoid, NULL::bigint AS classoid, NULL::varchar AS description WHERE false"},
+    {"pg_catalog", "pg_conversion", "SELECT NULL::bigint AS oid, NULL::varchar AS conname, NULL::bigint AS connamespace, NULL::bigint AS conowner, NULL::int AS conforencoding, NULL::int AS contoencoding, NULL::bigint AS conproc, false AS condefault WHERE false"},
+    {"pg_catalog", "pg_aggregate", "SELECT NULL::bigint AS aggfnoid, NULL::varchar AS aggkind, NULL::smallint AS aggnumdirectargs, NULL::bigint AS aggtransfn, NULL::bigint AS aggfinalfn, NULL::bigint AS aggcombinefn, NULL::bigint AS aggserialfn, NULL::bigint AS aggdeserialfn, NULL::bigint AS aggmtransfn, NULL::bigint AS aggminvtransfn, NULL::bigint AS aggmfinalfn, false AS aggfinalextra, false AS aggmfinalextra, NULL::varchar AS aggfinalmodify, NULL::varchar AS aggmfinalmodify, NULL::bigint AS aggsortop, NULL::bigint AS aggtranstype, NULL::int AS aggtransspace, NULL::bigint AS aggmtranstype, NULL::int AS aggmtransspace, NULL::varchar AS agginitval, NULL::varchar AS aggminitval WHERE false"},
+    {"pg_catalog", "pg_trigger", "SELECT NULL::bigint AS oid, NULL::bigint AS tgrelid, NULL::varchar AS tgname, NULL::bigint AS tgfoid, NULL::smallint AS tgtype, NULL::varchar AS tgenabled, false AS tgisinternal, NULL::bigint AS tgconstrrelid, NULL::bigint AS tgconstrindid, NULL::bigint AS tgconstraint, false AS tgdeferrable, false AS tginitdeferred, NULL::smallint AS tgnargs, NULL::varchar AS tgattr, NULL::blob AS tgargs, NULL::varchar AS tgqual, NULL::varchar AS tgoldtable, NULL::varchar AS tgnewtable WHERE false"},
+    {"pg_catalog", "pg_rewrite", "SELECT NULL::bigint AS oid, NULL::varchar AS rulename, NULL::bigint AS ev_class, NULL::varchar AS ev_type, NULL::varchar AS ev_enabled, false AS is_instead, NULL::varchar AS ev_qual, NULL::varchar AS ev_action WHERE false"},
+    {"pg_catalog", "pg_inherits", "SELECT NULL::bigint AS inhrelid, NULL::bigint AS inhparent, NULL::int AS inhseqno, false AS inhdetachpending WHERE false"},
+    {"pg_catalog", "pg_language", "SELECT NULL::bigint AS oid, NULL::varchar AS lanname, NULL::bigint AS lanowner, false AS lanispl, false AS lanpltrusted, NULL::bigint AS lanplcallfoid, NULL::bigint AS laninline, NULL::bigint AS lanvalidator, NULL::varchar AS lanacl WHERE false"},
+    {"pg_catalog", "pg_range", "SELECT NULL::bigint AS rngtypid, NULL::bigint AS rngsubtype, NULL::bigint AS rngmultitypid, NULL::bigint AS rngcollation, NULL::bigint AS rngsubopc, NULL::bigint AS rngcanonical, NULL::bigint AS rngsubdiff WHERE false"},
     {"information_schema", "columns",
      "SELECT database_name table_catalog, schema_name table_schema, table_name, column_name, column_index "
      "ordinal_position, column_default, CASE WHEN is_nullable THEN 'YES' ELSE 'NO' END is_nullable, data_type, "
