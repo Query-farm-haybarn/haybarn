@@ -19,7 +19,7 @@ on:
         type: string
         required: true
       tag:
-        description: 'Release tag to publish (e.g. haybarn-v1.5.3)'
+        description: 'Release tag to publish (e.g. haybarn-v1.5.4)'
         type: string
         required: true
 

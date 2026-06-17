@@ -24,7 +24,7 @@ git config rerere.enabled true   # replay previous conflict resolutions
 
 ## Per-release procedure
 
-Assume the current Haybarn branch is based on `v1.5.3` and we are moving to
+Assume the current Haybarn branch is based on `v1.5.4` and we are moving to
 `vX.Y.Z`.
 
 ```sh
@@ -32,7 +32,7 @@ git fetch upstream --tags
 
 # Rebase the Haybarn commit stack onto the new upstream tag.
 git checkout haybarn
-git rebase --onto vX.Y.Z v1.5.3 haybarn
+git rebase --onto vX.Y.Z v1.5.4 haybarn
 ```
 
 Resolve conflicts commit-by-commit. Likely conflict sites, by Haybarn commit:
@@ -50,7 +50,7 @@ Resolve conflicts commit-by-commit. Likely conflict sites, by Haybarn commit:
 
 ## After the rebase
 
-1. Update the embedded version references that mention the previous base (`1.5.3`):
+1. Update the embedded version references that mention the previous base (`1.5.4`):
    - the `OVERRIDE_GIT_DESCRIBE` default in the `haybarn-*.yml` workflows
    - the CLI banner literal in `tools/shell/shell.cpp` (if hard-coded)
    - `README.md` ("built from DuckDB vX.Y.Z")
