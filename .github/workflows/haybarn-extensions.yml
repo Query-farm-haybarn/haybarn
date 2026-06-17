@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       override_git_describe:
-        description: 'Engine ref to build extensions against (e.g. haybarn-v1.5.3-rc3); a haybarn-v1.5.3* ref embeds v1.5.3. Defaults to the pushed tag.'
+        description: 'Engine ref to build extensions against (e.g. haybarn-v1.5.4-rc3); a haybarn-v1.5.4* ref embeds v1.5.4. Defaults to the pushed tag.'
         type: string
 
 concurrency:
@@ -65,8 +65,8 @@ jobs:
       # Check out the engine (duckdb/) at the Haybarn release ref being built, so
       # extensions compile against the Haybarn engine — including engine API that
       # only exists on the haybarn branch (e.g. PostRequestInfo::cancellation),
-      # not the pristine upstream v1.5.3 tag. The extension-ci-tools fork maps a
-      # `haybarn-v1.5.3*` ref back to the clean `v1.5.3` OVERRIDE_GIT_DESCRIBE, so
+      # not the pristine upstream v1.5.4 tag. The extension-ci-tools fork maps a
+      # `haybarn-v1.5.4*` ref back to the clean `v1.5.4` OVERRIDE_GIT_DESCRIBE, so
       # the embedded/loadable version string still matches the released engine.
       # On a tag push github.ref_name is the haybarn-v* tag; for workflow_dispatch
       # pass the tag via override_git_describe.
