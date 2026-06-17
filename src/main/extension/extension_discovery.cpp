@@ -46,7 +46,7 @@ static string NpmPlatformSuffix() {
 	return string();
 }
 
-// The Haybarn ABI suffix in the npm package name, e.g. "v1.5.3" -> "h1-5-3".
+// The Haybarn ABI suffix in the npm package name, e.g. "v1.5.4" -> "h1-5-4".
 // For non-release (dev/source-id) builds this won't match any published
 // package, which is fine — discovery simply finds nothing.
 static string HaybarnVersionPackageSuffix() {

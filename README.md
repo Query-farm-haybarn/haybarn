@@ -11,16 +11,16 @@ by Query Farm LLC.
 > See [NOTICE](NOTICE) for details.
 
 > [!IMPORTANT]
-> **Haybarn 1.5.3 is in release-candidate phase.** The current tag is
-> `haybarn-v1.5.3-rc1`. Final `1.5.3` will arrive once the extension catalog
+> **Haybarn 1.5.4 is in release-candidate phase.** The current tag is
+> `haybarn-v1.5.4-rc1`. Final `1.5.4` will arrive once the extension catalog
 > has stabilised. Until then, install snippets below pin the `rc` channel
 > explicitly. APIs and on-disk formats are inherited from upstream DuckDB
-> v1.5.3 and will not change between rcs.
+> v1.5.4 and will not change between rcs.
 >
 > Live build + release status across all Haybarn repos:
 > **<https://haybarn-status.query.farm>**.
 
-This Haybarn release line is built from **DuckDB v1.5.3**.
+This Haybarn release line is built from **DuckDB v1.5.4**.
 
 ## What Haybarn ships
 
@@ -50,14 +50,14 @@ directory, and the release/distribution pipeline.
 npx haybarn@rc
 
 # PyPI (no install)
-uvx haybarn-cli==1.5.3rc1          # or `pipx run haybarn-cli==1.5.3rc1`
+uvx haybarn-cli==1.5.4rc1          # or `pipx run haybarn-cli==1.5.4rc1`
 
 # GitHub Releases — pick the zip for your OS/arch
 https://github.com/Query-farm-haybarn/haybarn/releases
 ```
 
 All three channels ship the same `haybarn` binary built from the same engine
-commit. Once `1.5.3` final lands, `npx haybarn` and `uvx haybarn-cli` will work
+commit. Once `1.5.4` final lands, `npx haybarn` and `uvx haybarn-cli` will work
 without the `@rc` / `==…` suffixes.
 
 ## Python

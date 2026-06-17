@@ -38,7 +38,7 @@ corporate proxies and in sandboxed CI.
 
 - `npx haybarn-unittest` — latest stable release.
 - `npx haybarn-unittest@rc` — most recent release candidate.
-- `npx haybarn-unittest@1.5.3` — pin a specific version.
+- `npx haybarn-unittest@1.5.4` — pin a specific version.
 
 ## Trademark
 

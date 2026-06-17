@@ -57,12 +57,12 @@ repos (Settings → Actions).
 
 ## Fork tags
 
-The `haybarn` core fork must carry the upstream `v1.5.3` tag — the extension
-build (`extension-ci-tools`) runs `git checkout v1.5.3` inside the checked-out
+The `haybarn` core fork must carry the upstream `v1.5.4` tag — the extension
+build (`extension-ci-tools`) runs `git checkout v1.5.4` inside the checked-out
 caller repo. Push it explicitly (a branch push does not carry tags):
 
 ```sh
-git push origin refs/tags/v1.5.3
+git push origin refs/tags/v1.5.4
 ```
 
 Note: enabling GitHub Actions on a fork does not retroactively index workflows
@@ -74,8 +74,8 @@ indexing.
 Tag the core repo to exercise the pipelines:
 
 ```sh
-git tag haybarn-v1.5.3-rc1
-git push origin haybarn-v1.5.3-rc1
+git tag haybarn-v1.5.4-rc1
+git push origin haybarn-v1.5.4-rc1
 ```
 
 This triggers `haybarn-release.yml` (binaries), `haybarn-extensions.yml` (the
