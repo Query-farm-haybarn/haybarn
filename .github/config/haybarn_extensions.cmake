@@ -38,13 +38,14 @@ include("${EXTENSION_CONFIG_BASE_DIR}/fts.cmake")
 # httpfs is a Haybarn build-fork (Query-farm-haybarn/haybarn-httpfs) so Haybarn
 # changes can land on top of upstream over time. Pinned by explicit SHA — bump it
 # when you want to roll forward (or pick up new Haybarn commits on the fork's
-# haybarn branch). Now at 2f99b6d: fork's duckdb submodule rolled to engine
-# f6004601 (httpfs URL-ownership + %n extension-install error-path fix), on top
-# of the all-HTTP-method in-flight cancellation wired into the reader layer.
+# haybarn branch). Now at fc74409: the Haybarn stack rebased onto upstream's
+# v1.5.4 httpfs pin (c3f215a) — four Haybarn fixes (crypto TSAN/DRBG, crypto.cpp
+# dedup, stoull Content-Length) dropped as already-upstream; HTTP/2 multiplex,
+# all-method cancellation, and the URL-ownership/%n fixes carried forward.
 duckdb_extension_load(httpfs
         LOAD_TESTS
         GIT_URL https://github.com/Query-farm-haybarn/haybarn-httpfs
-        GIT_TAG 2f99b6dd8b56ff0609d06eebbaf2200c47073d8f
+        GIT_TAG fc744096d8fcbd029f7699bd7b1195cac5a913cb
 )
 include("${EXTENSION_CONFIG_BASE_DIR}/inet.cmake")
 include("${EXTENSION_CONFIG_BASE_DIR}/mysql_scanner.cmake")
@@ -62,14 +63,14 @@ include("${EXTENSION_CONFIG_BASE_DIR}/unity_catalog.cmake")
 # --- Out-of-tree extensions, built from the Haybarn build-forks --------------
 # iceberg, ducklake and delta are forked under Query-farm-haybarn for source/tag
 # control. The extension names stay `iceberg` / `ducklake` / `delta`. Each
-# fork's `haybarn` branch is the exact commit DuckDB v1.5.2 CI pinned (iceberg
-# 11fea8ed, ducklake 415a9ebd, delta 776be7ac) plus a single NOTICE commit —
-# pinned here by explicit SHA so the build is reproducible and unambiguously
-# the 1.5.2 build, never `main`.
+# fork's `haybarn` branch is the exact commit DuckDB v1.5.4 CI pinned (iceberg
+# e6fe0a4b, ducklake d318a545, delta 45c40878) plus the Haybarn CI/NOTICE stack,
+# rebased forward for v1.5.4 — pinned here by explicit SHA so the build is
+# reproducible and unambiguously the 1.5.4 build, never `main`.
 if(NOT MINGW AND NOT ${WASM_ENABLED})
     duckdb_extension_load(delta
             GIT_URL https://github.com/Query-farm-haybarn/haybarn-delta
-            GIT_TAG 9ef3645f4610a0e7877095f4de3887075eebdb07
+            GIT_TAG f2dbbb0b2adeea2fb05159f0d920d0b43f807a56
             SUBMODULES extension-ci-tools
     )
 endif()
@@ -82,11 +83,11 @@ if (NOT MINGW)
     duckdb_extension_load(iceberg
             DONT_LINK
             GIT_URL https://github.com/Query-farm-haybarn/haybarn-iceberg
-            GIT_TAG 9ed58be8cb2361c66b63bbfd46657c3fad954175
+            GIT_TAG 23ca175ca512efd1a86e0bf4ec471724d298973f
             )
 endif()
 
 duckdb_extension_load(ducklake
     GIT_URL https://github.com/Query-farm-haybarn/haybarn-ducklake
-    GIT_TAG 45e2b4ba5ae6de1fc0f1c78802638eed672d9a99
+    GIT_TAG a1e7d2f8d5cab00fb95bb6420220f707461cbd94
 )

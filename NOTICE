@@ -27,7 +27,7 @@ Modifications made by Haybarn
 
 Haybarn is maintained as a hard fork of duckdb/duckdb. All Haybarn-specific
 changes are kept as a small, curated commit stack on top of an upstream DuckDB
-release tag. As of the current release (built from DuckDB v1.5.3) those changes
+release tag. As of the current release (built from DuckDB v1.5.4) those changes
 are:
 
   * branding: rename artifacts to Haybarn
@@ -65,7 +65,7 @@ are:
       `haybarn`, compiled module renamed, opt-in `haybarn.compat` shim.
 
 The authoritative, line-level record of every modification is the git history
-of this fork (the commit stack on top of the upstream `v1.5.3` tag).
+of this fork (the commit stack on top of the upstream `v1.5.4` tag).
 
 
 Trademark
