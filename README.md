@@ -29,10 +29,11 @@ This Haybarn release line is built from **DuckDB v1.5.4**.
 | CLI | `haybarn` | [GitHub Releases](https://github.com/Query-farm-haybarn/haybarn/releases), npm (`@haybarn/cli-*`), PyPI (`haybarn-cli`) |
 | Shared library | `libhaybarn.{so,dylib,dll}` | [GitHub Releases](https://github.com/Query-farm-haybarn/haybarn/releases) |
 | Static library | `libhaybarn_static.a` | [GitHub Releases](https://github.com/Query-farm-haybarn/haybarn/releases) |
-| Python bindings | `haybarn` | [`Query-farm-haybarn/haybarn-python`](https://github.com/Query-farm-haybarn/haybarn-python) (PyPI publish wiring in progress) |
-| Node bindings | `@haybarn/node-neo` (planned) | [`Query-farm-haybarn/haybarn-node-neo`](https://github.com/Query-farm-haybarn/haybarn-node-neo) |
-| JDBC driver | `haybarn-jdbc` (planned) | [`Query-farm-haybarn/haybarn-jdbc`](https://github.com/Query-farm-haybarn/haybarn-jdbc) |
-| Rust crate | `haybarn` (crates.io) | [`Query-farm-haybarn/haybarn-rust`](https://github.com/Query-farm-haybarn/haybarn-rust) |
+| Python bindings | `haybarn` | PyPI (`haybarn`), [`Query-farm-haybarn/haybarn-python`](https://github.com/Query-farm-haybarn/haybarn-python) |
+| Node bindings | `@haybarn/node-api` | npm, [`Query-farm-haybarn/haybarn-node-neo`](https://github.com/Query-farm-haybarn/haybarn-node-neo) |
+| JDBC driver | `farm.query.haybarn:haybarn_jdbc` | Maven Central, [`Query-farm-haybarn/haybarn-jdbc`](https://github.com/Query-farm-haybarn/haybarn-jdbc) |
+| Rust crate | `haybarn` | crates.io, [`Query-farm-haybarn/haybarn-rust`](https://github.com/Query-farm-haybarn/haybarn-rust) |
+| WASM | `@haybarn/haybarn-wasm` | npm, [`Query-farm-haybarn/haybarn-wasm`](https://github.com/Query-farm-haybarn/haybarn-wasm) |
 | Core extensions | Haybarn-signed | `https://haybarn-extensions.query.farm/core` |
 | Community extensions | Haybarn-signed, rebuilt against the Haybarn engine | `https://haybarn-extensions.query.farm/community` |
 
@@ -76,11 +77,10 @@ import haybarn.compat   # registers `haybarn` as the `duckdb` module
 import duckdb           # now resolves to Haybarn
 ```
 
-> The `haybarn` library wheels are built green on a 20-leg
-> (OS × Python version) matrix in `Query-farm-haybarn/haybarn-python`; the
-> first `pip install haybarn` publish to PyPI is gated on a workflow_dispatch
-> and is not yet live. The `haybarn-cli` PyPI project (a packaged CLI) is
-> separate and already live.
+> The `haybarn` library is published to PyPI (`pip install --pre haybarn`
+> during the rc phase), built on a 20-leg (OS × Python version) wheel matrix in
+> `Query-farm-haybarn/haybarn-python`. The `haybarn-cli` PyPI project (a
+> packaged CLI) is separate and also live.
 
 ## Extensions
 
