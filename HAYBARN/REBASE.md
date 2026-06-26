@@ -61,6 +61,15 @@ Resolve conflicts commit-by-commit. Likely conflict sites, by Haybarn commit:
 3. Check whether upstream added any new `.github/workflows/*.yml` with `push` /
    `pull_request` triggers and neuter them too.
 4. Tag the result `haybarn-vX.Y.Z` to trigger the Haybarn release CI.
+5. Roll the downstream client forks onto the new engine release. Each has its own
+   engine-pin mechanism and procedure, documented in
+   [`ROLL-FORWARD.md`](ROLL-FORWARD.md):
+   - `haybarn-python` (submodule gitlink), `haybarn-rust` (submodule +
+     regenerated amalgamation), `haybarn-node-neo`, `haybarn-jdbc`.
+   - `haybarn-go` / `haybarn-go-bindings` — re-fetch the engine's
+     `static-libs-*.zip` into the bindings, then tag bindings + driver. See
+     [Porting & rolling the Go client](ROLL-FORWARD.md#porting--rolling-the-go-client).
+     Note these tag on bare `v0.105NN.x` / `v2.105NN.x`, **not** `haybarn-v*`.
 
 ## Why a hard fork (not a submodule overlay)
 
