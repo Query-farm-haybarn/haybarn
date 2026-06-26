@@ -15,9 +15,17 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref || '' }}-${{ github.base_ref || '' }}-${{ github.ref != 'refs/heads/main' || github.sha }}-${{ inputs.override_git_describe }}
   cancel-in-progress: true
 
+permissions:
+  id-token: write       # OIDC for build-provenance attestation signing
+  attestations: write   # write to the GitHub attestations API
+  contents: read
+
 env:
-  GH_TOKEN: ${{ secrets.GH_TOKEN }}
-  OVERRIDE_GIT_DESCRIBE: ${{ inputs.override_git_describe }}
+  # Stamp a clean release version (no git-describe `-dev` suffix) so the engine
+  # baked into libhaybarn_static.a resolves INSTALL/LOAD under the release
+  # extension dir (haybarn-extensions.query.farm/core/v1.5.4), not a SHA. Same
+  # lesson as the Rust crate's amalgamation regen.
+  OVERRIDE_GIT_DESCRIBE: ${{ inputs.override_git_describe || 'v1.5.4' }}
 
 jobs:
   bundle-osx-static-libs:
@@ -62,22 +70,26 @@ jobs:
         run: |
           make gather-libs
 
-      - name: Deploy
+      - name: Bundle zip
         shell: bash
-        env:
-          AWS_ENDPOINT_URL: ${{ secrets.S3_DUCKDB_STAGING_ENDPOINT }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.S3_DUCKDB_STAGING_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_DUCKDB_STAGING_KEY }}
         run: |
           python3 scripts/amalgamation.py
           zip -r -j static-libs-osx-${{ matrix.architecture }}.zip src/include/duckdb.h build/release/libs/
-          ./scripts/upload-assets-to-staging.sh github_release static-libs-osx-${{ matrix.architecture }}.zip
 
-      - uses: actions/upload-artifact@v4
+      # Named `haybarn-*` so the Haybarn Publish workflow's `pattern: haybarn-*`
+      # download collects it, checksums + GPG-signs it, and attaches it to the
+      # GitHub Release alongside the CLI/lib zips. v7 backend to match
+      # haybarn-release.yml's upload-artifact (download-artifact@v8 in publish
+      # cannot read the old v4 backend).
+      - uses: actions/upload-artifact@v7
         with:
-          name: duckdb-static-libs-osx-${{ matrix.architecture }}
-          path: |
-            static-libs-osx-${{ matrix.architecture }}.zip
+          name: haybarn-static-libs-osx-${{ matrix.architecture }}
+          path: static-libs-osx-${{ matrix.architecture }}.zip
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: static-libs-osx-${{ matrix.architecture }}.zip
 
   bundle-mingw-static-lib:
     name: Windows MingW static libs
@@ -142,21 +154,20 @@ jobs:
         run: |
           make gather-libs
 
-      - name: Deploy
+      - name: Bundle zip
         shell: bash
-        env:
-          AWS_ENDPOINT_URL: ${{ secrets.S3_DUCKDB_STAGING_ENDPOINT }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.S3_DUCKDB_STAGING_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_DUCKDB_STAGING_KEY }}
         run: |
           zip -r -j static-libs-windows-mingw.zip src/include/duckdb.h build/release/libs/
-          ./scripts/upload-assets-to-staging.sh github_release static-libs-windows-mingw.zip
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
-          name: duckdb-static-libs-windows-mingw
-          path: |
-            static-libs-windows-mingw.zip
+          name: haybarn-static-libs-windows-mingw
+          path: static-libs-windows-mingw.zip
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: static-libs-windows-mingw.zip
 
   bundle-linux-static-libs:
     strategy:
@@ -203,19 +214,18 @@ jobs:
         shell: bash
         run: ./build/release/duckdb -c "PRAGMA platform;"
 
-      - name: Deploy
+      - name: Bundle zip
         shell: bash
-        env:
-          AWS_ENDPOINT_URL: ${{ secrets.S3_DUCKDB_STAGING_ENDPOINT }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.S3_DUCKDB_STAGING_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_DUCKDB_STAGING_KEY }}
         run: |
           python3 scripts/amalgamation.py
           zip -r -j static-libs-linux-${{ matrix.config.arch }}.zip src/include/duckdb.h build/release/libs/
-          ./scripts/upload-assets-to-staging.sh github_release static-libs-linux-${{ matrix.config.arch }}.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
-          name: duckdb-static-libs-linux-${{ matrix.config.arch }}
-          path: |
-            static-libs-linux-${{ matrix.config.arch }}.zip
+          name: haybarn-static-libs-linux-${{ matrix.config.arch }}
+          path: static-libs-linux-${{ matrix.config.arch }}.zip
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: static-libs-linux-${{ matrix.config.arch }}.zip
 # Haybarn fork — workflow re-index marker.
