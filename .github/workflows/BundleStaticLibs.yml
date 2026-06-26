@@ -212,7 +212,7 @@ jobs:
           "
       - name: Print platform
         shell: bash
-        run: ./build/release/duckdb -c "PRAGMA platform;"
+        run: ./build/release/haybarn -c "PRAGMA platform;"
 
       - name: Bundle zip
         shell: bash
