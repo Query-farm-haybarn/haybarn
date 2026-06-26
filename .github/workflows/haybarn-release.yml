@@ -414,4 +414,19 @@ jobs:
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: libhaybarn-src.zip
+
+  # Static-library bundles for the Go client (haybarn-go-bindings fetches these
+  # off the GitHub Release). Runs in THIS release run so its `haybarn-static-libs-*`
+  # artifacts are downloaded + signed + attached by haybarn-publish alongside
+  # everything else. See .github/workflows/BundleStaticLibs.yml.
+  static-libs:
+    name: Static libraries (Go client)
+    uses: ./.github/workflows/BundleStaticLibs.yml
+    permissions:
+      id-token: write
+      attestations: write
+      contents: read
+    with:
+      override_git_describe: ${{ inputs.override_git_describe || 'v1.5.4' }}
+      git_ref: ${{ github.ref }}
 # Haybarn fork — workflow re-index marker.
