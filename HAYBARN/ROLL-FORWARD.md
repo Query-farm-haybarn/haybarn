@@ -33,6 +33,116 @@ the crate's `1.10503.x-rc.N` version — full procedure in that repo's `CLAUDE.m
 Its CI runs on `*-latest` runners (not pinned), so the runner-OS row above does
 not apply to it.
 
+The **Go client** pins the engine differently again — see
+[Porting & rolling the Go client](#porting--rolling-the-go-client) below.
+
+## Porting & rolling the Go client
+
+The Go client is **two repos** (upstream split, mirrored):
+
+- [`Query-farm-haybarn/haybarn-go-bindings`](https://github.com/Query-farm-haybarn/haybarn-go-bindings)
+  — low-level cgo bindings; fork of `duckdb/duckdb-go-bindings`.
+- [`Query-farm-haybarn/haybarn-go`](https://github.com/Query-farm-haybarn/haybarn-go)
+  — the `database/sql` driver; fork of `duckdb/duckdb-go`. Depends on the bindings.
+
+### How it pins the engine (this is the unusual part)
+
+Unlike `haybarn-rust` (which compiles a vendored amalgamation), `haybarn-go-bindings`
+**does not compile the engine at all**. It commits **pre-built static-library
+archives** under `lib/<platform>/` (`libhaybarn_static.a` + the extension and
+third-party `.a`s + `duckdb.h`), one set per platform (darwin-amd64/arm64,
+linux-amd64/arm64, windows-amd64), ~110 MB each, no Git LFS. cgo links them
+(`-lhaybarn_static`, build-tag-selected per platform in `lib/*/prebuilt.go`).
+
+Those archives are **fetched from a Haybarn engine GitHub release** — the
+`static-libs-*.zip` assets the engine's `BundleStaticLibs.yml` produces (wired
+into `haybarn-release.yml` as a `workflow_call` job). The Haybarn trust root and
+`haybarn-extensions.query.farm` URLs are baked **inside `libhaybarn_static.a`** at
+engine-build time, so "Haybarn-ness" is inherited automatically by linking it —
+no Go-side change embeds it.
+
+**Engine-side prerequisite (must hold before rolling the client):** the target
+engine release must actually carry the five `static-libs-*.zip` assets. They are
+produced by the `static-libs` (`Static libraries (Go client)`) jobs in
+`haybarn-release.yml` → attached to the release by `haybarn-publish.yml` (they
+ride the standard `haybarn-*` artifact path). If a release predates that wiring,
+re-run its `Haybarn Release` and `Haybarn Publish`.
+
+### Versioning (does NOT follow `haybarn-v*`)
+
+The Go module proxy **requires bare `vMAJOR.MINOR.PATCH` tags**, so the org-wide
+`haybarn-v*` tag convention does not apply here. Tags mirror upstream's
+engine-encoding scheme:
+
+| Engine | bindings tag | driver tag |
+|---|---|---|
+| v1.5.4 | `v0.10504.x` (+ `lib/<plat>/v0.10504.x`) | `v2.10504.x` |
+| v1.5.5 | `v0.10505.x` | `v2.10505.x` |
+
+The trailing `.x` is the Haybarn patch iteration on that engine version (e.g. a
+bindings-only fix that needs no engine roll bumps `v0.10504.0` → `v0.10504.1`).
+There is **no registry publish step** — pushing the git tag is the release; the
+module proxy resolves it.
+
+### Per-release roll procedure
+
+Run **after** a new engine `haybarn-vX.Y.Z-rcN` release exists with its
+`static-libs-*.zip` assets (see prerequisite above). `NN` below = `Y` and `Z`
+zero-padded, e.g. v1.5.5 → `0.10505` / `2.10505`.
+
+1. **Bindings — re-vendor the binaries.** In `haybarn-go-bindings`:
+   - Bump `HAYBARN_VERSION` (and `HAYBARN_REPO` if it ever moves) in the `Makefile`
+     to the new engine release tag.
+   - Run the **`Fetch and Push Libs`** workflow (`.github/workflows/fetch.yml`),
+     or locally per platform:
+     ```sh
+     make fetch.static.libs PLATFORM=darwin-arm64  FILENAME=static-libs-osx-arm64 COPY_HEADER=1
+     make fetch.static.libs PLATFORM=darwin-amd64  FILENAME=static-libs-osx-amd64
+     make fetch.static.libs PLATFORM=linux-amd64   FILENAME=static-libs-linux-amd64
+     make fetch.static.libs PLATFORM=linux-arm64   FILENAME=static-libs-linux-arm64
+     make fetch.static.libs PLATFORM=windows-amd64 FILENAME=static-libs-windows-mingw
+     ```
+     Commit the refreshed `.a`s + `duckdb.h`. **Never carry upstream DuckDB
+     binaries** — verify with
+     `strings lib/<plat>/libhaybarn_static.a | grep haybarn-extensions.query.farm`.
+   - If `duckdb.h` changed (new C-API surface), reflect it in the Go bindings.
+2. **Bindings — tag.** `scripts/release.sh v0.105NN.0` (re-entrant; it tags the
+   five `lib/<plat>/...` submodules + root, and pauses once for a `go.mod`/`go.sum`
+   commit — commit it to `haybarn` directly and re-run, no PR needed since we push
+   directly).
+3. **Driver — bump + tag.** In `haybarn-go`:
+   `go get github.com/Query-farm-haybarn/haybarn-go-bindings@v0.105NN.0`,
+   `go mod tidy`, bump `HAYBARN_VERSION` in its `Makefile`, update the README
+   version table, commit, then `git tag v2.105NN.0 && git push origin v2.105NN.0`.
+4. **Verify.** A fresh consumer is the real test:
+   ```sh
+   go get github.com/Query-farm-haybarn/haybarn-go/v2@v2.105NN.0
+   # sql.Open("haybarn", "") and sql.Open("duckdb", "") -> SELECT version() == vX.Y.Z
+   # INSTALL inet; LOAD inet;  -> resolves from haybarn-extensions.query.farm,
+   #   verified against the Haybarn trust root (a non-bundled ext = real proof).
+   ```
+   Plus the repos' own `Tests` matrices (5 platforms each).
+
+### Gotchas (learned 2026-06-26, first port)
+
+- **The two opt-in alt-lib CI jobs are the ones that bite.** The default
+  *Pre-Built Libs* / *Main* jobs (what ships) just work. The *Static Lib* and
+  *Dynamic Lib* jobs hardcode lib names — keep them Haybarn: `-lhaybarn_static`,
+  `cgo_dynamic.go` `-lhaybarn`, and `libhaybarn-*` shared-lib download filenames
+  (the dynamic job pulls the engine's `libhaybarn-<plat>.zip` shared libs).
+- **The driver CI tests the *published* bindings, not the branch.** A bindings
+  fix that affects linking (e.g. `cgo_dynamic.go`) won't green the driver until
+  it is in a *released* bindings tag and the driver's `go.mod` is bumped to it —
+  hence the `v0.10504.1` / `v2.10504.1` patch pair on first port.
+- **Submodules can stay put for a root-only fix.** A change in the bindings root
+  module (e.g. `cgo_dynamic.go`) only needs a new **root** tag; the five
+  `lib/<plat>/...` submodule tags can stay at the prior patch.
+- **Engine `BundleStaticLibs` references the renamed binary.** Its Linux "Print
+  platform" step runs `./build/release/haybarn` (not `duckdb`) — same artifact-
+  rename class of bug as everywhere else.
+
+Full structural notes live in each repo's `CLAUDE.md`.
+
 ## Known un-pinned bits (drift sources we accept)
 
 These are pinnable in principle but cost more than they're worth right now.
