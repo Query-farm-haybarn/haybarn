@@ -87,7 +87,11 @@ if (NOT MINGW)
             )
 endif()
 
+# haybarn-ducklake@haybarn tracks upstream/v1.5-variegata (the 1.5 release line)
+# plus the Haybarn CI/NOTICE stack. Bump this SHA to the branch tip after syncing
+# the fork from v1.5-variegata. 06674268 = a1e7d2f8 + upstream fix relassert
+# (5947ea32, murmur3 constant-vector) — no engine ABI change.
 duckdb_extension_load(ducklake
     GIT_URL https://github.com/Query-farm-haybarn/haybarn-ducklake
-    GIT_TAG a1e7d2f8d5cab00fb95bb6420220f707461cbd94
+    GIT_TAG 066742681189b66c28d825c7e50ce1eb05713774
 )
