@@ -30,6 +30,12 @@
 #include <thread>
 #endif
 
+#include <algorithm>
+#include <cctype>
+#include <chrono>
+#include <cstdio>
+#include <cstring>
+
 namespace duckdb {
 
 HTTPParams::~HTTPParams() {
@@ -492,6 +498,89 @@ void HTTPUtil::DecomposeURL(const string &input, string &path_out, string &proto
 	}
 }
 
+namespace {
+
+// Upper bound on a honored Retry-After — a hostile/misconfigured server must not
+// be able to stall a request for an unbounded time (60s).
+constexpr uint64_t MAX_HONORED_RETRY_AFTER_MS = 60000;
+
+// Days since 1970-01-01 for a proleptic-Gregorian y/m/d (Howard Hinnant's
+// days-from-civil). Portable — avoids the non-standard timegm().
+int64_t DaysFromCivil(int64_t y, uint32_t m, uint32_t d) {
+	y -= m <= 2;
+	const int64_t era = (y >= 0 ? y : y - 399) / 400;
+	const uint32_t yoe = static_cast<uint32_t>(y - era * 400);
+	const uint32_t doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+	const uint32_t doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+	return era * 146097 + static_cast<int64_t>(doe) - 719468;
+}
+
+uint32_t MonthFromAbbrev(const char *mon) {
+	static const char *kMonths[12] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+	                                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+	for (uint32_t i = 0; i < 12; i++) {
+		if (std::strncmp(mon, kMonths[i], 3) == 0) {
+			return i + 1;
+		}
+	}
+	return 0;
+}
+
+// Parse an RFC 7231 / 9110 IMF-fixdate ("Wed, 21 Oct 2015 07:28:00 GMT") to epoch
+// seconds (UTC). Returns false if it does not match. DuckDB's own timestamp
+// parser does not accept the weekday/month-name HTTP-date form, hence this.
+bool ParseHttpDateEpoch(const string &s, int64_t &out_epoch) {
+	char wday[8] = {0};
+	char mon[8] = {0};
+	int day = 0, year = 0, hh = 0, mm = 0, ss = 0;
+	int n = std::sscanf(s.c_str(), "%3s %d %3s %d %d:%d:%d", wday, &day, mon, &year, &hh, &mm, &ss);
+	if (n != 7) {
+		n = std::sscanf(s.c_str(), "%*[^,], %d %3s %d %d:%d:%d", &day, mon, &year, &hh, &mm, &ss);
+		if (n != 6) {
+			return false;
+		}
+	}
+	uint32_t month = MonthFromAbbrev(mon);
+	if (month == 0 || day < 1 || day > 31 || hh < 0 || hh > 23 || mm < 0 || mm > 59 || ss < 0 || ss > 60) {
+		return false;
+	}
+	out_epoch = DaysFromCivil(year, month, static_cast<uint32_t>(day)) * 86400 +
+	            static_cast<int64_t>(hh) * 3600 + static_cast<int64_t>(mm) * 60 + ss;
+	return true;
+}
+
+// Parse a Retry-After response header (RFC 9110 §10.2.3): delta-seconds or an
+// HTTP-date. On success sets out_ms (>= 0) and returns true.
+bool TryParseRetryAfterMs(string v, uint64_t &out_ms) {
+	StringUtil::Trim(v); // in-place (void return)
+	if (v.empty()) {
+		return false;
+	}
+	if (std::all_of(v.begin(), v.end(), [](unsigned char c) { return std::isdigit(c) != 0; })) {
+		try {
+			auto seconds = std::stoull(v);
+			out_ms = seconds >= MAX_HONORED_RETRY_AFTER_MS / 1000
+			             ? MAX_HONORED_RETRY_AFTER_MS
+			             : seconds * 1000;
+			return true;
+		} catch (...) {
+			return false;
+		}
+	}
+	int64_t when_epoch;
+	if (!ParseHttpDateEpoch(v, when_epoch)) {
+		return false;
+	}
+	auto now_epoch = std::chrono::duration_cast<std::chrono::seconds>(
+	                     std::chrono::system_clock::now().time_since_epoch())
+	                     .count();
+	int64_t delta = when_epoch - static_cast<int64_t>(now_epoch);
+	out_ms = delta > 0 ? static_cast<uint64_t>(delta) * 1000ull : 0;
+	return true;
+}
+
+} // namespace
+
 // Retry the request performed by fun using the exponential backoff strategy defined in params. Before retry, the
 // retry callback is called
 duckdb::unique_ptr<HTTPResponse>
@@ -572,21 +661,19 @@ HTTPUtil::RunRequestWithRetry(const std::function<unique_ptr<HTTPResponse>(void)
 				    (uint64_t)MinValue<double>(backoff_ms, (double)NumericLimits<int64_t>::Maximum());
 				if (throttled) {
 					sleep_amount = MinValue<uint64_t>(sleep_amount, THROTTLE_MAX_BACKOFF_MS);
+					// Subtractive jitter de-synchronizes retry bursts. Apply it
+					// before Retry-After so the server's requested delay remains a floor.
+					RandomEngine random;
+					sleep_amount -= random.NextRandomInteger64() % (sleep_amount / 2 + 1);
 					string retry_after = caught_retry_after;
 					if (response && response->headers.HasHeader("Retry-After")) {
 						retry_after = response->headers.GetHeaderValue("Retry-After");
 					}
-					if (!retry_after.empty()) {
-						// honor a numeric Retry-After (seconds), capped like the backoff
-						uint64_t retry_after_s = 0;
-						if (TryCast::Operation<string_t, uint64_t>(string_t(retry_after), retry_after_s)) {
-							retry_after_s = MinValue<uint64_t>(retry_after_s, THROTTLE_MAX_BACKOFF_MS / 1000);
-							sleep_amount = MaxValue<uint64_t>(sleep_amount, retry_after_s * 1000);
-						}
+					uint64_t retry_after_ms;
+					if (TryParseRetryAfterMs(retry_after, retry_after_ms)) {
+						retry_after_ms = MinValue<uint64_t>(retry_after_ms, MAX_HONORED_RETRY_AFTER_MS);
+						sleep_amount = MaxValue<uint64_t>(sleep_amount, retry_after_ms);
 					}
-					// subtractive jitter ([base/2, base]) de-synchronizes retry bursts while honoring the cap
-					RandomEngine random;
-					sleep_amount -= random.NextRandomInteger64() % (sleep_amount / 2 + 1);
 				}
 				std::this_thread::sleep_for(std::chrono::milliseconds(sleep_amount));
 #endif
