@@ -6,7 +6,7 @@ Guidance for Claude Code (and humans) working in this repository.
 
 **Haybarn** is an independent derived distribution of DuckDB ("Haybarn, powered
 by DuckDB"), published by Query Farm LLC. This repo is a **hard fork** of
-`duckdb/duckdb`, currently based on the upstream **`v1.5.4`** tag.
+`duckdb/duckdb`, currently based on the upstream **`v1.5.5`** tag.
 
 All Haybarn-specific changes are a small, curated **commit stack** on top of the
 upstream tag — not scattered edits. Keep it that way: the stack must stay easy to
@@ -37,7 +37,7 @@ rebase onto future DuckDB releases. See `HAYBARN/REBASE.md`.
   `test/api/test_api.cpp:569,576` asserting `ex.what()` contains `"DuckDB"`.
   Branding sweeps have multi-language test surface.
 
-## The Haybarn commit stack (on top of `v1.5.4`)
+## The Haybarn commit stack (on top of `v1.5.5`)
 
 | Concern | Key files |
 |---|---|
@@ -62,7 +62,7 @@ For a build whose `version()` reports the release version (not a `git describe`
 dev string), pin it the way CI does:
 
 ```sh
-OVERRIDE_GIT_DESCRIBE=v1.5.4 make release
+OVERRIDE_GIT_DESCRIBE=v1.5.5 make release
 ```
 
 ## Distribution
@@ -101,11 +101,11 @@ roll the pin forward deliberately. The where/why/how is in
 
 The Linux build environment is centrally maintained:
 
-- **Pre-built images on GHCR** at `ghcr.io/query-farm-haybarn/haybarn-<arch>-<variant>:v1.5.4`.
+- **Pre-built images on GHCR** at `ghcr.io/query-farm-haybarn/haybarn-<arch>-<variant>:v1.5.5`.
   Built from `Query-farm-haybarn/haybarn-extension-ci-tools/docker/<arch>/Dockerfile`
   by `.github/workflows/publish-build-images.yml` in that repo. Public packages.
-  - **Linux**: 12 images — `haybarn-linux_{amd64,arm64,amd64_musl,arm64_musl}-{base,rust,full}:v1.5.4`.
-  - **wasm**: 1 image — `haybarn-wasm:v1.5.4` (Phase D, ubuntu 24.04 base + emsdk 3.1.71
+  - **Linux**: 12 images — `haybarn-linux_{amd64,arm64,amd64_musl,arm64_musl}-{base,rust,full}:v1.5.5`.
+  - **wasm**: 1 image — `haybarn-wasm:v1.5.5` (Phase D, ubuntu 24.04 base + emsdk 3.1.71
     + vcpkg + ccache 4.13.6, no arch/variant fan-out). Consumers opt in via
     `use_prebuilt_wasm_image: true`. Removes per-run `mymindstorm/setup-emsdk`
     (~30-60s × 3 wasm legs) AND stabilises the emcc path inside the container
@@ -153,7 +153,7 @@ fresh SHA just means nothing was warm yet, not that writes are broken.
 
 ## Distribution / release flow
 
-- Release tag pattern: `haybarn-v<version>` (e.g. `haybarn-v1.5.4-rc1`). Fires
+- Release tag pattern: `haybarn-v<version>` (e.g. `haybarn-v1.5.5-rc1`). Fires
   `haybarn-release.yml` (engine binaries) and `haybarn-extensions.yml` (core
   extensions), and the same tag on each downstream client repo fires their
   workflows.
@@ -219,9 +219,16 @@ Haybarn is multi-repo. Each is pinned by SHA where another consumes it.
 | `haybarn-vcpkg-worker` | Cloudflare Worker fronting R2 for vcpkg + ccache caches | manual deploy |
 | `haybarn-org-profile` | Org-level docs / landing | n/a |
 
-## Recent state (as of 2026-05-20)
+## Recent state (as of 2026-07-29)
 
-Current rc series: **`haybarn-v1.5.4-rc1`** (rebased onto upstream v1.5.4 — see `devops/v1.5.4-rollout.md`). Prior cycle (v1.5.3) summary below:
+Current rc series: **`haybarn-v1.5.5-rc1`** (rebased onto upstream v1.5.5 — see
+`devops/v1.5.5-rollout.md`). The v1.5.5 rebase was quiet: upstream did not touch
+`extension_helper.cpp`, so the built-in-extension policy carried over untouched,
+and only two commits conflicted (`NotifyExternalRepositories.yml` gained an
+upstream `notify-rust-nightly` job; `src/CMakeLists.txt` gained
+`duckdb_extension.h` in the installed header set — both kept alongside the
+Haybarn hunks). Prior cycles (v1.5.4 — see `devops/v1.5.4-rollout.md`; v1.5.3)
+summary below:
 
 - **v1.5.3 rebase.** Rebased the full commit stack from `v1.5.2` onto the
   upstream `v1.5.3` tag (`git rebase --onto v1.5.3 v1.5.2 haybarn`). Only the
