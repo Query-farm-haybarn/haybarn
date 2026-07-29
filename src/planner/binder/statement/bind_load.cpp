@@ -2,6 +2,7 @@
 #include "duckdb/planner/binder.hpp"
 #include "duckdb/planner/operator/logical_simple.hpp"
 #include "duckdb/main/extension_install_info.hpp"
+#include "duckdb/common/string_util.hpp"
 #include <algorithm>
 
 namespace duckdb {
@@ -10,6 +11,20 @@ BoundStatement Binder::Bind(LoadStatement &stmt) {
 	BoundStatement result;
 	result.types = {LogicalType::BOOLEAN};
 	result.names = {"Success"};
+
+	// Haybarn: the VERSION clause becomes a path segment in the download URL with no escaping,
+	// so reject anything that could reshape that URL rather than name a build.
+	if (!stmt.info->version.empty()) {
+		for (auto c : stmt.info->version) {
+			if (c == '/' || c == '\\' || StringUtil::CharacterIsSpace(c)) {
+				throw BinderException("Invalid extension version '%s': must not contain path separators or whitespace",
+				                      stmt.info->version);
+			}
+		}
+		if (StringUtil::Contains(stmt.info->version, "..")) {
+			throw BinderException("Invalid extension version '%s': must not contain '..'", stmt.info->version);
+		}
+	}
 
 	// Ensure the repository exists if it's an alias
 	if (!stmt.info->repository.empty() && stmt.info->repo_is_alias) {

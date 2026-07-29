@@ -29,6 +29,11 @@
         "id": 104,
         "name": "etag",
         "type": "string"
+      },
+      {
+        "id": 105,
+        "name": "pinned_version",
+        "type": "string"
       }
     ]
   }
