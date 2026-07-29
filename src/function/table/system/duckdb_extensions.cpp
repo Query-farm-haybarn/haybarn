@@ -24,6 +24,8 @@ struct ExtensionInformation {
 	string description;
 	vector<Value> aliases;
 	string extension_version;
+	//! Haybarn: the version this extension is pinned to, empty when unpinned
+	string pinned_version;
 };
 
 struct DuckDBExtensionsData : public GlobalTableFunctionState {
@@ -61,6 +63,10 @@ static unique_ptr<FunctionData> DuckDBExtensionsBind(ClientContext &context, Tab
 	return_types.emplace_back(LogicalType::VARCHAR);
 
 	names.emplace_back("installed_from");
+	return_types.emplace_back(LogicalType::VARCHAR);
+
+	// Haybarn: non-empty when the extension was installed with `INSTALL <ext> VERSION '<x>'`
+	names.emplace_back("pinned_version");
 	return_types.emplace_back(LogicalType::VARCHAR);
 
 	return nullptr;
@@ -116,6 +122,7 @@ unique_ptr<GlobalTableFunctionState> DuckDBExtensionsInit(ClientContext &context
 			auto extension_install_info = ExtensionInstallInfo::TryReadInfoFile(fs, info_file_path, info.name);
 			info.install_mode = extension_install_info->mode;
 			info.extension_version = extension_install_info->version;
+			info.pinned_version = extension_install_info->pinned_version;
 			if (extension_install_info->mode == ExtensionInstallMode::REPOSITORY) {
 				info.installed_from = ExtensionRepository::GetRepository(extension_install_info->repository_url);
 			} else {
@@ -132,6 +139,7 @@ unique_ptr<GlobalTableFunctionState> DuckDBExtensionsInit(ClientContext &context
 					entry->second.installed_from = info.installed_from;
 					entry->second.install_mode = info.install_mode;
 					entry->second.extension_version = info.extension_version;
+					entry->second.pinned_version = info.pinned_version;
 				}
 				entry->second.installed = true;
 			}
@@ -160,6 +168,7 @@ unique_ptr<GlobalTableFunctionState> DuckDBExtensionsInit(ClientContext &context
 				info.name = ext_name;
 				info.loaded = true;
 				info.extension_version = ext_install_info->version;
+				info.pinned_version = ext_install_info->pinned_version;
 				info.installed = ext_install_info->mode == ExtensionInstallMode::STATICALLY_LINKED;
 				info.install_mode = ext_install_info->mode;
 				if (ext_data.install_info->mode == ExtensionInstallMode::STATICALLY_LINKED && info.file_path.empty()) {
@@ -216,6 +225,8 @@ void DuckDBExtensionsFunction(ClientContext &context, TableFunctionInput &data_p
 		output.SetValue(7, count, EnumUtil::ToString(entry.install_mode));
 		// installed_source LogicalType::VARCHAR
 		output.SetValue(8, count, Value(entry.installed_from));
+		// pinned_version LogicalType::VARCHAR
+		output.SetValue(9, count, Value(entry.pinned_version));
 
 		data.offset++;
 		count++;
