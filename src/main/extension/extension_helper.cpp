@@ -322,6 +322,15 @@ static ExtensionUpdateResult UpdateExtensionInternal(ClientContext &context, Dat
 	auto repository_from_info = ExtensionRepository::GetRepositoryByUrl(extension_install_info->repository_url);
 	result.repository = repository_from_info.ToReadableString();
 
+	// Haybarn early out: a pinned extension is pinned on purpose. The install below is a force
+	// install with no version, which would resolve to the repository's mutable "latest" slot and
+	// quietly move the extension off its pin. Report it and leave it where it is.
+	if (!extension_install_info->pinned_version.empty()) {
+		result.tag = ExtensionUpdateResultTag::PINNED;
+		result.installed_version = result.prev_version;
+		return result;
+	}
+
 	// Force install the full url found in this file, enabling etags to ensure efficient updating
 	ExtensionInstallOptions options;
 	options.repository = repository_from_info;
