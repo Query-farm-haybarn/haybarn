@@ -23,9 +23,9 @@ permissions:
 env:
   # Stamp a clean release version (no git-describe `-dev` suffix) so the engine
   # baked into libhaybarn_static.a resolves INSTALL/LOAD under the release
-  # extension dir (haybarn-extensions.query.farm/core/v1.5.4), not a SHA. Same
+  # extension dir (haybarn-extensions.query.farm/core/v1.5.5), not a SHA. Same
   # lesson as the Rust crate's amalgamation regen.
-  OVERRIDE_GIT_DESCRIBE: ${{ inputs.override_git_describe || 'v1.5.4' }}
+  OVERRIDE_GIT_DESCRIBE: ${{ inputs.override_git_describe || 'v1.5.5' }}
 
 jobs:
   bundle-osx-static-libs:
