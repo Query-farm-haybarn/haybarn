@@ -6,7 +6,10 @@ require notmingw
 
 require skip_reload
 
+# Haybarn: this used to typo 'motherduck', which was dropped from the extension
+# lists (it is a proprietary MotherDuck product, not something Haybarn ships), so
+# it no longer appears as a candidate. Use an extension Haybarn does list.
 statement error
-LOAD motherduk
+LOAD postgre_scaner
 ----
-motherduck
+postgres_scanner
