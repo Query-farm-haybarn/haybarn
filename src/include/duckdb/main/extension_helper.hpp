@@ -58,6 +58,9 @@ enum class ExtensionUpdateResultTag : uint8_t {
 	STATICALLY_LOADED = 4,
 	// This means the .info file written during installation was missing or malformed
 	MISSING_INSTALL_INFO = 5,
+	// Haybarn: the extension is pinned to a version with `INSTALL <ext> VERSION '<x>'`. Updating
+	// would silently move it off that pin, so it is left alone; `FORCE INSTALL` is the way off.
+	PINNED = 6,
 
 	// The extension was re-downloaded from the repository, but due to a lack of version information
 	// its impossible to tell if the extension is actually updated
