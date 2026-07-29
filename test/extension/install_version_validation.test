@@ -1,0 +1,35 @@
+# name: test/extension/install_version_validation.test
+# description: Haybarn - validation of the INSTALL ... VERSION clause
+# group: [extension]
+
+# The version becomes an unescaped path segment in the extension download URL
+# (see ExtensionHelper::ExtensionUrlTemplate), so reject anything that could
+# reshape that URL rather than name a build. These are bind-time errors, so no
+# extension repository is needed and nothing is downloaded.
+
+statement error
+INSTALL waddle VERSION 'a/b';
+----
+must not contain path separators or whitespace
+
+statement error
+INSTALL waddle VERSION 'a\b';
+----
+must not contain path separators or whitespace
+
+statement error
+FORCE INSTALL waddle FROM core VERSION 'a b';
+----
+must not contain path separators or whitespace
+
+statement error
+INSTALL waddle VERSION '..';
+----
+must not contain '..'
+
+# An ordinary pin (a build's commit-short) binds fine — it fails later, at
+# install time, because the extension does not exist in the repository.
+statement error
+INSTALL this_extension_does_not_exist VERSION 'a1b2c3d4e5';
+----
+<REGEX>:.*(this_extension_does_not_exist|Failed to (download|install)).*
