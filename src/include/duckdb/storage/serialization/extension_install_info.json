@@ -45,6 +45,11 @@
         "id": 107,
         "name": "signature_key_fingerprint",
         "type": "string"
+      },
+      {
+        "id": 108,
+        "name": "pinned_version",
+        "type": "string"
       }
     ]
   }

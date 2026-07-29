@@ -421,6 +421,9 @@ static unique_ptr<ExtensionInstallInfo> DirectInstallExtension(DatabaseInstance 
 		info.repository_type = options.repository->type;
 		info.repository_name = options.repository->name;
 	}
+	// Haybarn: record the pin (empty when unpinned, which is how FORCE INSTALL without a
+	// VERSION clause clears an existing one).
+	info.pinned_version = options.version;
 
 	QueryContext query_context(context);
 	WriteExtensionFiles(query_context, fs, temp_path, local_extension_path, extension_decompressed,
@@ -488,6 +491,8 @@ static unique_ptr<ExtensionInstallInfo> InstallFromHttpUrl(DatabaseInstance &db,
 		                    extension_name, url, int(response->status), message);
 	}
 	if (response->status == HTTPStatusCode::NotModified_304 && install_info) {
+		// Nothing is rewritten on 304, and install_info was read from the existing .info — so it
+		// already carries the correct Haybarn pin. Leave it alone.
 		return install_info;
 	}
 
@@ -520,6 +525,8 @@ static unique_ptr<ExtensionInstallInfo> InstallFromHttpUrl(DatabaseInstance &db,
 		info.mode = ExtensionInstallMode::CUSTOM_PATH;
 		info.full_path = url;
 	}
+	// Haybarn: see DirectInstallExtension — empty when unpinned.
+	info.pinned_version = options.version;
 
 	QueryContext query_context(context);
 	auto fs = FileSystem::CreateLocal();
@@ -575,6 +582,35 @@ static void ThrowErrorOnMismatchingExtensionOrigin(FileSystem &fs, const string 
 		}
 	}
 }
+
+//! Haybarn: refuse a non-forced install that would move an extension on or off a version pin.
+//! Requesting the pin an extension is already on is a no-op (the install is idempotent), and a
+//! bare INSTALL of a pinned extension leaves the pin alone — upstream's "already installed,
+//! nothing to do". Anything else is a conflict the user has to resolve explicitly, because
+//! silently keeping the old binary is how a pin gets believed but not applied.
+static void ThrowErrorOnMismatchingExtensionPin(FileSystem &fs, const string &local_extension_path,
+                                                const string &extension_name, const string &requested_version) {
+	if (requested_version.empty()) {
+		return;
+	}
+	auto install_info = ExtensionInstallInfo::TryReadInfoFile(fs, local_extension_path + ".info", extension_name);
+	if (!install_info || install_info->pinned_version == requested_version) {
+		return;
+	}
+	if (install_info->pinned_version.empty()) {
+		throw InvalidInputException(
+		    "Installing extension '%s' failed. The extension is already installed, unpinned, while the "
+		    "extension to be installed is pinned to version '%s'.\n"
+		    "To solve this rerun this command with `FORCE INSTALL`",
+		    extension_name, requested_version);
+	}
+	throw InvalidInputException("Installing extension '%s' failed. The extension is already installed "
+	                            "but pinned to a different version.\n"
+	                            "Currently installed extension is pinned to version '%s', while the extension "
+	                            "to be installed is pinned to version '%s'.\n"
+	                            "To solve this rerun this command with `FORCE INSTALL`",
+	                            extension_name, install_info->pinned_version, requested_version);
+}
 #endif // DUCKDB_DISABLE_EXTENSION_LOAD
 
 unique_ptr<ExtensionInstallInfo> ExtensionHelper::InstallExtensionInternal(DatabaseInstance &db, FileSystem &fs,
@@ -619,6 +655,12 @@ unique_ptr<ExtensionInstallInfo> ExtensionHelper::InstallExtensionInternal(Datab
 	    local_extension_path + ".tmp-" + UUID::ToString(UUID::GenerateRandomUUID()) + ".duckdb_extension";
 
 	if (fs.FileExists(local_extension_path) && !options.force_install) {
+		// Haybarn: file exists — throw if this install would move the extension on or off a
+		// version pin. Deliberately not gated on allow_extensions_metadata_mismatch (a different
+		// concern) and checked before the origin comparison, so a pin conflict is reported as
+		// such rather than as a repository mismatch.
+		ThrowErrorOnMismatchingExtensionPin(fs, local_extension_path, extension_name, options.version);
+
 		// File exists: throw error if origin mismatches
 		if (options.throw_on_origin_mismatch && !Settings::Get<AllowExtensionsMetadataMismatchSetting>(db) &&
 		    fs.FileExists(local_extension_path + ".info")) {

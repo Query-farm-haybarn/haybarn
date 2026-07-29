@@ -63,7 +63,7 @@ public:
 	string full_path;
 	//! (optional) Repository url where the extension came from
 	string repository_url;
-	//! (optional) Version of the extension
+	//! (optional) Version of the extension, as reported by the installed binary's own metadata
 	string version;
 	//! (optional) ETag of last fetched resource
 	string etag;
@@ -76,6 +76,12 @@ public:
 	//! (optional) Fingerprint of the public key that signed this extension, as verified at install time. Empty when
 	//! the extension is unsigned. Matches the key_fingerprints reported by CREATE EXTENSION REPOSITORY
 	string signature_key_fingerprint;
+	//! Haybarn: (optional) the version the user pinned this install to with
+	//! `INSTALL <ext> VERSION '<x>'`. Distinct from `version` above: this is what was *requested*
+	//! (and forms a path segment in the download URL), whereas `version` is whatever the fetched
+	//! binary reports about itself. Non-empty means pinned — `UPDATE EXTENSIONS` leaves it alone
+	//! and only `FORCE INSTALL` can move or clear it.
+	string pinned_version;
 
 	void Serialize(Serializer &serializer) const;
 

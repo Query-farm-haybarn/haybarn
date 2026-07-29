@@ -94,6 +94,9 @@ string LoadInfo::ToString() const {
 			result += " FROM " + SQLString(repository);
 		}
 	}
+	if (!version.empty()) {
+		result += " VERSION " + KeywordHelper::WriteQuoted(version);
+	}
 	if (!alias.empty()) {
 		result += " AS " + SQLIdentifier(alias);
 	}
