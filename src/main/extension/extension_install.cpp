@@ -268,8 +268,16 @@ string ExtensionHelper::ExtensionUrlTemplate(optional_ptr<const DatabaseInstance
                                              const ExtensionRepository &repository, const string &version) {
 	string versioned_path;
 	if (!version.empty()) {
-		versioned_path = "/${NAME}/" + version + "/${REVISION}/${PLATFORM}/${NAME}.duckdb_extension";
+		// Haybarn: pinned installs resolve to the per-build immutable object, whose key is
+		//   <repository>/<engine-version>/<platform>/<name>/<ext-commit-short>/<name>.duckdb_extension
+		// Note the segment order differs from upstream DuckDB (which puts name/version ahead
+		// of the engine revision): the Haybarn extension buckets are laid out revision-first so
+		// every artifact for one engine build — the mutable "latest" slot below, the immutable
+		// per-build directories, and the signed current.json pointer beside them — lives under a
+		// single prefix. See haybarn-extension-ci-tools scripts/publish/publish_extensions.py.
+		versioned_path = "/${REVISION}/${PLATFORM}/${NAME}/" + version + "/${NAME}.duckdb_extension";
 	} else {
+		// Unpinned: the mutable "latest" single-slot path.
 		versioned_path = "/${REVISION}/${PLATFORM}/${NAME}.duckdb_extension";
 	}
 #ifdef WASM_LOADABLE_EXTENSIONS
