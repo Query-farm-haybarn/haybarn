@@ -39,6 +39,9 @@ string LoadInfo::ToString() const {
 			result += " FROM " + KeywordHelper::WriteQuoted(repository);
 		}
 	}
+	if (!version.empty()) {
+		result += " VERSION " + KeywordHelper::WriteQuoted(version);
+	}
 
 	result += ";";
 	return result;
