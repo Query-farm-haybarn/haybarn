@@ -90,17 +90,12 @@ jobs:
           ref: ${{ steps.context.outputs.head_sha }}
           fetch-depth: 0
 
-      # Overlay the deploy scripts from THIS workflow's ref (branch tip), not the
-      # build's frozen head_sha. The publish workflow exists to retry the deploy
-      # without rebuilding — that only works for deploy-SCRIPT fixes if the
-      # scripts come from a mutable ref. The head_sha checkout above still
-      # provides the engine commit/ts + LICENSE; only scripts/ is overlaid.
-      - name: Overlay current deploy scripts
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ github.ref }}
-          sparse-checkout: scripts
-          path: deploy-scripts
+      # NOTE: no deploy-script overlay here. This workflow exists to retry a
+      # deploy without rebuilding, which for script fixes needs the scripts to
+      # come from a mutable ref rather than the build's frozen head_sha — and
+      # they do: every R2 write goes through publish_extensions.py in the
+      # ci-tools checkout below, pinned to the `haybarn` branch tip. The
+      # head_sha checkout above only supplies the engine commit/ts + LICENSE.
 
       - name: Download built extensions
         uses: actions/download-artifact@v8
@@ -126,45 +121,10 @@ jobs:
             exit 1
           fi
 
-      - name: Sign and upload to R2 (core repository)
-        shell: bash
-        env:
-          # Private key whose public half is embedded in
-          # src/main/extension/extension_helper.cpp.
-          DUCKDB_EXTENSION_SIGNING_PK: ${{ secrets.HAYBARN_EXTENSION_SIGNING_PK }}
-          AWS_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          # NOTE: the org secret is named `R2_SECRET_KEY_ID` (not the more
-          # conventional `_SECRET_ACCESS_KEY`). The previous reference to a
-          # non-existent `R2_SECRET_ACCESS_KEY` resolved to empty string and
-          # `extension-upload-repository.sh` silently bailed with
-          # "No AWS key found, skipping" — so the deploy-step was green for
-          # weeks without ever writing to R2.
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_KEY_ID }}
-          # R2 needs these to play nicely with the AWS SDK — region=auto +
-          # pre-2024 checksum behavior. Mirrors the community deploy
-          # workflow; without these, PutObject returns AccessDenied.
-          AWS_DEFAULT_REGION: auto
-          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
-          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
-          # for_real => actually upload; anything else => dry run.
-          DUCKDB_DEPLOY_SCRIPT_MODE: ${{ steps.context.outputs.deploy == 'true' && 'for_real' || 'dry_run' }}
-        run: |
-          # awscli for the sync; cryptography for in-process RSA signing;
-          # tqdm for the sign+compress progress bar; brotli (CLI) only for the
-          # wasm compression branch.
-          python3 -m pip install awscli cryptography tqdm
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends brotli
-          # $2 is the target bucket+prefix; the R2 bucket is fronted by
-          # haybarn-extensions.query.farm with a top-level core/ prefix.
-          python3 ./deploy-scripts/scripts/haybarn_extension_upload.py \
-            "/tmp/haybarn-repository" "${{ secrets.R2_BUCKET }}/core"
-
       # ------------------------------------------------------------------
-      # Per-commit immutable R2 layout + pip wheel + npm leaf/meta staging.
-      # See haybarn-extensions.yml history for the per-step rationale; this
-      # block is moved verbatim across the workflow split.
+      # Mutable "latest" slot + per-commit immutable R2 layout + pip wheel +
+      # npm leaf/meta staging — all from the one publisher community uses.
+      # See haybarn-extensions.yml history for the per-step rationale.
       # ------------------------------------------------------------------
       - uses: actions/checkout@v6
         with:
@@ -185,22 +145,44 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "::notice::engine commit $C (ts=$T)"
 
-      - name: Per-commit immutable layout + stage pip/npm artifacts
-        if: ${{ steps.context.outputs.deploy == 'true' }}
+      - name: Sign + upload to R2 (latest + per-commit) and stage pip/npm artifacts
         shell: bash
         env:
+          # Private key whose public half is embedded in
+          # src/main/extension/extension_helper.cpp.
           DUCKDB_EXTENSION_SIGNING_PK: ${{ secrets.HAYBARN_EXTENSION_SIGNING_PK }}
           HAYBARN_GPG_PRIVATE_KEY:     ${{ secrets.HAYBARN_GPG_PRIVATE_KEY }}
           HAYBARN_GPG_PASSPHRASE:      ${{ secrets.HAYBARN_GPG_PASSPHRASE }}
           AWS_ENDPOINT_URL:            ${{ secrets.R2_ENDPOINT }}
           AWS_ACCESS_KEY_ID:           ${{ secrets.R2_ACCESS_KEY_ID }}
+          # NOTE: the org secret is named `R2_SECRET_KEY_ID` (not the more
+          # conventional `_SECRET_ACCESS_KEY`). A previous reference to a
+          # non-existent `R2_SECRET_ACCESS_KEY` resolved to empty string and
+          # the deploy step silently bailed with "No AWS key found, skipping"
+          # — green for weeks without ever writing to R2.
           AWS_SECRET_ACCESS_KEY:       ${{ secrets.R2_SECRET_KEY_ID }}
+          # R2 needs these to play nicely with the AWS SDK — region=auto +
+          # pre-2024 checksum behavior. Mirrors the community deploy
+          # workflow; without these, PutObject returns AccessDenied.
           AWS_DEFAULT_REGION:          auto
           AWS_REQUEST_CHECKSUM_CALCULATION: when_required
           AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
         run: |
-          # awscli + brotli already installed by the previous step / runner.
-          which brotli || sudo apt-get install -y --no-install-recommends brotli
+          # awscli for the uploads; cryptography for in-process RSA signing;
+          # tqdm for the sign+stage progress bar (optional in the script, which
+          # falls back to [i/N] lines); brotli (CLI) only for the wasm branch.
+          python3 -m pip install awscli cryptography tqdm
+          which brotli || {
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends brotli
+          }
+          # --write-latest adds the mutable <version>/<arch>/<ext>.gz slot the
+          # engine's INSTALL fetches. Core used to write that slot with a
+          # separate scripts/haybarn_extension_upload.py pass, which re-signed
+          # and re-compressed every binary, derived the <version> path segment
+          # without normalize_engine_version(), and `s3 sync`ed against the
+          # whole (ever-growing) core/ prefix. One publisher, same flag as
+          # community, so the two channels can't drift.
           python3 ci-tools/scripts/publish/publish_extensions.py \
             --repo-dir          /tmp/haybarn-repository \
             --engine-commit     '${{ steps.engine.outputs.commit }}' \
@@ -213,7 +195,8 @@ jobs:
             --dist-dir          dist/ \
             --signed-by         haybarn-extension-signing-2026 \
             --channels          'r2-core,pypi,npm' \
-            --deploy            true
+            --write-latest \
+            --deploy            '${{ steps.context.outputs.deploy }}'
 
       - name: Upload pip wheels as artifact
         if: ${{ steps.context.outputs.deploy == 'true' }}
