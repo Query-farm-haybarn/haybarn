@@ -24,7 +24,7 @@ The storage version of an existing database cannot be lowered
 statement error
 ATTACH '{TEST_DIR}/version_1_2_0.db' (STORAGE_VERSION 'non_existant');
 ----
-not a known DuckDB version
+not a known engine version
 
 # we can open it with the current version
 statement ok

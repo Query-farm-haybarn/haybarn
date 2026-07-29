@@ -134,8 +134,9 @@ SET home_directory='{TEST_DIR}'
 statement ok
 INSTALL '{BUILD_DIRECTORY}/test/extension/loadable_extension_demo.duckdb_extension';
 
+# Haybarn: extensions install under ~/.haybarn/extensions, not ~/.duckdb/extensions
 query I
-select COUNT(*) from glob('{TEST_DIR}/.duckdb/**/loadable_extension_demo.duckdb_extension')
+select COUNT(*) from glob('{TEST_DIR}/.haybarn/**/loadable_extension_demo.duckdb_extension')
 ----
 1
 
