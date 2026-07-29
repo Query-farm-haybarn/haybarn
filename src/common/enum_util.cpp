@@ -1984,6 +1984,7 @@ const StringUtil::EnumStringLiteral *GetExtensionUpdateResultTagValues() {
 		{ static_cast<uint32_t>(ExtensionUpdateResultTag::NOT_INSTALLED), "NOT_INSTALLED" },
 		{ static_cast<uint32_t>(ExtensionUpdateResultTag::STATICALLY_LOADED), "STATICALLY_LOADED" },
 		{ static_cast<uint32_t>(ExtensionUpdateResultTag::MISSING_INSTALL_INFO), "MISSING_INSTALL_INFO" },
+		{ static_cast<uint32_t>(ExtensionUpdateResultTag::PINNED), "PINNED" },
 		{ static_cast<uint32_t>(ExtensionUpdateResultTag::REDOWNLOADED), "REDOWNLOADED" },
 		{ static_cast<uint32_t>(ExtensionUpdateResultTag::UPDATED), "UPDATED" }
 	};
@@ -1992,12 +1993,12 @@ const StringUtil::EnumStringLiteral *GetExtensionUpdateResultTagValues() {
 
 template<>
 const char* EnumUtil::ToChars<ExtensionUpdateResultTag>(ExtensionUpdateResultTag value) {
-	return StringUtil::EnumToString(GetExtensionUpdateResultTagValues(), 8, "ExtensionUpdateResultTag", static_cast<uint32_t>(value));
+	return StringUtil::EnumToString(GetExtensionUpdateResultTagValues(), 9, "ExtensionUpdateResultTag", static_cast<uint32_t>(value));
 }
 
 template<>
 ExtensionUpdateResultTag EnumUtil::FromString<ExtensionUpdateResultTag>(const char *value) {
-	return static_cast<ExtensionUpdateResultTag>(StringUtil::StringToEnum(GetExtensionUpdateResultTagValues(), 8, "ExtensionUpdateResultTag", value));
+	return static_cast<ExtensionUpdateResultTag>(StringUtil::StringToEnum(GetExtensionUpdateResultTagValues(), 9, "ExtensionUpdateResultTag", value));
 }
 
 const StringUtil::EnumStringLiteral *GetExtraDropInfoTypeValues() {
