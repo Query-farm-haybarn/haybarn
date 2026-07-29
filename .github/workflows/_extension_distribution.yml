@@ -74,6 +74,14 @@ jobs:
       use_prebuilt_images: true
       image_variant: full
 
+      # Pin the build-image tag explicitly. This used to be left to the
+      # extension-ci-tools default, which was 'v1.5.2' — not a v1.5.2 pin but a
+      # de-facto rolling tag (publish-build-images.yml's push trigger shared the
+      # same default, so docker/** changes re-pushed it). That coupling was
+      # invisible from here; naming the tag makes the engine build's dependency
+      # explicit and moves it onto the images built for this engine version.
+      prebuilt_image_tag: v1.5.5
+
       # Phase D: same idea for the wasm legs — pull haybarn-wasm-rust:<tag>
       # (emsdk 3.1.71 + vcpkg + ccache 4.13.6 + rust + wasm32-unknown-emscripten
       # baked in) instead of running `mymindstorm/setup-emsdk@v13` + installing
