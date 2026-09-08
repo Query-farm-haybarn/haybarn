@@ -6,7 +6,7 @@ from conftest import ShellTest
 def test_dot_version(shell):
     test = ShellTest(shell).statement(".version")
     result = test.run()
-    result.check_stdout("DuckDB")
+    result.check_stdout("Haybarn")
     result.check_stdout("v")
     assert any(token in result.stdout for token in ("clang-", "gcc-", "msvc-"))
 
@@ -14,7 +14,7 @@ def test_dot_version(shell):
 def test_dot_version_prefix(shell):
     test = ShellTest(shell).statement(".ver")
     result = test.run()
-    result.check_stdout("DuckDB")
+    result.check_stdout("Haybarn")
     result.check_stdout("v")
 
 
@@ -22,7 +22,7 @@ def test_call_shell_dot_command_version(shell):
     test = ShellTest(shell).statement("CALL shell_dot_command_version('', '')")
     result = test.run()
     result.check_stdout("print")
-    result.check_stdout("DuckDB")
+    result.check_stdout("Haybarn")
 
 
 def test_help_lists_catalog_version(shell):

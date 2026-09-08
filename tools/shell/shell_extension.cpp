@@ -151,8 +151,14 @@ static unique_ptr<FunctionData> ShellDotCommandVersionBind(ClientContext &contex
 static unique_ptr<GlobalTableFunctionState> ShellDotCommandVersionInit(ClientContext &context,
                                                                        TableFunctionInitInput &input) {
 	auto result = make_uniq<ShellDotCommandVersionData>();
-	result->lines.push_back(StringUtil::Format("DuckDB %s (%s) %s", DuckDB::LibraryVersion(), DuckDB::ReleaseCodename(),
+#ifdef HAYBARN_VERSION_STRING
+	result->lines.push_back(StringUtil::Format("Haybarn %s (powered by DuckDB %s, %s) %s", HAYBARN_VERSION_STRING,
+	                                           DuckDB::LibraryVersion(), DuckDB::ReleaseCodename(),
 	                                           DuckDB::SourceID()));
+#else
+	result->lines.push_back(StringUtil::Format("Haybarn %s (%s) %s", DuckDB::LibraryVersion(),
+	                                           DuckDB::ReleaseCodename(), DuckDB::SourceID()));
+#endif
 	auto compiler = GetShellCompilerVersion();
 	if (!compiler.empty()) {
 		result->lines.push_back(std::move(compiler));
