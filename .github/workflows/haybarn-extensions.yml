@@ -39,11 +39,11 @@ jobs:
   build:
     name: Build extensions
     # Pinned after the DuckDB 2.0 smoke workflow passed on all enabled platforms.
-    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/build.yml@9fb35faf08e732436e8f71f2cae590486c8c92bb
+    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/build.yml@c583007af3506d8fac93e328c98dc16566cb4428
     with:
       duckdb_version: ${{ inputs.engine_ref || github.sha }}
       override_git_describe: ${{ inputs.override_git_describe }}
-      ci_tools_version: 9fb35faf08e732436e8f71f2cae590486c8c92bb
+      ci_tools_version: c583007af3506d8fac93e328c98dc16566cb4428
       ci_tools_repository: Query-farm-haybarn/haybarn-extension-ci-tools
       duckdb_repository: Query-farm-haybarn/haybarn
       extension_repository: duckdb/extension-template
