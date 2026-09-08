@@ -10,7 +10,7 @@
 // !!!!!!!
 //
 //! Haybarn build identity. These macros are absent from upstream DuckDB.
-#define HAYBARN 1
+#define HAYBARN             1
 #define HAYBARN_ABI_VERSION 1
 
 #pragma once

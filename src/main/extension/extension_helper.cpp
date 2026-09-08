@@ -173,9 +173,8 @@ DefaultExtension ExtensionHelper::GetDefaultExtension(idx_t index) {
 // Haybarn: motherduck dropped from the auto-install allow list (see comment
 // in internal_extensions above). The rest mirror upstream.
 static const char *const auto_install[] = {
-    "postgres_scanner", "mysql_scanner", "odbc_scanner", "sqlite_scanner",
-    "delta",            "iceberg",       "unity_catalog", "ui",       "ducklake",
-    nullptr};
+    "postgres_scanner", "mysql_scanner", "odbc_scanner", "sqlite_scanner", "delta",
+    "iceberg",          "unity_catalog", "ui",           "ducklake",       nullptr};
 
 // TODO: unify with new autoload mechanism
 bool ExtensionHelper::AllowAutoInstall(const string &extension) {

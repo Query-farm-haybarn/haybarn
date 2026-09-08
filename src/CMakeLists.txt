@@ -108,8 +108,9 @@ set_target_properties(duckdb_static PROPERTIES OUTPUT_NAME haybarn_static)
 add_library(duckdb SHARED ${ALL_OBJECT_FILES} ${LINK_OBJECTS})
 target_link_libraries(duckdb PUBLIC ${DUCKDB_SYSTEM_LIBS})
 link_extension_libraries(duckdb PRIVATE)
-# Haybarn: ship the shared library as libhaybarn.{so,dylib,dll}. The CMake target
-# name (`duckdb`) and the `duckdb::` namespace/symbols are intentionally kept.
+# Haybarn: ship the shared library as libhaybarn.{so,dylib,dll}. The CMake
+# target name (`duckdb`) and the `duckdb::` namespace/symbols are intentionally
+# kept.
 set_target_properties(duckdb PROPERTIES OUTPUT_NAME haybarn)
 
 link_threads(duckdb PUBLIC)

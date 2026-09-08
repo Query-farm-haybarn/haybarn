@@ -544,8 +544,8 @@ bool ParseHttpDateEpoch(const string &s, int64_t &out_epoch) {
 	if (month == 0 || day < 1 || day > 31 || hh < 0 || hh > 23 || mm < 0 || mm > 59 || ss < 0 || ss > 60) {
 		return false;
 	}
-	out_epoch = DaysFromCivil(year, month, static_cast<uint32_t>(day)) * 86400 +
-	            static_cast<int64_t>(hh) * 3600 + static_cast<int64_t>(mm) * 60 + ss;
+	out_epoch = DaysFromCivil(year, month, static_cast<uint32_t>(day)) * 86400 + static_cast<int64_t>(hh) * 3600 +
+	            static_cast<int64_t>(mm) * 60 + ss;
 	return true;
 }
 
@@ -559,9 +559,7 @@ bool TryParseRetryAfterMs(string v, uint64_t &out_ms) {
 	if (std::all_of(v.begin(), v.end(), [](unsigned char c) { return std::isdigit(c) != 0; })) {
 		try {
 			auto seconds = std::stoull(v);
-			out_ms = seconds >= MAX_HONORED_RETRY_AFTER_MS / 1000
-			             ? MAX_HONORED_RETRY_AFTER_MS
-			             : seconds * 1000;
+			out_ms = seconds >= MAX_HONORED_RETRY_AFTER_MS / 1000 ? MAX_HONORED_RETRY_AFTER_MS : seconds * 1000;
 			return true;
 		} catch (...) {
 			return false;
@@ -571,9 +569,8 @@ bool TryParseRetryAfterMs(string v, uint64_t &out_ms) {
 	if (!ParseHttpDateEpoch(v, when_epoch)) {
 		return false;
 	}
-	auto now_epoch = std::chrono::duration_cast<std::chrono::seconds>(
-	                     std::chrono::system_clock::now().time_since_epoch())
-	                     .count();
+	auto now_epoch =
+	    std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 	int64_t delta = when_epoch - static_cast<int64_t>(now_epoch);
 	out_ms = delta > 0 ? static_cast<uint64_t>(delta) * 1000ull : 0;
 	return true;

@@ -1,5 +1,4 @@
-Haybarn
-=======
+HAYBARN
 
 Haybarn is an independent derived distribution of DuckDB, published by
 Query Farm LLC. It is built from the DuckDB source code.
@@ -27,8 +26,9 @@ Modifications made by Haybarn
 
 Haybarn is maintained as a hard fork of duckdb/duckdb. All Haybarn-specific
 changes are kept as a small, curated commit stack on top of an upstream DuckDB
-release tag. As of the current release (built from DuckDB v1.5.5) those changes
-are:
+release tag or development branch. The current stable release is built from
+DuckDB v1.5.5; the `next-2.0` development branch tracks DuckDB's
+`v2.0-cyanoptera` branch. Those changes are:
 
   * branding: rename artifacts to Haybarn
       The CLI is built as `haybarn`, the libraries as `libhaybarn` /
@@ -65,7 +65,7 @@ are:
       `haybarn`, compiled module renamed, opt-in `haybarn.compat` shim.
 
 The authoritative, line-level record of every modification is the git history
-of this fork (the commit stack on top of the upstream `v1.5.5` tag).
+of this fork (the commit stack on top of the upstream base named by the branch).
 
 
 Trademark

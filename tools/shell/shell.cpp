@@ -3617,8 +3617,8 @@ int RunShell(int argc, const char **argv) {
 				hb_version = hb_version.substr(1);
 			}
 #endif
-			auto startup_version = StringUtil::Format("Haybarn %s — powered by DuckDB %s", hb_version,
-			                                          hb_duckdb_version);
+			auto startup_version =
+			    StringUtil::Format("Haybarn %s — powered by DuckDB %s", hb_version, hb_duckdb_version);
 			if (StringUtil::Contains(duckdb::DuckDB::ReleaseCodename(), "Development")) {
 				startup_version += " (";
 				startup_version += duckdb::DuckDB::SourceID();

@@ -100,15 +100,15 @@ bool Binder::BindTableFunctionParameters(TableFunctionCatalogEntry &table_functi
 		// child is always the TABLE input (classic table-in-out), never a named arg.
 		vector<unique_ptr<ParsedExpression>> positional_exprs;
 		for (auto &child : expressions) {
-			string parameter_name;
+			Identifier parameter_name;
 			if (child->GetExpressionType() != ExpressionType::SUBQUERY) {
 				if (child->GetExpressionType() == ExpressionType::COMPARE_EQUAL) {
 					auto &comp = child->Cast<ComparisonExpression>();
-					if (comp.left->GetExpressionType() == ExpressionType::COLUMN_REF) {
-						auto &colref = comp.left->Cast<ColumnRefExpression>();
+					if (comp.Left().GetExpressionType() == ExpressionType::COLUMN_REF) {
+						auto &colref = comp.Left().Cast<ColumnRefExpression>();
 						if (!colref.IsQualified()) {
 							parameter_name = colref.GetColumnName();
-							child = std::move(comp.right);
+							child = std::move(comp.RightMutable());
 						}
 					}
 				} else if (!child->GetAlias().empty()) {
@@ -123,7 +123,7 @@ bool Binder::BindTableFunctionParameters(TableFunctionCatalogEntry &table_functi
 				positional_exprs.push_back(std::move(child));
 				continue;
 			}
-			TableFunctionBinder param_binder(*this, context, table_function.name);
+			TableFunctionBinder param_binder(*this, context, table_function.name.GetIdentifierName());
 			LogicalType sql_type;
 			auto expr = param_binder.Bind(child, &sql_type);
 			if (expr->HasParameter()) {
@@ -133,7 +133,7 @@ bool Binder::BindTableFunctionParameters(TableFunctionCatalogEntry &table_functi
 				throw BinderException(
 				    "Named parameter \"%s\" of table function \"%s\" must be a constant (it cannot reference an "
 				    "input column)",
-				    parameter_name, table_function.name);
+				    parameter_name.GetIdentifierName(), table_function.name.GetIdentifierName());
 			}
 			named_parameters[parameter_name] = ExpressionExecutor::EvaluateScalar(context, *expr, true);
 		}

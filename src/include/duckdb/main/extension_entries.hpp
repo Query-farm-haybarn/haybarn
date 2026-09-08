@@ -1537,9 +1537,10 @@ static constexpr ExtensionEntry EXTENSION_LOG_TYPES[] = {
 
 // Haybarn: motherduck is not advertised as an autoloadable extension.
 static constexpr const char *AUTOLOADABLE_EXTENSIONS[] = {
-    "autocomplete", "avro",          "aws",     "azure",            "core_functions", "delta", "ducklake",
-    "encodings",    "excel",         "fts",     "httpfs",           "iceberg",        "icu",   "inet",
-    "json",         "mysql_scanner", "parquet", "postgres_scanner", "quack",          "sqlite_scanner",
-    "sqlsmith",     "tpcds",         "tpch",    "ui",               "unity_catalog"}; // END_OF_AUTOLOADABLE_EXTENSIONS
+    "autocomplete", "avro",           "aws",      "azure",         "core_functions", "delta",
+    "ducklake",     "encodings",      "excel",    "fts",           "httpfs",         "iceberg",
+    "icu",          "inet",           "json",     "mysql_scanner", "parquet",        "postgres_scanner",
+    "quack",        "sqlite_scanner", "sqlsmith", "tpcds",         "tpch",           "ui",
+    "unity_catalog"}; // END_OF_AUTOLOADABLE_EXTENSIONS
 
 } // namespace duckdb
