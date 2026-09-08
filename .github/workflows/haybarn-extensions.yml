@@ -38,6 +38,7 @@ concurrency:
 jobs:
   build:
     name: Build extensions
+    # next-2.0 includes Haybarn's shared library in native test-support bundles.
     uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/build.yml@next-2.0
     with:
       duckdb_version: ${{ inputs.engine_ref || github.sha }}
