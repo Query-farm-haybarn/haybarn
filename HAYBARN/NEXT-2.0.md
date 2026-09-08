@@ -9,10 +9,27 @@ until DuckDB 2.0 is released and the deferred distribution work below is done.
 - Branch: `next-2.0`
 - Upstream: `upstream/v2.0-cyanoptera`
 - Upstream base: `a86336cd55` (2026-09-08)
-- Haybarn patch stack: 125 commits on top of that base
+- Haybarn patch stack: rebased on top of that base
 - Local debug build: passing on macOS arm64
 
 The stable `haybarn` branch and worktree remain on DuckDB 1.5.5.
+
+## Extension CI
+
+The `next-2.0` branch of `haybarn-extension-ci-tools` is based on current
+upstream `main` and uses its reusable `build.yml` workflow. Haybarn's writable
+vcpkg, asset, and ccache configuration and its R2/npm/PyPI publication scripts
+are carried on top.
+
+`haybarn-extensions.yml` uses that workflow to build and test a deliberately
+small 2.0 smoke set containing parquet. Add `ask` to
+`haybarn_extensions_next_2_0.cmake` after the extension repository exists.
+Keep the old full extension list separate until all of its 1.5-specific fork
+commits have been rebased and pinned for 2.0.
+
+The CI-tools branch must be pushed before this engine branch because GitHub
+must resolve the external reusable-workflow ref first. Pin the caller to a
+commit SHA after the development workflow has passed remotely.
 
 ## AI shell integration
 
@@ -57,8 +74,6 @@ community extension and would create installation and catalog ambiguity.
 
 ## Deferred before a 2.0 release
 
-- Port `haybarn-extension-ci-tools` to the new 2.0 `build.yml` workflow API and
-  replace references to the removed `_extension_distribution.yml` workflow.
 - Adapt Haybarn's static-library artifact packaging to DuckDB 2.0's consolidated
   `Main.yml`; the old `BundleStaticLibs.yml` no longer exists.
 - Update the release, extension-publish, PyPI, npm, image, and documentation

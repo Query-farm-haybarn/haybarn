@@ -1,78 +1,59 @@
-# Haybarn: builds the full Haybarn extension set.
+# Haybarn: validates the DuckDB 2.0 extension build path.
 #
-# This workflow is BUILD ONLY. The sign + R2 + PyPI + npm publish path lives
-# in `haybarn-extensions-publish.yml` and consumes the artifacts this workflow
-# uploads. The split exists so a flaky publish step doesn't force a full
-# rebuild — retry publish independently with workflow_dispatch + source_run_id.
+# This development workflow is BUILD ONLY. It initially builds a small smoke
+# set; publication stays disabled until the complete 2.0 extension matrix is
+# repinned and validated.
 #
-# The `build` job reuses DuckDB's own reusable extension-distribution workflow
-# (./.github/workflows/_extension_distribution.yml). That workflow builds with
-# `set_caller_as_duckdb: true`, so every extension is built against THIS repo —
-# i.e. against the Haybarn build of DuckDB — and handles vcpkg + toolchains.
-name: Haybarn Extensions
+# The `build` job uses the DuckDB 2.0 extension-ci-tools build workflow carried
+# by Haybarn. It checks out this repository as the engine, then builds the
+# extension-template with Haybarn's 2.0 smoke configuration.
+name: Haybarn Extensions (2.0)
 
 on:
   push:
-    tags:
-      - 'haybarn-v[0-9]+.[0-9]+.[0-9]+*'
+    branches:
+      - next-2.0
+    paths:
+      - '.github/config/haybarn_extensions_next_2_0.cmake'
+      - '.github/workflows/haybarn-extensions.yml'
+      - 'extension/**'
+      - 'src/**'
   workflow_dispatch:
     inputs:
-      override_git_describe:
-        description: 'Engine ref to build extensions against (e.g. haybarn-v1.5.5-rc3); a haybarn-v1.5.5* ref embeds v1.5.5. Defaults to the pushed tag.'
+      engine_ref:
+        description: 'Haybarn engine ref to build against. Defaults to the workflow commit.'
         type: string
+      override_git_describe:
+        description: 'DuckDB-compatible version string to embed, e.g. v2.0.0. Empty uses the engine ref.'
+        type: string
+      skip_tests:
+        description: 'Build artifacts without running extension tests.'
+        type: boolean
+        default: false
 
 concurrency:
   group: haybarn-extensions-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # extension-ci-tools appends `extra_extension_config` verbatim into the
-  # generated extension_config.cmake, so it must be CMake *content*, not a path.
-  # Read the file contents here and pass them through (mirrors upstream DuckDB's
-  # Extensions.yml `load-extension-configs` pattern).
-  load-config:
-    name: Load extension config
-    runs-on: ubuntu-24.04
-    outputs:
-      extension_config: ${{ steps.read.outputs.config }}
-    steps:
-      - uses: actions/checkout@v6
-      - id: read
-        shell: bash
-        run: |
-          {
-            echo 'config<<HAYBARN_EXT_CONFIG_EOF'
-            cat .github/config/haybarn_extensions.cmake
-            echo 'HAYBARN_EXT_CONFIG_EOF'
-          } >> "$GITHUB_OUTPUT"
-
   build:
     name: Build extensions
-    needs: load-config
-    uses: ./.github/workflows/_extension_distribution.yml
+    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/build.yml@next-2.0
     with:
-      artifact_prefix: haybarn
-      extension_config: ${{ needs.load-config.outputs.extension_config }}
-      # extension-ci-tools' save_cache defaults to false, which is why our
-      # extension ccache wasn't persisting between runs even though it was
-      # loading; ask it to actually save.
+      duckdb_version: ${{ inputs.engine_ref || github.sha }}
+      override_git_describe: ${{ inputs.override_git_describe }}
+      ci_tools_version: next-2.0
+      ci_tools_repository: Query-farm-haybarn/haybarn-extension-ci-tools
+      duckdb_repository: Query-farm-haybarn/haybarn
+      extension_repository: duckdb/extension-template
+      extension_ref: main
+      groups: |
+        haybarn-2-0:
+          config: duckdb/.github/config/haybarn_extensions_next_2_0.cmake
+          toolchain: main
+      reduced_ci_mode: enabled
       save_cache: true
-      # delta and unity_catalog need a Rust toolchain.
-      # odbc_scanner needs unixODBC headers/libs (which the extension-ci-tools
-      # manylinux Dockerfile and macOS jobs install when `unixodbc` is in the
-      # toolchains string — semicolon-delimited match).
-      extra_toolchains: 'rust;unixodbc'
-      # Check out the engine (duckdb/) at the Haybarn release ref being built, so
-      # extensions compile against the Haybarn engine — including engine API that
-      # only exists on the haybarn branch (e.g. PostRequestInfo::cancellation),
-      # not the pristine upstream v1.5.5 tag. The extension-ci-tools fork maps a
-      # `haybarn-v1.5.5*` ref back to the clean `v1.5.5` OVERRIDE_GIT_DESCRIBE, so
-      # the embedded/loadable version string still matches the released engine.
-      # On a tag push github.ref_name is the haybarn-v* tag; for workflow_dispatch
-      # pass the tag via override_git_describe.
-      override_duckdb_version: ${{ inputs.override_git_describe || github.ref_name }}
-      # Extension tests frequently need external services (postgres, mysql,
-      # S3, ...). Build first; enable targeted tests later.
-      skip_tests: true
-    secrets: inherit
+      skip_tests: ${{ inputs.skip_tests || false }}
+    secrets:
+      vcpkg_token: ${{ secrets.HAYBARN_VCPKG_TOKEN }}
 # Haybarn fork — workflow re-index marker.
