@@ -265,6 +265,10 @@ public:
 	StartupText startup_text = StartupText::ALL;
 	//! Whether or not the loading resources message was displayed
 	bool displayed_loading_resources_message = false;
+	//! Catalog function handling plain input while an extension-defined input mode is active
+	string catalog_input_mode_function;
+	//! Short mode name displayed in the interactive prompt
+	string catalog_input_mode_name;
 
 	/*
 	** Prompt strings. Initialized in main. Settable with
@@ -442,6 +446,15 @@ public:
 	optional_ptr<const MetadataCommand> FindMetadataCommand(const string &option, string &error_msg) const;
 	//! Dispatch .cmd to catalog function shell_dot_command_cmd. Returns -1 if none exists.
 	int TryCatalogDotCommand(const vector<string> &args);
+	//! Enter an extension-defined input mode backed by a catalog dot-command function.
+	void EnterCatalogInputMode(const string &function_name, const string &mode_name);
+	//! Return plain input processing to SQL.
+	void ExitCatalogInputMode();
+	//! Dispatch one complete input line to the active catalog mode handler.
+	int RunCatalogInputMode(const string &input);
+	bool HasCatalogInputMode() const {
+		return !catalog_input_mode_function.empty();
+	}
 	static vector<string> GetMetadataCompletions(const char *zLine, idx_t nLine);
 
 	//! Execute a SQL query

@@ -45,6 +45,41 @@ def test_catalog_plugin_macro(shell):
     result.check_stdout("hello from plugin")
 
 
+def test_catalog_input_mode(shell):
+    test = ShellTest(shell)
+    result = test.run_raw(
+        "CREATE MACRO shell_dot_command_agent(user_input, extra_info) AS TABLE "
+        "SELECT CASE WHEN user_input = '' THEN 'mode' ELSE 'print' END AS command, "
+        "CASE WHEN user_input = '' THEN 'agent' ELSE 'agent: ' || user_input END AS input;\n"
+        ".agent\n"
+        "first question\n"
+        ".help sql\n"
+        "second question with SELECT 42;\n"
+        ".sql\n"
+        "SELECT 42 AS sql_result;\n"
+    )
+    result.check_stdout("Switched to agent mode. Use .sql to return to SQL.")
+    result.check_stdout("agent: first question")
+    result.check_stdout("Return input processing to SQL mode")
+    result.check_stdout("agent: second question with SELECT 42;")
+    result.check_stdout("Switched to SQL mode.")
+    result.check_stdout("42")
+
+
+def test_catalog_command_with_input_stays_one_shot(shell):
+    test = ShellTest(shell)
+    result = test.run_raw(
+        "CREATE MACRO shell_dot_command_agent(user_input, extra_info) AS TABLE "
+        "SELECT CASE WHEN user_input = '' THEN 'mode' ELSE 'print' END AS command, "
+        "CASE WHEN user_input = '' THEN 'agent' ELSE 'agent: ' || user_input END AS input;\n"
+        ".agent one shot\n"
+        "SELECT 7 AS sql_result;\n"
+    )
+    result.check_stdout("agent: one shot")
+    result.check_stdout("7")
+    result.check_not_exist("Switched to agent mode")
+
+
 def test_unknown_dot_command(shell):
     test = ShellTest(shell).statement(".not_a_real_dot_command")
     result = test.run()

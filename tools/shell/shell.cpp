@@ -595,7 +595,11 @@ char *ShellState::OneInputLine(FILE *in, char *zPrior, int isContinuation) {
 		string prompt_str;
 		const char *prompt_text;
 		if (!isContinuation) {
-			prompt_str = main_prompt->GeneratePrompt(*this);
+			if (HasCatalogInputMode()) {
+				prompt_str = catalog_input_mode_name + "> ";
+			} else {
+				prompt_str = main_prompt->GeneratePrompt(*this);
+			}
 			prompt_text = prompt_str.c_str();
 		} else {
 			prompt_text = continuePrompt;
@@ -606,7 +610,11 @@ char *ShellState::OneInputLine(FILE *in, char *zPrior, int isContinuation) {
 #endif
 	// using local_getline to read from stdin - print the prompt
 	if (!isContinuation) {
-		main_prompt->PrintPrompt(*this, PrintOutput::STDOUT);
+		if (HasCatalogInputMode()) {
+			Print(catalog_input_mode_name + "> ");
+		} else {
+			main_prompt->PrintPrompt(*this, PrintOutput::STDOUT);
+		}
 	} else {
 		Print(continuePrompt);
 	}
@@ -3107,6 +3115,19 @@ int ShellState::ProcessInput(InputMode mode) {
 		if (nSql == 0 && _all_whitespace(zLine)) {
 			if (ShellHasFlag(ShellFlags::SHFLG_Echo)) {
 				printf("%s\n", zLine);
+			}
+			continue;
+		}
+		if (nSql == 0 && HasCatalogInputMode() && zLine[0] != '.' && zLine[0] != '#') {
+			if (ShellHasFlag(ShellFlags::SHFLG_Echo)) {
+				printf("%s\n", zLine);
+			}
+			if (mode == InputMode::STANDARD && *zLine && *zLine != '\3') {
+				ShellAddHistory(zLine);
+			}
+			rc = RunCatalogInputMode(zLine);
+			if (rc) {
+				errCnt++;
 			}
 			continue;
 		}

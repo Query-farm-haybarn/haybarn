@@ -466,6 +466,16 @@ MetadataResult SetOutputMode(ShellState &state, const vector<string> &args) {
 	return MetadataResult::SUCCESS;
 }
 
+MetadataResult SetSQLInputMode(ShellState &state, const vector<string> &args) {
+	if (!state.HasCatalogInputMode()) {
+		state.Print("Already in SQL mode.\n");
+		return MetadataResult::SUCCESS;
+	}
+	state.ExitCatalogInputMode();
+	state.Print("Switched to SQL mode.\n");
+	return MetadataResult::SUCCESS;
+}
+
 MetadataResult QuitProcess(ShellState &, const vector<string> &args) {
 	return MetadataResult::EXIT;
 }
@@ -1013,6 +1023,7 @@ static const MetadataCommand metadata_commands[] = {
 #ifdef HAVE_LINENOISE
     {"singleline", 1, ToggleSingleLine, "", "Sets the render mode to single-line", 0, ""},
 #endif
+    {"sql", 1, SetSQLInputMode, "", "Return input processing to SQL mode", 0, ""},
     {"startup_text", 2, SetStartupText, "none|version|all",
      "Start-up text to display. Set this as the first line in .haybarnrc", 0, ""},
     {"system", 0, RunShellCommand, "CMD ARGS...", "Run CMD ARGS... in a system shell", 0, ""},
@@ -1130,6 +1141,20 @@ static bool CatalogFunctionMissingError(const string &error, const string &funct
 	       (StringUtil::Contains(error, "is not in the catalog") || StringUtil::Contains(error, "does not exist"));
 }
 
+static bool IsValidCatalogInputModeName(const string &name) {
+	if (name.empty() || name.size() > 32) {
+		return false;
+	}
+	for (auto character : name) {
+		if ((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+		    (character >= '0' && character <= '9') || character == '_' || character == '-') {
+			continue;
+		}
+		return false;
+	}
+	return true;
+}
+
 static CatalogDotExecuteResult ExecuteCatalogDotCommand(ShellState &state, const string &function_name,
                                                         const vector<string> &args) {
 	string user_input;
@@ -1168,6 +1193,13 @@ static CatalogDotExecuteResult ExecuteCatalogDotCommand(ShellState &state, const
 			if (StringUtil::CIEquals(command, "print")) {
 				state.Print(input);
 				state.Print("\n");
+			} else if (StringUtil::CIEquals(command, "mode")) {
+				if (!IsValidCatalogInputModeName(input)) {
+					state.PrintDatabaseError(
+					    "Catalog dot-command mode names must contain 1-32 letters, numbers, underscores, or hyphens");
+					return CatalogDotExecuteResult::FAIL;
+				}
+				state.EnterCatalogInputMode(function_name, input);
 			} else {
 				state.PrintDatabaseError(StringUtil::Format("Unsupported catalog dot-command \"%s\"", command));
 				return CatalogDotExecuteResult::FAIL;
@@ -1179,6 +1211,35 @@ static CatalogDotExecuteResult ExecuteCatalogDotCommand(ShellState &state, const
 		return CatalogDotExecuteResult::FAIL;
 	}
 	return CatalogDotExecuteResult::SUCCESS;
+}
+
+void ShellState::EnterCatalogInputMode(const string &function_name, const string &mode_name) {
+	auto changed = catalog_input_mode_function != function_name || catalog_input_mode_name != mode_name;
+	catalog_input_mode_function = function_name;
+	catalog_input_mode_name = mode_name;
+	if (changed) {
+		PrintF("Switched to %s mode. Use .sql to return to SQL.\n", mode_name);
+	}
+}
+
+void ShellState::ExitCatalogInputMode() {
+	catalog_input_mode_function.clear();
+	catalog_input_mode_name.clear();
+}
+
+int ShellState::RunCatalogInputMode(const string &input) {
+	if (!HasCatalogInputMode()) {
+		return int(MetadataResult::FAIL);
+	}
+	auto function_name = catalog_input_mode_function;
+	vector<string> args {catalog_input_mode_name, input};
+	auto executed = ExecuteCatalogDotCommand(*this, function_name, args);
+	if (executed == CatalogDotExecuteResult::NOT_FOUND) {
+		ExitCatalogInputMode();
+		PrintDatabaseError(StringUtil::Format("Catalog input mode handler \"%s\" no longer exists", function_name));
+		return int(MetadataResult::FAIL);
+	}
+	return int(executed);
 }
 
 int ShellState::TryCatalogDotCommand(const vector<string> &args) {
