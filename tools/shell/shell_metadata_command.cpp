@@ -1023,7 +1023,7 @@ static const MetadataCommand metadata_commands[] = {
 #ifdef HAVE_LINENOISE
     {"singleline", 1, ToggleSingleLine, "", "Sets the render mode to single-line", 0, ""},
 #endif
-    {"sql", 1, SetSQLInputMode, "", "Return input processing to SQL mode", 0, ""},
+    {"sql", 1, SetSQLInputMode, "", "Return input processing to SQL mode (Ctrl-D also exits an active mode)", 0, ""},
     {"startup_text", 2, SetStartupText, "none|version|all",
      "Start-up text to display. Set this as the first line in .haybarnrc", 0, ""},
     {"system", 0, RunShellCommand, "CMD ARGS...", "Run CMD ARGS... in a system shell", 0, ""},

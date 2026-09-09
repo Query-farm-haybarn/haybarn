@@ -3063,6 +3063,13 @@ int ShellState::ProcessInput(InputMode mode) {
 		zLine = OneInputLine(in, zLine, nSql > 0);
 		if (!zLine) {
 			/* End of input */
+			if (!in && stdin_is_interactive && HasCatalogInputMode()) {
+				printf("\n");
+				ExitCatalogInputMode();
+				Print("Switched to SQL mode.\n");
+				nSql = 0;
+				continue;
+			}
 			if (!in && stdin_is_interactive && !started_as_client && conn && conn->context &&
 			    conn->context->IsConnected()) {
 				// First Ctrl-D while CONNECT-ed: implicit DISCONNECT instead of exiting. A second

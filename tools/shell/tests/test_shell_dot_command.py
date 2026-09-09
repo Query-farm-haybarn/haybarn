@@ -1,5 +1,13 @@
 # fmt: off
 
+import os
+import select
+import subprocess
+import sys
+import time
+
+import pytest
+
 from conftest import ShellTest
 
 
@@ -78,6 +86,58 @@ def test_catalog_command_with_input_stays_one_shot(shell):
     result.check_stdout("agent: one shot")
     result.check_stdout("7")
     result.check_not_exist("Switched to agent mode")
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="PTY control-character test")
+def test_catalog_input_mode_ctrl_d_returns_to_sql(shell):
+    master_fd, slave_fd = os.openpty()
+    process = subprocess.Popen(
+        [shell, "--no-init", "--light-mode"],
+        stdin=slave_fd,
+        stdout=slave_fd,
+        stderr=slave_fd,
+        close_fds=True,
+    )
+    os.close(slave_fd)
+
+    def read_until(expected, timeout=10):
+        output = bytearray()
+        deadline = time.monotonic() + timeout
+        while expected not in output:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise AssertionError(f"Timed out waiting for {expected!r}; output was {bytes(output)!r}")
+            readable, _, _ = select.select([master_fd], [], [], remaining)
+            if not readable:
+                continue
+            output.extend(os.read(master_fd, 4096))
+        return bytes(output)
+
+    try:
+        read_until(b" H ")
+        os.write(
+            master_fd,
+            b"CREATE MACRO shell_dot_command_agent(user_input, extra_info) AS TABLE "
+            b"SELECT CASE WHEN user_input = '' THEN 'mode' ELSE 'print' END AS command, "
+            b"CASE WHEN user_input = '' THEN 'agent' ELSE user_input END AS input;\n",
+        )
+        read_until(b" H ")
+        os.write(master_fd, b".agent\n")
+        read_until(b"agent> ")
+        os.write(master_fd, b"\x04")
+        ctrl_d_output = read_until(b"Switched to SQL mode.")
+        assert b"Switched to SQL mode." in ctrl_d_output
+        os.write(master_fd, b"SELECT 42 AS sql_result;\n")
+        sql_output = read_until(b" H ")
+        assert b"42" in sql_output
+        os.write(master_fd, b"\x04")
+        process.wait(timeout=10)
+        assert process.returncode == 0
+    finally:
+        if process.poll() is None:
+            process.terminate()
+            process.wait(timeout=10)
+        os.close(master_fd)
 
 
 def test_unknown_dot_command(shell):
