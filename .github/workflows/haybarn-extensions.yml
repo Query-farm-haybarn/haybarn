@@ -18,6 +18,7 @@ on:
       - '.github/workflows/haybarn-extensions.yml'
       - 'extension/**'
       - 'src/**'
+      - 'tools/shell/**'
   workflow_dispatch:
     inputs:
       engine_ref:
