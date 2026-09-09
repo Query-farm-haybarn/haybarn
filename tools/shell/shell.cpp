@@ -3064,6 +3064,7 @@ int ShellState::ProcessInput(InputMode mode) {
 		if (!zLine) {
 			/* End of input */
 			if (!in && stdin_is_interactive && HasCatalogInputMode()) {
+				clearerr(stdin);
 				printf("\n");
 				ExitCatalogInputMode();
 				Print("Switched to SQL mode.\n");

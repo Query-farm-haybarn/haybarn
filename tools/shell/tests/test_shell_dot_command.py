@@ -89,14 +89,19 @@ def test_catalog_command_with_input_stays_one_shot(shell):
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="PTY control-character test")
-def test_catalog_input_mode_ctrl_d_returns_to_sql(shell):
+@pytest.mark.parametrize("term", [None, "dumb"])
+def test_catalog_input_mode_ctrl_d_returns_to_sql(shell, term):
     master_fd, slave_fd = os.openpty()
+    environment = os.environ.copy()
+    if term:
+        environment["TERM"] = term
     process = subprocess.Popen(
         [shell, "--no-init", "--light-mode"],
         stdin=slave_fd,
         stdout=slave_fd,
         stderr=slave_fd,
         close_fds=True,
+        env=environment,
     )
     os.close(slave_fd)
 
