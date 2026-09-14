@@ -146,6 +146,7 @@ static const DefaultMacro internal_macros[] = {
     {"pg_catalog", "pg_encoding_to_char", "(encoding) AS 'UTF8'"},
 
     {DEFAULT_SCHEMA, "nullif", "(a, b) AS CASE WHEN a=b THEN NULL ELSE a END"},
+    {DEFAULT_SCHEMA, "if", "(a, b, c) AS CASE WHEN a THEN b ELSE c END"},
     {DEFAULT_SCHEMA, "assert_true",
      "(condition) AS CASE WHEN condition THEN NULL ELSE error('Assertion failed') END, "
      "(condition, message) AS CASE WHEN condition THEN NULL ELSE "

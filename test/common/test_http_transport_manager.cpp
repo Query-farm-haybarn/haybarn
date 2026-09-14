@@ -4,7 +4,9 @@
 #include "test_helpers.hpp"
 #include "duckdb/common/exception/http_exception.hpp"
 #include "duckdb/common/file_opener.hpp"
-#include "duckdb/common/http_transport_manager.hpp"
+#include "duckdb/common/multi_file/multi_file_list.hpp"
+#include "duckdb/main/http/http_transport_manager.hpp"
+#include "duckdb/main/http/http_retry_budget.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/limits.hpp"
 #include "duckdb/common/local_file_system.hpp"
@@ -13,10 +15,115 @@
 
 #include <atomic>
 #include <chrono>
+#include <ctime>
 #include <future>
 #include <thread>
 
 namespace duckdb {
+
+TEST_CASE("HTTP requests own their URL and PUT content type", "[http_retry_budget]") {
+	HTTPUtil http;
+	HTTPParams params(http);
+	string url = "http://localhost/original";
+	string content_type = "application/json";
+	PutRequestInfo request(url, HTTPHeaders(), params, nullptr, 0, content_type);
+	url = "http://localhost/replaced";
+	content_type = "text/plain";
+	CHECK(request.url == "http://localhost/original");
+	CHECK(request.content_type == "application/json");
+}
+
+TEST_CASE("Cancelled HTTP responses are terminal for every method", "[http_retry_budget]") {
+	HTTPUtil http;
+	HTTPParams params(http);
+	params.retries = 4;
+	params.retry_wait_ms = 0;
+	atomic<bool> cancellation {true};
+	for (auto method : {RequestType::GET_REQUEST, RequestType::HEAD_REQUEST, RequestType::PUT_REQUEST,
+	                    RequestType::POST_REQUEST, RequestType::DELETE_REQUEST, RequestType::OPTIONS_REQUEST}) {
+		BaseRequest request(method, "http://localhost/cancelled", HTTPHeaders(), params);
+		request.cancellation = cancellation;
+		idx_t attempts = 0;
+		idx_t retries = 0;
+		auto response = HTTPUtil::RunRequestWithRetry(
+		    [&]() {
+			    attempts++;
+			    auto result = make_uniq<HTTPResponse>(HTTPStatusCode::INVALID);
+			    result->cancelled = request.cancellation->load();
+			    result->request_error = "cancelled";
+			    return result;
+		    },
+		    request, [&]() { retries++; });
+		REQUIRE(response);
+		CHECK(response->IsCancelled());
+		CHECK_FALSE(response->Success());
+		CHECK_FALSE(response->ShouldRetry());
+		CHECK(attempts == 1);
+		CHECK(retries == 0);
+	}
+}
+
+TEST_CASE("Nested HTTP retry loops share the upstream operation budget", "[http_retry_budget]") {
+	HTTPUtil http;
+	HTTPParams params(http);
+	params.retries = 2;
+	params.retry_wait_ms = 0;
+	HTTPRetryBudget budget(params);
+	BaseRequest request(RequestType::GET_REQUEST, "http://localhost/retry", HTTPHeaders(), params);
+	request.retry_budget = budget;
+	request.try_request = true;
+	idx_t outer_attempts = 0;
+	idx_t transport_attempts = 0;
+	budget.Run([&]() {
+		outer_attempts++;
+		auto response = HTTPUtil::RunRequestWithRetry(
+		    [&]() {
+			    transport_attempts++;
+			    return make_uniq<HTTPResponse>(HTTPStatusCode::InternalServerError_500);
+		    },
+		    request, {});
+		CHECK_FALSE(response->Success());
+		return HTTPRetryDecision::Retry();
+	});
+	CHECK(outer_attempts == 1);
+	CHECK(transport_attempts == 3);
+}
+
+#ifndef DUCKDB_NO_THREADS
+TEST_CASE("HTTP Retry-After remains a floor after jitter and supports HTTP dates", "[http_retry_budget]") {
+	HTTPUtil http;
+	HTTPParams params(http);
+	params.retries = 1;
+	params.retry_wait_ms = 0;
+	BaseRequest request(RequestType::GET_REQUEST, "http://localhost/throttled", HTTPHeaders(), params);
+	string retry_after;
+	SECTION("delta seconds") {
+		retry_after = "1";
+	}
+	SECTION("HTTP date") {
+		auto future = std::time(nullptr) + 2;
+		auto date = std::gmtime(&future);
+		REQUIRE(date);
+		char formatted[64];
+		REQUIRE(std::strftime(formatted, sizeof(formatted), "%a, %d %b %Y %H:%M:%S GMT", date) > 0);
+		retry_after = formatted;
+	}
+	idx_t attempts = 0;
+	auto started = std::chrono::steady_clock::now();
+	auto response = HTTPUtil::RunRequestWithRetry(
+	    [&]() {
+		    auto result =
+		        make_uniq<HTTPResponse>(attempts++ == 0 ? HTTPStatusCode::TooManyRequests_429 : HTTPStatusCode::OK_200);
+		    result->headers.Insert("Retry-After", retry_after);
+		    return result;
+	    },
+	    request, {});
+	auto elapsed = std::chrono::steady_clock::now() - started;
+	REQUIRE(response->Success());
+	CHECK(attempts == 2);
+	CHECK(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() >= 1000);
+}
+#endif
 
 enum class MockResponseMode : uint8_t {
 	SUCCESS,
@@ -291,7 +398,7 @@ public:
 		auto result = make_uniq<MockHTTPParams>(*this);
 		result->Initialize(opener);
 		result->retries = state->retries;
-		return result;
+		return unique_ptr<HTTPParams>(std::move(result));
 	}
 
 	unique_ptr<HTTPClient> InitializeClientExtended(HTTPParams &, const string &origin,
@@ -367,43 +474,56 @@ TEST_CASE("HTTP transport manager capacity and provider contracts", "[http_trans
 		CHECK(HTTPTransportManagerTestHelper::AdvanceConnectionEpoch(connection_epoch, reuse_poisoned));
 	}
 
-	SECTION("pool coalesces prepared buckets and separates colliding origins") {
+	SECTION("pool coalesces prepared buckets and separates colliding origins and configurations") {
 		HTTPClientPool pool(2);
 		HTTPClientPool::ClientKey key;
 		key.provider_epoch = 0;
 		key.origin_hash = 42;
+		key.transport_config_hash = 42;
 		const string first_origin = "https://first.example.com";
-		const string second_origin = "https://second.example.com";
+		string second_origin = first_origin;
+		const HTTPTransportConfig first_config;
+		HTTPTransportConfig second_config;
+		SECTION("origin hash collision") {
+			second_origin = "https://second.example.com";
+		}
+		SECTION("transport configuration hash collision") {
+			HTTPUtil provider;
+			HTTPParams params(provider);
+			params.http_proxy = "proxy.example.com";
+			params.http_proxy_port = 8080;
+			second_config = HTTPTransportConfig(params);
+		}
 		auto state = make_shared_ptr<MockTransportState>();
 
-		auto first = pool.Reserve(key, first_origin, true);
-		auto second = pool.Reserve(key, first_origin, true);
-		REQUIRE(first.PrepareBucket(first_origin));
-		REQUIRE(second.PrepareBucket(first_origin));
-		pool.AdoptPreparedBucket(first, first_origin);
-		pool.AdoptPreparedBucket(second, first_origin);
+		auto first = pool.Reserve(key, first_origin, first_config, true);
+		auto second = pool.Reserve(key, first_origin, first_config, true);
+		REQUIRE(first.PrepareBucket(first_origin, first_config));
+		REQUIRE(second.PrepareBucket(first_origin, first_config));
+		pool.AdoptPreparedBucket(first);
+		pool.AdoptPreparedBucket(second);
 		CHECK(pool.BucketCount() == 1);
 		CHECK(pool.ReservedClients() == 2);
 		CHECK_FALSE(pool.HasAdmissionResource());
 		pool.Return(first.bucket, make_uniq<MockHTTPClient>(state, first_origin));
 		CHECK(pool.HasAdmissionResource());
 
-		// The same hash must evict, rather than reuse, a different origin's idle client.
-		auto collision = pool.Reserve(key, second_origin, true);
+		// Hash collisions must not reuse clients with a different origin or configuration.
+		auto collision = pool.Reserve(key, second_origin, second_config, true);
 		CHECK(collision.kind == HTTPClientPool::ReservationKind::NEW_CLIENT);
 		REQUIRE(collision.client);
 		CHECK(collision.client->GetBaseUrl() == first_origin);
 		collision.client.reset();
 		CHECK(pool.ReservedClients() == 2);
-		REQUIRE(collision.PrepareBucket(second_origin));
-		pool.AdoptPreparedBucket(collision, second_origin);
+		REQUIRE(collision.PrepareBucket(second_origin, second_config));
+		pool.AdoptPreparedBucket(collision);
 		CHECK(pool.BucketCount() == 2);
 		pool.Return(collision.bucket, make_uniq<MockHTTPClient>(state, second_origin));
 		auto removed_first = pool.FinishDestruction(second.bucket);
 		CHECK(pool.ReservedClients() == 1);
 		CHECK(pool.BucketCount() == 1);
 
-		auto reused = pool.Reserve(key, second_origin, true);
+		auto reused = pool.Reserve(key, second_origin, second_config, true);
 		CHECK(reused.kind == HTTPClientPool::ReservationKind::REUSE);
 		REQUIRE(reused.client);
 		CHECK(reused.client->GetBaseUrl() == second_origin);
@@ -551,6 +671,80 @@ TEST_CASE("HTTP transport manager synchronous session API", "[http_transport_man
 		REQUIRE(RunManagedRequest(session, params, "https://example.com/"));
 		CHECK(provider->state->created == 2);
 		CHECK(provider->state->high_water == 1);
+	}
+
+	SECTION("core isolates transport settings even when the provider accepts every client") {
+		auto provider = make_shared_ptr<MockHTTPUtil>(HTTPTransportReusePolicy::SHARED);
+		auto manager = HTTPTransportManagerTestHelper::Create(provider, 2);
+		auto first = manager->CreateSession(nullptr, nullptr);
+		auto second = manager->CreateSession(nullptr, nullptr);
+		auto &first_params = first.Parameters();
+		auto &second_params = second.Parameters();
+		first_params.http_proxy = second_params.http_proxy = "proxy.example.com";
+		first_params.http_proxy_port = second_params.http_proxy_port = 8080;
+		first_params.http_proxy_username = second_params.http_proxy_username = "user";
+		first_params.http_proxy_password = second_params.http_proxy_password = "password";
+		first_params.override_verify_ssl = second_params.override_verify_ssl = true;
+		first_params.verify_ssl = second_params.verify_ssl = true;
+		REQUIRE(first_params.GetTransportReuseDomain() == second_params.GetTransportReuseDomain());
+		REQUIRE(provider->state->can_reuse);
+		const string url = "https://example.com/";
+		REQUIRE(RunManagedRequest(first, first_params, url));
+		REQUIRE(RunManagedRequest(second, second_params, url));
+		CHECK(provider->state->created == 1);
+
+		SECTION("proxy host") {
+			second_params.http_proxy = "other-proxy.example.com";
+		}
+		SECTION("proxy port") {
+			second_params.http_proxy_port++;
+		}
+		SECTION("proxy username") {
+			second_params.http_proxy_username = "other-user";
+		}
+		SECTION("proxy password") {
+			second_params.http_proxy_password = "other-password";
+		}
+		SECTION("proxy removed") {
+			second_params.http_proxy.clear();
+		}
+		SECTION("TLS verification") {
+			second_params.verify_ssl = false;
+		}
+		SECTION("TLS override removed") {
+			second_params.override_verify_ssl = false;
+		}
+		REQUIRE(RunManagedRequest(second, second_params, url));
+		CHECK(provider->state->created == 2);
+		// The cached configuration must not follow mutations of the session's parameters.
+		REQUIRE(RunManagedRequest(first, first_params, url));
+		REQUIRE(RunManagedRequest(second, second_params, url));
+		CHECK(provider->state->created == 2);
+		CHECK(HTTPTransportManagerTestHelper::IdleKeys(*manager) == 2);
+	}
+
+	SECTION("inactive transport fields and request-local settings do not split clients") {
+		auto provider = make_shared_ptr<MockHTTPUtil>(HTTPTransportReusePolicy::SHARED);
+		auto manager = HTTPTransportManagerTestHelper::Create(provider, 1);
+		auto first = manager->CreateSession(nullptr, nullptr);
+		auto second = manager->CreateSession(nullptr, nullptr);
+		auto &params = second.Parameters();
+		params.http_proxy_port = 8080;
+		params.http_proxy_username = "unused-user";
+		params.http_proxy_password = "unused-password";
+		params.verify_ssl = false;
+		params.timeout++;
+		params.keep_alive = false;
+		params.follow_location = false;
+		params.extra_headers["Authorization"] = "request-local";
+		const HTTPTransportConfig first_config(first.Parameters());
+		const HTTPTransportConfig second_config(params);
+		CHECK(first_config == second_config);
+		CHECK(first_config.Hash() == second_config.Hash());
+		CHECK(first_config.Matches(params));
+		REQUIRE(RunManagedRequest(first, first.Parameters(), "https://example.com/"));
+		REQUIRE(RunManagedRequest(second, params, "https://example.com/"));
+		CHECK(provider->state->created == 1);
 	}
 
 	SECTION("generic failure discards only its client") {
