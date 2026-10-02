@@ -13,6 +13,9 @@
 #include "lightweightsemaphore.h"
 
 #include <thread>
+#if defined(__EMSCRIPTEN__) && defined(__EMSCRIPTEN_PTHREADS__)
+#include <emscripten/threading.h>
+#endif
 #else
 #include <queue>
 #endif
@@ -457,6 +460,14 @@ void TaskScheduler::Signal(idx_t n) {
 void TaskScheduler::YieldThread() {
 #ifndef DUCKDB_NO_THREADS
 	std::this_thread::yield();
+#endif
+}
+
+void TaskScheduler::ServiceProxiedCalls() {
+#if defined(__EMSCRIPTEN__) && defined(__EMSCRIPTEN_PTHREADS__)
+	if (emscripten_is_main_runtime_thread()) {
+		emscripten_main_thread_process_queued_calls();
+	}
 #endif
 }
 

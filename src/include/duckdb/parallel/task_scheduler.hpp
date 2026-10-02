@@ -79,6 +79,14 @@ public:
 	//! Yield to other threads
 	static void YieldThread();
 
+	//! On WASM with pthreads, run the calls other threads are blocked on until the
+	//! main runtime thread services them (thread creation, file system calls), when
+	//! called from that thread; a no-op everywhere else. A main-thread loop that
+	//! busy-waits for tasks running on other threads must call it on every pass:
+	//! emscripten services these calls only in futex waits and the JS event loop,
+	//! so a spinning loop that waits on such a task never finishes.
+	static void ServiceProxiedCalls();
+
 	//! Set the allocator flush threshold
 	void SetAllocatorFlushTreshold(idx_t threshold);
 	//! Sets the allocator background thread
