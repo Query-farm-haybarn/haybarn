@@ -1,6 +1,7 @@
 #include "duckdb/main/pending_query_result.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/main/prepared_statement_data.hpp"
+#include "duckdb/parallel/task_scheduler.hpp"
 
 namespace duckdb {
 
@@ -76,6 +77,10 @@ unique_ptr<QueryResult> PendingQueryResult::ExecuteInternal(ClientContextLock &l
 		if (execution_result == PendingExecutionResult::BLOCKED) {
 			CheckExecutableInternal(lock);
 			context->WaitForTask(lock, *this);
+		} else if (execution_result == PendingExecutionResult::NO_TASKS_AVAILABLE) {
+			// The remaining tasks run on other threads, which may be blocked on a
+			// call only this thread can service (WASM).
+			TaskScheduler::ServiceProxiedCalls();
 		}
 	}
 	if (HasError()) {

@@ -439,6 +439,9 @@ void Executor::CancelTasks() {
 	// so those must stay alive until all tasks have completed
 	while (executor_tasks > 0) {
 		WorkOnTasks();
+		// A task still running on another thread may be blocked on a call only
+		// this thread can service (WASM); see TaskScheduler::ServiceProxiedCalls.
+		TaskScheduler::ServiceProxiedCalls();
 	}
 	// Now safe to destroy pipelines, events and states — no tasks reference them
 	lock_guard<mutex> elock(executor_lock);
