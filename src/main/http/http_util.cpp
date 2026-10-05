@@ -515,8 +515,24 @@ duckdb::unique_ptr<HTTPResponse>
 HTTPUtil::RunRequestWithRetry(const std::function<unique_ptr<HTTPResponse>(void)> &on_request,
                               const BaseRequest &request, const std::function<void(void)> &retry_cb) {
 	auto &params = request.params;
+	auto cancelled = [&request]() {
+		return request.cancellation && request.cancellation->load();
+	};
 	idx_t tries = 0;
 	while (true) {
+		// A cancelled request is never (re)attempted: the flag is set when the query
+		// that owns the request is interrupted, and nothing will read the result.
+		if (cancelled()) {
+			if (!request.try_request) {
+				throw InterruptException();
+			}
+			auto response = make_uniq<HTTPResponse>(HTTPStatusCode::INVALID);
+			response->url = request.url;
+			response->request_error = "Request cancelled";
+			response->cancelled = true;
+			response->success = false;
+			return response;
+		}
 		std::exception_ptr caught_e = nullptr;
 		unique_ptr<HTTPResponse> response;
 		string exception_error;
@@ -534,6 +550,11 @@ HTTPUtil::RunRequestWithRetry(const std::function<unique_ptr<HTTPResponse>(void)
 			caught_e = std::current_exception();
 		}
 
+		// A backend that aborted the transfer on the flag reports it as a cancelled
+		// response; surface it as the interrupt it is, as for a cancel noticed above.
+		if (response && response->cancelled && !request.try_request) {
+			throw InterruptException();
+		}
 		// Note: request errors will always be retried
 		bool should_retry = !response || params.http_util.ShouldRetry(request, *response);
 		if (!should_retry) {
@@ -569,10 +590,23 @@ HTTPUtil::RunRequestWithRetry(const std::function<unique_ptr<HTTPResponse>(void)
 					retry_after_ms = MinValue<uint64_t>(retry_after_ms, MAX_HONORED_RETRY_AFTER_MS);
 					sleep_amount = MaxValue<uint64_t>(sleep_amount, retry_after_ms);
 				}
-				std::this_thread::sleep_for(std::chrono::milliseconds(sleep_amount));
+				// Sleep in slices so a cancel ends the wait: with Retry-After the backoff can
+				// reach MAX_HONORED_RETRY_AFTER_MS, which an interrupted query would otherwise
+				// sit out in full.
+				auto wake = std::chrono::steady_clock::now() + std::chrono::milliseconds(sleep_amount);
+				while (!cancelled()) {
+					auto now = std::chrono::steady_clock::now();
+					if (now >= wake) {
+						break;
+					}
+					std::this_thread::sleep_for(
+					    MinValue<std::chrono::steady_clock::duration>(wake - now, std::chrono::milliseconds(100)));
+				}
 #endif
 			}
-			if (retry_cb) {
+			// Cut short by a cancel: the next pass returns before attempting, so don't
+			// prepare an attempt that won't happen.
+			if (retry_cb && !cancelled()) {
 				retry_cb();
 			}
 		} else {
