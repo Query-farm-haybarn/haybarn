@@ -116,6 +116,10 @@ struct ExtensionRepository {
 	static constexpr const char *CORE_REPOSITORY_URL = "http://haybarn-extensions.query.farm/core";
 	static constexpr const char *COMMUNITY_REPOSITORY_URL = "http://haybarn-extensions.query.farm/community";
 
+	//! Haybarn has no mirror serving binaries signed by its trust root.
+	static constexpr const char *CORE_BACKUP_REPOSITORY_URL = "";
+	static constexpr const char *COMMUNITY_BACKUP_REPOSITORY_URL = "";
+
 	//! Debugging repositories (target local, relative paths that are produced by DuckDB's build system)
 	static constexpr const char *BUILD_DEBUG_REPOSITORY_PATH = "./build/debug/repository";
 	static constexpr const char *BUILD_RELEASE_REPOSITORY_PATH = "./build/release/repository";
@@ -134,6 +138,10 @@ struct ExtensionRepository {
 	static string TryGetRepositoryUrl(const string &repository);
 	//! Try to convert a url to a known repository name, will return empty string if the repository is unknown
 	static string TryConvertUrlToKnownRepository(const string &url);
+	//! Try to get the backup server url of a repository url, will return empty string if the repository has no backup
+	static string TryGetBackupRepositoryUrl(const string &url);
+	//! Whether a url points into one of the official DuckDB repositories (core, nightly, community or their backups)
+	static bool IsOfficialRepositoryUrl(const string &url);
 
 	//! Get the default repository, optionally passing a config to allow
 	static ExtensionRepository GetDefaultRepository(optional_ptr<DBConfig> config);

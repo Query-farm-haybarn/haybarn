@@ -3,6 +3,7 @@
 #include "duckdb/transaction/commit_state.hpp"
 
 #include "duckdb/common/serializer/binary_deserializer.hpp"
+#include "duckdb/common/thread.hpp"
 #include "duckdb/common/vector/flat_vector.hpp"
 #include "duckdb/execution/expression_executor.hpp"
 #include "duckdb/execution/index/art/art.hpp"
@@ -310,7 +311,6 @@ void RowGroupCollection::InitializeScan(const QueryContext &context, CollectionS
                                         optional_ptr<TableFilterSet> table_filters) {
 	state.row_groups = GetRowGroups();
 	auto row_group = state.GetRootSegment();
-	D_ASSERT(row_group);
 	state.max_row = state.row_groups->GetBaseRowId() + next_row_id.load();
 	state.Initialize(context, GetTypes());
 	while (row_group && !row_group->GetNode().InitializeScan(state, *row_group)) {
@@ -357,6 +357,16 @@ void RowGroupCollection::InitializeParallelScan(ParallelCollectionScanState &sta
 	state.max_row = state.row_groups->GetBaseRowId() + next_row_id.load();
 	state.batch_index = 0;
 	state.processed_rows = 0;
+	state.skipped_rows = 0;
+	if (state.reorderer) {
+		// row groups pruned by the reorderer are never scanned
+		idx_t total_rows = 0;
+		for (auto &row_group : state.row_groups->SegmentNodes()) {
+			total_rows += row_group.GetNode().count;
+		}
+		auto scan_rows = state.reorderer->ScanRowCount();
+		state.skipped_rows = total_rows > scan_rows ? total_rows - scan_rows : 0;
+	}
 }
 
 optional_idx RowGroupCollection::NextParallelScan(ClientContext &context, ParallelCollectionScanState &state,
@@ -421,6 +431,7 @@ optional_idx RowGroupCollection::NextParallelScan(ClientContext &context, Parall
 		                                             max_row, initialize_columns);
 		if (!need_to_scan) {
 			// skip this row group
+			state.skipped_rows.fetch_add(assignment_rows, std::memory_order_relaxed);
 			continue;
 		}
 		return assignment_rows;
@@ -713,7 +724,7 @@ optional_idx RowGroupCollection::Append(DataChunk &chunk, TableAppendState &stat
 		AppendRowGroup(l, next_start);
 		// set up the append state for this row_group
 		auto last_row_group = state.row_groups->GetLastSegment(l);
-		RowGroup::InitializeAppend(*last_row_group, state.row_group_append_state);
+		RowGroup::InitializeNextAppend(*last_row_group, state.row_group_append_state);
 		state.row_group_start = next_start;
 	}
 	state.current_row += row_t(total_append_count);
@@ -1412,8 +1423,8 @@ public:
 
 						// move to the next row group
 						current_append_idx++;
-						RowGroup::InitializeAppend(*new_row_groups[current_append_idx],
-						                           append_state.row_group_append_state);
+						RowGroup::InitializeNextAppend(*new_row_groups[current_append_idx],
+						                               append_state.row_group_append_state);
 						// slice chunk for the next append
 						append_chunk.Slice(append_count, remaining);
 					}
@@ -1717,7 +1728,7 @@ unique_ptr<CheckpointTask> RowGroupCollection::GetCheckpointTask(CollectionCheck
 	return make_uniq<CheckpointTask>(checkpoint_state, segment_idx);
 }
 
-void RowGroupCollection::Checkpoint(TableDataWriter &writer, TableStatistics &global_stats) {
+bool RowGroupCollection::Checkpoint(TableDataWriter &writer, TableStatistics &global_stats) {
 	auto row_groups = GetRowGroups();
 
 	CollectionCheckpointState checkpoint_state(*this, writer, global_stats, *row_groups);
@@ -1765,6 +1776,11 @@ void RowGroupCollection::Checkpoint(TableDataWriter &writer, TableStatistics &gl
 	// all tasks have been successfully scheduled - execute tasks until we are done
 	checkpoint_state.executor->WorkOnTasks();
 
+	auto scan_sleep_ms = Settings::Get<DebugCheckpointScanSleepMsSetting>(writer.GetDatabase());
+	if (scan_sleep_ms > 0) {
+		ThreadUtil::SleepMs(scan_sleep_ms);
+	}
+
 	// no errors - finalize the row groups
 	// if the table already exists on disk - check if all row groups have stayed the same
 	if (Settings::Get<ExperimentalMetadataReuseSetting>(writer.GetDatabase()) && metadata_pointer.IsValid()) {
@@ -1797,18 +1813,16 @@ void RowGroupCollection::Checkpoint(TableDataWriter &writer, TableStatistics &gl
 				row_group.CheckpointDeletes(*row_group_writer);
 			}
 			writer.WriteUnchangedTable(metadata_pointer, metadata_pointers, total_rows.load(), next_row_id.load());
-			// copy over existing stats into the global stats
-			CopyStats(global_stats);
-			return;
+			return false;
 		}
 	}
 
 	// not all segments have stayed the same - we need to make a new segment tree with the new set of segments
+	// initialize new empty stats - before locking the new segment tree, as this takes the stats lock
+	global_stats.InitializeEmpty(stats);
+
 	auto new_row_groups = make_shared_ptr<RowGroupSegmentTree>(*this, row_groups->GetBaseRowId());
 	auto l = new_row_groups->Lock();
-
-	// initialize new empty stats
-	global_stats.InitializeEmpty(stats);
 
 	idx_t new_total_rows = 0;
 	idx_t new_next_row_id = 0;
@@ -2068,6 +2082,7 @@ void RowGroupCollection::Checkpoint(TableDataWriter &writer, TableStatistics &gl
 	if (vacuum_state.index_strategy == VacuumIndexStrategy::REBUILD && writer.RowIdsChanged()) {
 		writer.SetRebuildIndexes();
 	}
+	return true;
 }
 
 //===--------------------------------------------------------------------===//

@@ -316,6 +316,40 @@ TEST_CASE("Lateral table in out function preserves constant struct fields", "[ta
 	REQUIRE(CHECK_COLUMN(result, 2, {"fixed", "fixed", "fixed"}));
 }
 
+TEST_CASE("Inline named options stay outside lateral table in-out input", "[tablefunction]") {
+	DuckDB db(nullptr);
+	Connection con(db);
+
+	auto bind = [](ClientContext &context, TableFunctionBindInput &input, vector<LogicalType> &return_types,
+	               vector<Identifier> &names) -> unique_ptr<FunctionData> {
+		if (input.input_table_types.size() != 1 || !input.named_parameters.at("enabled").GetValue<bool>()) {
+			throw InvalidInputException("Expected one input column and enabled=true");
+		}
+		return ThrottlingSum::Bind(context, input, return_types, names);
+	};
+	TableFunction function("named_in_out", {LogicalType::INTEGER}, nullptr, bind);
+	function.GetSignature().WithTypedKwargs("options",
+	                                        [](TypedKwargs &options) { options.Add("enabled", LogicalType::BOOLEAN); });
+	function.in_out_function = [](ExecutionContext &, TableFunctionInput &, DataChunk &input, DataChunk &output) {
+		output.Reference(input);
+		return OperatorResultType::NEED_MORE_INPUT;
+	};
+	con.BeginTransaction();
+	CreateTableFunctionInfo info(function);
+	Catalog::GetSystemCatalog(*con.context).CreateTableFunction(*con.context, info);
+	con.Commit();
+
+	for (auto option : {"enabled := 1", "enabled => true", "enabled = true"}) {
+		auto result = con.Query(string("SELECT total FROM range(3) t(i), named_in_out(i::INTEGER, ") + option +
+		                        ") ORDER BY total");
+		REQUIRE_NO_FAIL(*result);
+		REQUIRE(CHECK_COLUMN(result, 0, {0, 1, 2}));
+	}
+	REQUIRE_FAIL(con.Query("SELECT * FROM range(3) t(i), named_in_out(i::INTEGER, enabled := i)"));
+	REQUIRE_FAIL(con.Query("SELECT * FROM range(3) t(i), named_in_out(i::INTEGER, missing := true)"));
+	REQUIRE_FAIL(con.Query("SELECT * FROM range(3) t(i), named_in_out(i::INTEGER, enabled := true, enabled := false)"));
+}
+
 TEST_CASE("Filter pushdown into table in-out functions", "[tablefunction]") {
 	DuckDB db(nullptr);
 	Connection con(db);

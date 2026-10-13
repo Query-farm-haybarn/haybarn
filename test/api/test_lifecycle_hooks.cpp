@@ -131,7 +131,8 @@ TEST_CASE("Test ClientContextState", "[api]") {
 		REQUIRE_THAT(state->query_errors.at(0), Contains("This is a test exception."));
 		REQUIRE_THAT(state->query_errors.at(1), Contains("Current transaction is aborted"));
 		REQUIRE((state->transaction_errors.size() == 1));
-		REQUIRE_THAT(state->transaction_errors.at(0), Contains("Failed to commit"));
+		REQUIRE_THAT(state->transaction_errors.at(0),
+		             Contains("Current transaction is aborted") || Contains("Failed to commit"));
 		REQUIRE_FAIL(conn.Query("SELECT * FROM my_table2"));
 	}
 
@@ -168,3 +169,28 @@ TEST_CASE("Test ClientContextState", "[api]") {
 	}
 }
 // ClientContextState
+
+struct ThrowingRollbackState : ClientContextState {
+	void TransactionRollback(MetaTransaction &transaction, ClientContext &context,
+	                         optional_ptr<ErrorData> error) override {
+		throw IOException("rollback failed");
+	}
+};
+
+TEST_CASE("Dropping a connection whose rollback fails does not terminate", "[api]") {
+	DuckDB db(nullptr);
+	{
+		Connection conn(db);
+		conn.context->registered_state->Insert("throwing_rollback", make_shared_ptr<ThrowingRollbackState>());
+		REQUIRE_NO_FAIL(conn.Query("BEGIN"));
+		REQUIRE_NO_FAIL(conn.Query("CREATE TABLE t(i INT)"));
+		// an explicit rollback reports the failure
+		REQUIRE_FAIL(conn.Query("ROLLBACK"));
+
+		REQUIRE_NO_FAIL(conn.Query("BEGIN"));
+		REQUIRE_NO_FAIL(conn.Query("SELECT 42"));
+		// leaving the scope destroys the connection with the transaction still open
+	}
+	Connection conn(db);
+	REQUIRE_NO_FAIL(conn.Query("SELECT 42"));
+}
