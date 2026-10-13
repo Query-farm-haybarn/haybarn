@@ -78,6 +78,7 @@ engine-encoding scheme:
 |---|---|---|
 | v1.5.4 | `v0.10504.x` (+ `lib/<plat>/v0.10504.x`) | `v2.10504.x` |
 | v1.5.5 | `v0.10505.x` | `v2.10505.x` |
+| v1.5.6 | `v0.10506.x` | `v2.10506.x` |
 
 The trailing `.x` is the Haybarn patch iteration on that engine version (e.g. a
 bindings-only fix that needs no engine roll bumps `v0.10504.0` → `v0.10504.1`).
@@ -88,7 +89,7 @@ module proxy resolves it.
 
 Run **after** a new engine `haybarn-vX.Y.Z-rcN` release exists with its
 `static-libs-*.zip` assets (see prerequisite above). `NN` below = `Y` and `Z`
-zero-padded, e.g. v1.5.5 → `0.10505` / `2.10505`.
+zero-padded, e.g. v1.5.6 → `0.10506` / `2.10506`.
 
 1. **Bindings — re-vendor the binaries.** In `haybarn-go-bindings`:
    - Bump `HAYBARN_VERSION` (and `HAYBARN_REPO` if it ever moves) in the `Makefile`

@@ -33,8 +33,8 @@ working directory; `--test-dir <dir>` tells it where your tests live.
 ## Versions
 
 - `uvx haybarn-unittest` — latest stable.
-- `uvx haybarn-unittest@1.5.5rc1` — pin to a specific release candidate.
-  (PEP 440 normalizes `1.5.5-rc1` → `1.5.5rc1`.)
+- `uvx haybarn-unittest@1.5.6rc1` — pin to a specific release candidate.
+  (PEP 440 normalizes `1.5.6-rc1` → `1.5.6rc1`.)
 
 ## Related
 
