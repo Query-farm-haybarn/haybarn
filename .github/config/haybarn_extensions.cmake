@@ -38,20 +38,21 @@ include("${EXTENSION_CONFIG_BASE_DIR}/fts.cmake")
 # httpfs is a Haybarn build-fork (Query-farm-haybarn/haybarn-httpfs) so Haybarn
 # changes can land on top of upstream over time. Pinned by explicit SHA — bump it
 # when you want to roll forward (or pick up new Haybarn commits on the fork's
-# haybarn branch). Now at 94d8fee: the Haybarn stack rebased onto upstream's
-# v1.5.5 httpfs pin (827222f, +63 commits over v1.5.4's c3f215a). That roll
-# rewrote the request path into thin public wrappers over shared Run*Request
-# runners parameterised by send/error callbacks, so the Haybarn HTTP work was
-# re-expressed against it: conditional reads (If-Match / If-Unmodified-Since)
-# now live entirely in the public wrappers and turn the server's 412 into the
-# "remote file changed" error via the get_error callback, leaving the shared
-# runners byte-identical to upstream. Cancellation moved into the runners, which
-# extends it to every method. HTTP/2 multiplex carried forward unchanged; the
-# URL-ownership/%n submodule bump dropped as already-upstream.
+# haybarn branch). Now at 151fb49: the Haybarn stack rebased onto upstream's
+# v1.5.6 httpfs pin (4bc690d, +15 commits over v1.5.5's 827222f: S3 multipart
+# and expired-token fixes). The one non-mechanical spot: upstream stopped
+# throwing from the GET response handlers and now raises get_error after
+# send_request returns, capturing the >= 400 body in the client instead. The
+# Haybarn cancellation commit was merged with that in RunGetRequest and the
+# httplib streaming GET (cancellation check + upstream's error-body capture);
+# conditional reads, HTTP/2 multiplex and the 412 translation carried forward
+# unchanged. APPLY_PATCHES mirrors upstream's v1.5.6 config, which skips the
+# glob_s3_recursive slow test via .github/patches/extensions/httpfs/.
 duckdb_extension_load(httpfs
         LOAD_TESTS
         GIT_URL https://github.com/Query-farm-haybarn/haybarn-httpfs
-        GIT_TAG 94d8fee6ea02ce952bab164e22689afe8f0cd8ed
+        GIT_TAG 151fb49d9b490a8db15a4b87a1fa1caa21850525
+        APPLY_PATCHES
 )
 include("${EXTENSION_CONFIG_BASE_DIR}/inet.cmake")
 include("${EXTENSION_CONFIG_BASE_DIR}/mysql_scanner.cmake")
@@ -69,15 +70,14 @@ include("${EXTENSION_CONFIG_BASE_DIR}/unity_catalog.cmake")
 # --- Out-of-tree extensions, built from the Haybarn build-forks --------------
 # iceberg, ducklake and delta are forked under Query-farm-haybarn for source/tag
 # control. The extension names stay `iceberg` / `ducklake` / `delta`. Each
-# fork's `haybarn` branch is the exact commit DuckDB v1.5.5 CI pinned (iceberg
-# 45163a28, ducklake d8a1881e, delta 45c40878 — unchanged from v1.5.4) plus the
-# Haybarn CI/NOTICE stack, rebased forward for v1.5.5 — pinned here by explicit
-# SHA so the build is reproducible and unambiguously the 1.5.5 build, never
-# `main`.
+# fork's `haybarn` branch is the exact commit DuckDB v1.5.6 CI pinned (iceberg
+# 890b78a9, ducklake ac7595b0, delta 6059958c) plus the Haybarn CI/NOTICE
+# stack, rebased forward for v1.5.6 — pinned here by explicit SHA so the build
+# is reproducible and unambiguously the 1.5.6 build, never `main`.
 if(NOT MINGW AND NOT ${WASM_ENABLED})
     duckdb_extension_load(delta
             GIT_URL https://github.com/Query-farm-haybarn/haybarn-delta
-            GIT_TAG f2dbbb0b2adeea2fb05159f0d920d0b43f807a56
+            GIT_TAG b364355817c281e182124702005e2949cc1c1a0f
             SUBMODULES extension-ci-tools
     )
 endif()
@@ -90,17 +90,16 @@ if (NOT MINGW)
     duckdb_extension_load(iceberg
             DONT_LINK
             GIT_URL https://github.com/Query-farm-haybarn/haybarn-iceberg
-            GIT_TAG 501a36825e83ee7952d58d22f32890eeedaf1724
+            GIT_TAG e03af7b2ab79aded649fe2188059cbf227a28a12
             )
 endif()
 
 # haybarn-ducklake@haybarn tracks upstream/v1.5-variegata (the 1.5 release line)
 # plus the Haybarn CI/NOTICE stack. Bump this SHA to the branch tip after syncing
-# the fork from v1.5-variegata. 7f29519 = the 9-commit Haybarn CI stack rebased
-# onto upstream's v1.5.5 ducklake pin (d8a1881e) + a .github/duckdb-version bump
-# to v1.5.5. The previously carried `fix relassert` (5947ea32, murmur3
-# constant-vector) is now upstream and was dropped by the rebase.
+# the fork from v1.5-variegata. 028d623 = the 9-commit Haybarn CI stack rebased
+# onto upstream's v1.5.6 ducklake pin (ac7595b0) + a .github/duckdb-version bump
+# to v1.5.6.
 duckdb_extension_load(ducklake
     GIT_URL https://github.com/Query-farm-haybarn/haybarn-ducklake
-    GIT_TAG 7f29519075dae75b2e636ce31f7ef6d3d545c5dd
+    GIT_TAG 028d623356f817971ff58be9e301134ac47082fe
 )
