@@ -1,6 +1,13 @@
+<p align="center">
+  <a href="https://query.farm/products/haybarn/"><img src="https://raw.githubusercontent.com/Query-farm-haybarn/.github/haybarn/profile/assets/haybarn-icon.png" alt="Haybarn" width="120" height="120"></a>
+</p>
+<p align="center">
+  <a href="https://query.farm"><img src="https://query.farm/media-kit/logo/wordmark-light.png" alt="Query.Farm" height="28"></a>
+</p>
+
 # `haybarn` on npm
 
-Run [Haybarn](https://github.com/Query-farm-haybarn/haybarn) — an
+Run [Haybarn](https://query.farm/products/haybarn/) — an
 independent derived distribution of [DuckDB](https://duckdb.org) — directly
 from npm:
 

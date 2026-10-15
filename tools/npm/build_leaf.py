@@ -24,6 +24,14 @@ import pathlib
 import sys
 
 
+HAYBARN_SITE_URL = "https://query.farm/products/haybarn/"
+HAYBARN_ICON_URL = (
+    "https://raw.githubusercontent.com/Query-farm-haybarn/.github/"
+    "haybarn/profile/assets/haybarn-icon.png"
+)
+QUERY_FARM_WORDMARK_URL = "https://query.farm/media-kit/logo/wordmark-light.png"
+
+
 def main() -> int:
     try:
         stage = pathlib.Path(os.environ["STAGE"])
@@ -51,7 +59,7 @@ def main() -> int:
         "name": pkg,
         "version": version,
         "description": desc,
-        "homepage": "https://github.com/Query-farm-haybarn/haybarn",
+        "homepage": "https://query.farm/products/haybarn/",
         "repository": {
             "type": "git",
             "url": "git+https://github.com/Query-farm-haybarn/haybarn.git",
@@ -59,7 +67,7 @@ def main() -> int:
         "license": "MIT",
         "os": [host_os],
         "cpu": [host_cpu],
-        "files": ["bin"],
+        "files": ["bin", "README.md"],
         "publishConfig": {"access": "public"},
     }
     if host_libc != "-":
@@ -68,6 +76,45 @@ def main() -> int:
     out = stage / "package.json"
     out.write_text(json.dumps(spec, indent=2) + "\n")
     print(f"wrote {out}")
+
+    plat = f"{host_os}/{host_cpu}" + (f" ({host_libc})" if host_libc != "-" else "")
+    meta_link = f"[`{meta_name}`](https://www.npmjs.com/package/{meta_name})"
+    readme = "\n".join([
+        '<p align="center">',
+        f'  <a href="{HAYBARN_SITE_URL}"><img src="{HAYBARN_ICON_URL}" '
+        'alt="Haybarn" width="96" height="96"></a>',
+        '</p>',
+        '<p align="center">',
+        f'  <a href="https://query.farm"><img src="{QUERY_FARM_WORDMARK_URL}" '
+        'alt="Query.Farm" height="28"></a>',
+        '</p>',
+        "",
+        f"# `{pkg}`",
+        "",
+        f"> **Part of {meta_link}** — install that package, not this one.",
+        "",
+        f"**[Haybarn]({HAYBARN_SITE_URL})** is a derived distribution of DuckDB "
+        "from [Query.Farm](https://query.farm): the same SQL, APIs and database "
+        "files, with signed releases, rebuilt and signed extensions, engine "
+        "improvements, and supply-chain review built in.",
+        "",
+        f"This is the Haybarn {product} binary for **{plat}**. npm installs it "
+        f"automatically as an optional dependency of {meta_link} on matching "
+        "platforms.",
+        "",
+        "```sh",
+        f"npx {meta_name}@rc",
+        "```",
+        "",
+        "## Trademark",
+        "",
+        "Haybarn is an independent derived distribution of DuckDB published by "
+        "[Query Farm LLC](https://query.farm). Not affiliated with or endorsed by "
+        "the DuckDB Foundation. DuckDB is a trademark of the DuckDB Foundation.",
+        "",
+    ])
+    (stage / "README.md").write_text(readme)
+    print(f"wrote {stage / 'README.md'}")
     return 0
 
 
