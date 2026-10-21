@@ -26,18 +26,18 @@ COPY (SELECT NULL::BLOB) TO '{TEMP_DIR}/name.duckdb_extensionz' (FORMAT BLOB);
 statement error
 COPY (SELECT 42) TO '{TEMP_DIR}/name.duckdb_extension.info' (FORMAT CSV);
 ----
-reserved for DuckDB extensions
+reserved for Haybarn extensions
 
 statement error
 COPY (SELECT 42) TO '{TEMP_DIR}/acme.duckdb_extension.repo.json' (FORMAT CSV);
 ----
-reserved for DuckDB extensions
+reserved for Haybarn extensions
 
 # any future file in the trust domain is covered by the same rule
 statement error
 COPY (SELECT 42) TO '{TEMP_DIR}/name.duckdb_extension.anything' (FORMAT CSV);
 ----
-reserved for DuckDB extensions
+reserved for Haybarn extensions
 
 # the character right after the segment decides: 'z' and '_' do not close the segment, '.' does
 statement ok
@@ -53,7 +53,7 @@ COPY (SELECT 42) TO '{TEMP_DIR}/duckdb_extension.csv' (FORMAT CSV);
 statement error
 ATTACH '{TEMP_DIR}/my_name.duckdb_extension.info'
 ----
-reserved for DuckDB extensions
+reserved for Haybarn extensions
 
 statement error
 ATTACH '{TEMP_DIR}/my_name.duckdb_extension'
