@@ -3678,11 +3678,11 @@ void ShellState::PrintAgentHelp(PrintOutput output, bool startup) {
 		// one line, on every run: that the shell switched modes on its own, why, how to undo it, where the rest is.
 		// A model keeps its context between runs, so the explanation is paid for once through .help agent
 		if (agent_marker.empty()) {
-			PrintF(output, "duckdb agent mode on (%s); .help agent explains the output\n",
+			PrintF(output, "haybarn agent mode on (%s); .help agent explains the output\n",
 			       agent_mode_from_environment ? "DUCKDB_AGENT_MODE is set" : "-agent");
 		} else {
 			PrintF(output,
-			       "duckdb agent mode on: %s is set and stdout is not a terminal; -no-agent turns it off, .help agent "
+			       "haybarn agent mode on: %s is set and stdout is not a terminal; -no-agent turns it off, .help agent "
 			       "explains the output\n",
 			       agent_marker);
 		}
@@ -3721,7 +3721,7 @@ void ShellState::PrintExitHint(int rc) {
 		return;
 	}
 	PrintF(PrintOutput::STDERR,
-	       "hint: -agent renders errors as JSON and results compactly for AI coding agents (duckdb -help lists all "
+	       "hint: -agent renders errors as JSON and results compactly for AI coding agents (haybarn -help lists all "
 	       "options)\n");
 }
 

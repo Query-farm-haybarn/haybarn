@@ -320,7 +320,7 @@ MetadataResult FormatStdin(ShellState &state, const vector<string> &args) {
 
 	if (duckdb::Terminal::IsAtty()) {
 		state.PrintF(PrintOutput::STDERR,
-		             "%s: Error: -format requires SQL input on stdin (e.g. echo 'SELECT 1' | duckdb -format)\n",
+		             "%s: Error: -format requires SQL input on stdin (e.g. echo 'SELECT 1' | haybarn -format)\n",
 		             state.program_name);
 		return MetadataResult::FAIL;
 	}

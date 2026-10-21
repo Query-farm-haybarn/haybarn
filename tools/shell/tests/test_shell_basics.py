@@ -1450,7 +1450,7 @@ def test_about(shell):
     test = ShellTest(shell).statement(".about")
 
     result = test.run()
-    result.check_stdout("DuckDB is an in-process analytical database management system designed for fast ")
+    result.check_stdout("Haybarn is an independent derived distribution of DuckDB")
 
 
 def test_a_select_that_writes_keeps_its_rows_when_the_renderer_stops_early(shell):

@@ -113,7 +113,7 @@ def test_agent_flag_with_output_mode(shell):
     result = test.run()
     result.check_stdout("a\n42")
     result.check_stdout("agent: on")
-    result.check_stderr("duckdb agent mode on (-agent)")
+    result.check_stderr("haybarn agent mode on (-agent)")
 
 def test_duckbox_all_rows(shell):
     # switching back to duckbox keeps the agent-mode row cap (1000), so all 50 rows show
@@ -284,7 +284,7 @@ def test_preamble_on_stderr(shell):
     test = agent_shell(shell).statement("SELECT 1 AS a")
     result = test.run()
     result.check_stderr(
-        "duckdb agent mode on: AI_AGENT is set and stdout is not a terminal; -no-agent turns it off, "
+        "haybarn agent mode on: AI_AGENT is set and stdout is not a terminal; -no-agent turns it off, "
         ".help agent explains the output"
     )
     # one line only - the explanation is behind .help agent
@@ -311,13 +311,13 @@ def test_help_agent_without_agent(shell):
 def test_preamble_names_the_marker(shell):
     test = agent_shell(shell, "CLAUDECODE", "1").statement("SELECT 1 AS a")
     result = test.run()
-    result.check_stderr("duckdb agent mode on: CLAUDECODE is set and stdout is not a terminal;")
+    result.check_stderr("haybarn agent mode on: CLAUDECODE is set and stdout is not a terminal;")
 
 def test_preamble_when_forced(shell):
     # nothing to undo when the flag asked for it
     test = ShellTest(shell).add_argument("-agent").statement("SELECT 1 AS a")
     result = test.run()
-    result.check_stderr("duckdb agent mode on (-agent); .help agent explains the output")
+    result.check_stderr("haybarn agent mode on (-agent); .help agent explains the output")
     assert "-no-agent" not in result.stderr
 
 def test_no_preamble_without_agent(shell):
@@ -461,7 +461,7 @@ def test_exit_hint_after_failure(shell):
     result = test.run()
     assert result.status_code == 1
     result.check_stderr(
-        "\nhint: -agent renders errors as JSON and results compactly for AI coding agents (duckdb -help lists all options)"
+        "\nhint: -agent renders errors as JSON and results compactly for AI coding agents (haybarn -help lists all options)"
     )
 
 def test_no_exit_hint_on_success(shell):
@@ -493,7 +493,7 @@ def test_agent_mode_environment_on(shell):
     test = ShellTest(shell).env_var("DUCKDB_AGENT_MODE", "1").statement(FIFTY_ROWS)
     result = test.run()
     result.check_stdout("|---|")
-    result.check_stderr("duckdb agent mode on (DUCKDB_AGENT_MODE is set)")
+    result.check_stderr("haybarn agent mode on (DUCKDB_AGENT_MODE is set)")
 
 def test_agent_mode_environment_off(shell):
     # DUCKDB_AGENT_MODE=0 turns agent mode off even when an agent's marker is set
