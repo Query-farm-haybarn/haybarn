@@ -7,6 +7,8 @@
 #include "duckdb/main/extension_repository_manager.hpp"
 #include "test_helpers.hpp"
 
+#include <algorithm>
+
 using namespace duckdb;
 
 static constexpr const char *TEST_PUBLIC_KEY =
@@ -84,7 +86,10 @@ TEST_CASE("Test that a repository can trust multiple keys", "[api]") {
 	REQUIRE(KeyIsTrusted(instance, ExtensionRepositoryType::USER_PROVIDED, "acme", OTHER_PUBLIC_KEY));
 }
 
-TEST_CASE("Test that the core and community signing keys are separate", "[api]") {
+// Haybarn: core and community extensions are both signed with the single Haybarn
+// extension key (one trust root, two distribution channels), so unlike upstream the
+// two key sets are not disjoint - every community key is a core key.
+TEST_CASE("Test that core and community extensions share the Haybarn trust root", "[api]") {
 	DuckDB db(nullptr);
 
 	auto core_keys = ExtensionHelper::GetTrustedPublicKeys(*db.instance, ExtensionRepositoryType::CORE, "core");
@@ -94,9 +99,7 @@ TEST_CASE("Test that the core and community signing keys are separate", "[api]")
 	REQUIRE(!community_keys.empty());
 
 	for (auto &community_key : community_keys) {
-		for (auto &core_key : core_keys) {
-			REQUIRE(core_key != community_key);
-		}
+		REQUIRE(std::find(core_keys.begin(), core_keys.end(), community_key) != core_keys.end());
 	}
 }
 

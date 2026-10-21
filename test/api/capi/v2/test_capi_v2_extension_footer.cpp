@@ -28,7 +28,7 @@ TEST_CASE("V2: an extension loads only when pinned to this DuckDB version", "[ca
 	REQUIRE(pinned.GetInvalidMetadataError() == "");
 
 	auto other_build = FooterFor(ExtensionABIType::C_STRUCT_UNSTABLE, "v0.0.0-not-this-build");
-	REQUIRE(StringUtil::Contains(other_build.GetInvalidMetadataError(), "built specifically for DuckDB version"));
+	REQUIRE(StringUtil::Contains(other_build.GetInvalidMetadataError(), "built specifically for engine version"));
 
 	for (auto version : {"v2.0.0", "v2.0.1", "v2.9.0"}) {
 		auto versioned = FooterFor(ExtensionABIType::C_STRUCT, version);
