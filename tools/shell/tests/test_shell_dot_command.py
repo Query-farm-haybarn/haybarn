@@ -147,6 +147,20 @@ def test_catalog_input_mode_ctrl_d_returns_to_sql(shell, term):
         if b" H " not in sql_output[sql_output.index(b"42") :]:
             read_until(b" H ")
         os.write(master_fd, b"\x04")
+        # keep draining the PTY while the shell exits: macOS PTY buffers are small, and a shell blocked writing
+        # its exit output would never terminate
+        exit_output = bytearray()
+        deadline = time.monotonic() + 10
+        while process.poll() is None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise AssertionError(f"Shell did not exit after Ctrl-D; output was {bytes(exit_output)!r}")
+            readable, _, _ = select.select([master_fd], [], [], min(remaining, 0.1))
+            if readable:
+                try:
+                    exit_output.extend(os.read(master_fd, 4096))
+                except OSError:
+                    break
         process.wait(timeout=10)
         assert process.returncode == 0
     finally:
