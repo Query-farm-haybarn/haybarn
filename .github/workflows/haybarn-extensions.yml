@@ -39,12 +39,12 @@ concurrency:
 jobs:
   build:
     name: Build extensions
-    # Pinned after the DuckDB 2.0 smoke workflow passed on all enabled platforms.
-    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/build.yml@c583007af3506d8fac93e328c98dc16566cb4428
+    # ci-tools haybarn-2.0 (upstream v2.0-cyanoptera + Haybarn): haybarn-ci images/actions, Haybarn-only prebuilt.
+    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/build.yml@e2999ad1d129e90b9e67a98351eaf24d1f422812
     with:
       duckdb_version: ${{ inputs.engine_ref || github.sha }}
       override_git_describe: ${{ inputs.override_git_describe }}
-      ci_tools_version: c583007af3506d8fac93e328c98dc16566cb4428
+      ci_tools_version: e2999ad1d129e90b9e67a98351eaf24d1f422812
       ci_tools_repository: Query-farm-haybarn/haybarn-extension-ci-tools
       duckdb_repository: Query-farm-haybarn/haybarn
       extension_repository: duckdb/extension-template
@@ -54,6 +54,10 @@ jobs:
           config: duckdb/.github/config/haybarn_extensions_next_2_0.cmake
           toolchain: main
       reduced_ci_mode: enabled
+      # Haybarn ships osx_amd64, which upstream made opt-in.
+      opt_in_archs: osx_amd64
+      # No engine archive is produced in this run and none may come from DuckDB; build the engine from source.
+      prebuilt_source: disabled
       save_cache: true
       skip_tests: ${{ inputs.skip_tests || false }}
     secrets:
