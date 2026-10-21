@@ -15,6 +15,7 @@ on:
       - next-2.0
     paths:
       - '.github/config/haybarn_extensions_next_2_0.cmake'
+      - '.github/config/haybarn/**'
       - '.github/workflows/haybarn-extensions.yml'
       - 'extension/**'
       - 'src/**'
@@ -31,14 +32,47 @@ on:
         description: 'Build artifacts without running extension tests.'
         type: boolean
         default: false
+      groups:
+        description: 'Comma-separated extension groups: smoke, core, cloud, search, scanner, rust, or all.'
+        type: string
+        default: smoke
 
 concurrency:
   group: haybarn-extensions-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  groups:
+    name: Select extension groups
+    runs-on: ubuntu-latest
+    outputs:
+      groups: ${{ steps.select.outputs.groups }}
+    steps:
+      - id: select
+        env:
+          REQUESTED: ${{ inputs.groups || 'smoke' }}
+        # Upstream Main.yml's groups, with cloud and rust swapped for the Haybarn
+        # variants that build the httpfs/iceberg/ducklake/delta build-forks.
+        run: |
+          set -euo pipefail
+          requested=",${REQUESTED// /},"
+          [[ "$requested" == ",all," ]] && requested=",core,cloud,search,scanner,rust,"
+          emit() { [[ "$requested" == *",$1,"* ]] && printf '%s\n' "$2"; return 0; }
+          {
+            echo 'groups<<HAYBARN_GROUPS_EOF'
+            emit smoke   $'haybarn-2-0:\n  config: duckdb/.github/config/haybarn_extensions_next_2_0.cmake\n  toolchain: main'
+            emit core    $'core:\n  config: duckdb/.github/config/core.cmake\n  extra_toolchains: unixodbc;parser_tools\n  toolchain: main'
+            emit cloud   $'cloud:\n  config: duckdb/.github/config/haybarn/cloud.cmake\n  extra_toolchains: unixodbc;parser_tools\n  toolchain: main'
+            emit search  $'search:\n  config: duckdb/.github/config/search.cmake\n  extra_toolchains: unixodbc;parser_tools\n  toolchain: main'
+            emit scanner $'scanner:\n  config: duckdb/.github/config/scanner.cmake\n  extra_toolchains: unixodbc;parser_tools\n  toolchain: main'
+            emit rust    $'rust:\n  config: duckdb/.github/config/haybarn/rust_based_extensions.cmake\n  default_exclude_archs: wasm_mvp;wasm_eh;wasm_threads;windows_amd64_rtools;windows_amd64_mingw;linux_amd64_musl\n  toolchain: rust'
+            echo 'HAYBARN_GROUPS_EOF'
+          } >> "$GITHUB_OUTPUT"
+          sed -n '/^groups<</,$p' "$GITHUB_OUTPUT"
+
   build:
     name: Build extensions
+    needs: groups
     # ci-tools haybarn-2.0 (upstream v2.0-cyanoptera + Haybarn): haybarn-ci images/actions, Haybarn-only prebuilt.
     uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/build.yml@5fde928546a7c1c4c3fe9f7756b185ae87f27a7f
     with:
@@ -49,10 +83,7 @@ jobs:
       duckdb_repository: Query-farm-haybarn/haybarn
       extension_repository: duckdb/extension-template
       extension_ref: main
-      groups: |
-        haybarn-2-0:
-          config: duckdb/.github/config/haybarn_extensions_next_2_0.cmake
-          toolchain: main
+      groups: ${{ needs.groups.outputs.groups }}
       reduced_ci_mode: enabled
       # Haybarn ships osx_amd64, which upstream made opt-in.
       opt_in_archs: osx_amd64
