@@ -1,9 +1,12 @@
 # fmt: off
 
+import fcntl
 import os
 import select
 import subprocess
+import struct
 import sys
+import termios
 import time
 
 import pytest
@@ -92,6 +95,9 @@ def test_catalog_command_with_input_stays_one_shot(shell):
 @pytest.mark.parametrize("term", [None, "dumb"])
 def test_catalog_input_mode_ctrl_d_returns_to_sql(shell, term):
     master_fd, slave_fd = os.openpty()
+    # a Linux PTY starts at 0x0; linenoise then falls back to querying the cursor position (ESC[6n) and waits for
+    # an answer this PTY never sends. Give it a size, as a real terminal would.
+    fcntl.ioctl(slave_fd, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
     environment = os.environ.copy()
     if term:
         environment["TERM"] = term
@@ -133,8 +139,13 @@ def test_catalog_input_mode_ctrl_d_returns_to_sql(shell, term):
         ctrl_d_output = read_until(b"Switched to SQL mode.")
         assert b"Switched to SQL mode." in ctrl_d_output
         os.write(master_fd, b"SELECT 42 AS sql_result;\n")
-        sql_output = read_until(b" H ")
+        # wait for the result itself: the prompt printed after "Switched to SQL mode." can arrive in a later
+        # read than that message, so waiting for the next prompt could return before the query ran
+        sql_output = read_until(b"42")
         assert b"42" in sql_output
+        # and for the prompt after it, so the closing Ctrl-D reaches the line editor rather than the result output
+        if b" H " not in sql_output[sql_output.index(b"42") :]:
+            read_until(b" H ")
         os.write(master_fd, b"\x04")
         process.wait(timeout=10)
         assert process.returncode == 0
