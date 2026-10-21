@@ -100,6 +100,8 @@ class ReplacementScan;
 class QualifiedName;
 class TableDescription;
 class ColumnDescription;
+class QueryMetrics;
+class QueryMetricsNode;
 class FileSystem;
 class FileHandle;
 class FileOpenOptions;
@@ -1065,6 +1067,8 @@ public:
 	/// Binds a statement without executing it, borrowing it rather than consuming it.
 	/// @param statement The statement to bind.
 	/// @return Its signature: the columns it will produce and the parameters it expects.
+	/// @throws Exception With code `DUCKDB_V2_ERROR_INPUT_METADATA_DEFERRED` for a statement that expands into several,
+	/// whose columns are known only once it executes.
 	auto Bind(const SqlStatement &statement) const -> Signature;
 
 	/// Resolves a table name and snapshots its description: where it resolved, its columns, and per-column facts.
@@ -1072,6 +1076,17 @@ public:
 	/// @throws Exception When the name resolves to nothing, to a view, or is ambiguous between a schema and an attached
 	/// database.
 	auto DescribeTable(const QualifiedName &name) const -> TableDescription;
+
+	/// Enables or disables profiling for the queries this connection runs from now on, which gathers the metrics
+	/// `GetQueryMetrics` reports. Profiling also prints every profile as the `enable_profiling` and `profiling_output`
+	/// options configure, by default to the standard output; set `enable_profiling` to `no_output` to only gather
+	/// metrics. Unstable API.
+	auto EnableProfiling(bool enabled = true) -> void;
+
+	/// Takes a snapshot of the metrics of the last query this connection finished. What it holds is decided by the
+	/// profiling configuration, e.g. `SET enable_profiling = 'no_output'`. Unstable API.
+	/// @throws Exception While a result on this connection is still live.
+	auto GetQueryMetrics() const -> QueryMetrics;
 
 	/// Prepares a statement into a handle that can be executed repeatedly, borrowing it rather than consuming it.
 	/// @param statement The statement to prepare.
@@ -3162,15 +3177,16 @@ public:
 	~QueryResult() override;
 
 	/// The result's columns, their names and types, as one owned `Schema`.
-	/// @throws InvalidInputException When the schema is not available yet; step the result first.
+	/// @throws Exception With code `DUCKDB_V2_ERROR_INPUT_METADATA_DEFERRED` when the schema is not available yet, for
+	/// a statement that expands into several; step the result first.
 	auto GetSchema() const -> Schema;
 
 	/// The shape of the result, so a caller can decide between consuming rows and draining without inspecting the SQL.
-	/// @throws InvalidInputException When the shape is not available yet; step the result first.
+	/// @throws Exception With code `DUCKDB_V2_ERROR_INPUT_METADATA_DEFERRED` when the shape is not available yet, for a
+	/// statement that expands into several; step the result first.
 	auto GetResultType() const -> ResultType;
 
-	/// The kind of SQL statement this result came from.
-	/// @throws InvalidInputException When the kind is not available yet; step the result first.
+	/// The kind of SQL statement this result came from, as written: MULTI for one that expands into several.
 	auto GetStatementType() const -> StatementType;
 
 	/// Does a bounded amount of work and returns without blocking.
@@ -3252,16 +3268,16 @@ public:
 	/// copy. Available as soon as `QueryResult::GetSchema` would be: at once for most statements, after stepping for
 	/// one that expands into several, such as PIVOT.
 	/// @param out Caller-allocated; overwritten. The caller then owns it and releases it with `out.release(&out)`.
-	/// @throws InvalidInputException When the schema is not available yet; step the result first. `out` is left
-	/// released on any throw.
+	/// @throws Exception With code `DUCKDB_V2_ERROR_INPUT_METADATA_DEFERRED` when the schema is not available yet;
+	/// step the result first. `out` is left released on any throw.
 	auto GetSchema(ArrowSchema &out) const -> void;
 
 	/// The shape of the result, so a caller can decide between reading arrays and draining without inspecting the SQL.
-	/// @throws InvalidInputException When the shape is not available yet; step the result first.
+	/// @throws Exception With code `DUCKDB_V2_ERROR_INPUT_METADATA_DEFERRED` when the shape is not available yet, for a
+	/// statement that expands into several; step the result first.
 	auto GetResultType() const -> ResultType;
 
-	/// The kind of SQL statement this result came from.
-	/// @throws InvalidInputException When the kind is not available yet; step the result first.
+	/// The kind of SQL statement this result came from, as written: MULTI for one that expands into several.
 	auto GetStatementType() const -> StatementType;
 
 	/// Does a bounded amount of work and returns without blocking.
@@ -6684,6 +6700,75 @@ public:
 
 private:
 	explicit ColumnDescription(void *impl);
+};
+
+//----------------------------------------------------------------------------------------------------------------------
+// Query Metrics
+//----------------------------------------------------------------------------------------------------------------------
+
+/// An owned snapshot of the metrics of a query, taken by `Connection::GetQueryMetrics`: a tree whose root describes
+/// the query as a whole and whose other nodes describe its operators. Later queries do not update it. Which metrics
+/// are present, their names and the shape of the tree may change between versions. Unstable API.
+class QueryMetrics final : public detail::Handle<QueryMetrics> {
+	friend detail::HandleFactory;
+
+public:
+	QueryMetrics(QueryMetrics &&) noexcept = default;
+	QueryMetrics &operator=(QueryMetrics &&) noexcept = default;
+
+	~QueryMetrics() override;
+
+	/// The node describing the query as a whole.
+	/// @return A borrowed node, valid for as long as this snapshot is.
+	auto GetRoot() const -> QueryMetricsNode;
+
+private:
+	explicit QueryMetrics(void *impl);
+};
+
+/// One node of a `QueryMetrics` snapshot, carrying a set of named, numeric metrics. Borrowed, valid for as long as the
+/// snapshot is. Unstable API.
+class QueryMetricsNode final : public detail::Handle<QueryMetricsNode> {
+	friend detail::HandleFactory;
+
+public:
+	QueryMetricsNode(QueryMetricsNode &&) noexcept = default;
+	QueryMetricsNode &operator=(QueryMetricsNode &&) noexcept = default;
+
+	~QueryMetricsNode() override;
+
+	/// `QUERY` for the root node, the name of the operator, e.g. `TABLE_SCAN`, for the others.
+	/// @return A view borrowed from the snapshot.
+	auto GetName() const -> std::string_view;
+
+	/// How many children the node has.
+	auto GetChildCount() const -> idx_t;
+
+	/// One child of the node.
+	/// @param index Child index in [0, GetChildCount()).
+	/// @throws Exception When the index is out of range.
+	auto GetChild(idx_t index) const -> QueryMetricsNode;
+
+	/// How many metrics the node carries.
+	auto GetMetricCount() const -> idx_t;
+
+	/// The name of one metric, e.g. `query.total_time`. The order of the metrics is unspecified.
+	/// @param index Metric index in [0, GetMetricCount()).
+	/// @return A view borrowed from the snapshot.
+	/// @throws Exception When the index is out of range.
+	auto GetMetricName(idx_t index) const -> std::string_view;
+
+	/// The value of one metric, a number such as a UBIGINT count or a DOUBLE duration.
+	/// @param index Metric index in [0, GetMetricCount()).
+	/// @throws Exception When the index is out of range.
+	auto GetMetricValue(idx_t index) const -> Value;
+
+	/// Looks a metric up by its exact name.
+	/// @return Its value, or nothing when the node does not carry it.
+	auto GetMetric(std::string_view name) const -> std::optional<Value>;
+
+private:
+	explicit QueryMetricsNode(void *impl);
 };
 
 //----------------------------------------------------------------------------------------------------------------------

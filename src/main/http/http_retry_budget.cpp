@@ -1,122 +1,243 @@
 #include "duckdb/main/http/http_retry_budget.hpp"
 
 #include "duckdb/common/limits.hpp"
+#include "duckdb/common/operator/cast_operators.hpp"
 #include "duckdb/common/random_engine.hpp"
 #include "duckdb/common/string_util.hpp"
+#include "duckdb/common/types/timestamp.hpp"
+#include "duckdb/function/scalar/strftime_format.hpp"
 #include "duckdb/main/http/http_util.hpp"
 
-#ifndef DUCKDB_NO_THREADS
-#include <algorithm>
-#include <cctype>
-#include <chrono>
 #include <cmath>
-#include <cstdio>
-#include <cstring>
+#ifndef DUCKDB_NO_THREADS
+#include <chrono>
 #include <thread>
 #endif
 
 namespace duckdb {
 
-#ifndef DUCKDB_NO_THREADS
-namespace {
-
-// Upper bound on a honored Retry-After — a hostile/misconfigured server must not
-// be able to stall a request for an unbounded time (60s).
-constexpr uint64_t MAX_HONORED_RETRY_AFTER_MS = 60000;
-
-// Days since 1970-01-01 for a proleptic-Gregorian y/m/d (Howard Hinnant's
-// days-from-civil). Portable — avoids the non-standard timegm().
-int64_t DaysFromCivil(int64_t y, uint32_t m, uint32_t d) {
-	y -= m <= 2;
-	const int64_t era = (y >= 0 ? y : y - 399) / 400;
-	const uint32_t yoe = static_cast<uint32_t>(y - era * 400);
-	const uint32_t doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
-	const uint32_t doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-	return era * 146097 + static_cast<int64_t>(doe) - 719468;
-}
-
-uint32_t MonthFromAbbrev(const char *mon) {
-	static const char *kMonths[12] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
-	                                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-	for (uint32_t i = 0; i < 12; i++) {
-		if (std::strncmp(mon, kMonths[i], 3) == 0) {
-			return i + 1;
-		}
-	}
-	return 0;
-}
-
-// Parse an RFC 7231 / 9110 IMF-fixdate ("Wed, 21 Oct 2015 07:28:00 GMT") to epoch
-// seconds (UTC). Returns false if it does not match. DuckDB's own timestamp
-// parser does not accept the weekday/month-name HTTP-date form, hence this.
-bool ParseHttpDateEpoch(const string &s, int64_t &out_epoch) {
-	char wday[8] = {0};
-	char mon[8] = {0};
-	int day = 0, year = 0, hh = 0, mm = 0, ss = 0;
-	int n = std::sscanf(s.c_str(), "%3s %d %3s %d %d:%d:%d", wday, &day, mon, &year, &hh, &mm, &ss);
-	if (n != 7) {
-		n = std::sscanf(s.c_str(), "%*[^,], %d %3s %d %d:%d:%d", &day, mon, &year, &hh, &mm, &ss);
-		if (n != 6) {
-			return false;
-		}
-	}
-	uint32_t month = MonthFromAbbrev(mon);
-	if (month == 0 || day < 1 || day > 31 || hh < 0 || hh > 23 || mm < 0 || mm > 59 || ss < 0 || ss > 60) {
-		return false;
-	}
-	out_epoch = DaysFromCivil(year, month, static_cast<uint32_t>(day)) * 86400 + static_cast<int64_t>(hh) * 3600 +
-	            static_cast<int64_t>(mm) * 60 + ss;
-	return true;
-}
-
-// Parse a Retry-After response header (RFC 9110 §10.2.3): delta-seconds or an
-// HTTP-date. On success sets out_ms (>= 0) and returns true.
-bool TryParseRetryAfterMs(string v, uint64_t &out_ms) {
-	StringUtil::Trim(v); // in-place (void return)
-	if (v.empty()) {
-		return false;
-	}
-	if (std::all_of(v.begin(), v.end(), [](unsigned char c) { return std::isdigit(c) != 0; })) {
-		try {
-			auto seconds = std::stoull(v);
-			out_ms = seconds >= MAX_HONORED_RETRY_AFTER_MS / 1000 ? MAX_HONORED_RETRY_AFTER_MS : seconds * 1000;
-			return true;
-		} catch (...) {
-			return false;
-		}
-	}
-	int64_t when_epoch;
-	if (!ParseHttpDateEpoch(v, when_epoch)) {
-		return false;
-	}
-	auto now_epoch =
-	    std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-	int64_t delta = when_epoch - static_cast<int64_t>(now_epoch);
-	out_ms = delta > 0 ? static_cast<uint64_t>(delta) * 1000ull : 0;
-	return true;
-}
-
-} // namespace
-#endif
-
 HTTPRetryDecision HTTPRetryDecision::Finish() {
 	return HTTPRetryDecision(Type::FINISH);
+}
+
+HTTPRetryDecision HTTPRetryDecision::Success() {
+	return HTTPRetryDecision(Type::SUCCESS);
+}
+
+HTTPRetryDecision HTTPRetryDecision::Failure() {
+	return HTTPRetryDecision(Type::FAILURE);
+}
+
+HTTPRetryDecision HTTPRetryDecision::Correction() {
+	return HTTPRetryDecision(Type::CORRECTION);
 }
 
 HTTPRetryDecision HTTPRetryDecision::Retry() {
 	return HTTPRetryDecision(Type::RETRY);
 }
 
+HTTPRetryDecision HTTPRetryDecision::Transient() {
+	return HTTPRetryDecision(Type::TRANSIENT);
+}
+
 HTTPRetryDecision HTTPRetryDecision::Throttled(const string &retry_after) {
 	return HTTPRetryDecision(Type::THROTTLED, retry_after);
 }
 
-HTTPRetryBudget::HTTPRetryBudget(const HTTPParams &params)
-    : retries(params.retries), retry_wait_ms(params.retry_wait_ms), retry_backoff(params.retry_backoff) {
+void HTTPRetryQuota::Touch(int64_t now_ms) {
+	if (now_ms - last_used_ms >= IDLE_RESET_MS) {
+		capacity = INITIAL_CAPACITY;
+	}
+	last_used_ms = now_ms;
+}
+
+bool HTTPRetryQuota::TryAcquire(int64_t cost, int64_t now_ms) {
+	lock_guard<mutex> guard(lock);
+	Touch(now_ms);
+	if (cost > capacity) {
+		return false;
+	}
+	capacity -= cost;
+	return true;
+}
+
+void HTTPRetryQuota::Release(int64_t amount, int64_t now_ms) {
+	lock_guard<mutex> guard(lock);
+	Touch(now_ms);
+	capacity = MinValue<int64_t>(capacity + amount, INITIAL_CAPACITY);
+}
+
+int64_t HTTPRetryQuota::Available() const {
+	lock_guard<mutex> guard(lock);
+	return capacity;
+}
+
+int64_t HTTPRetryQuota::IdleMs(int64_t now_ms) const {
+	lock_guard<mutex> guard(lock);
+	return now_ms - last_used_ms;
+}
+
+HTTPRetryBudget::HTTPRetryBudget(const HTTPParams &params, HTTPRetryOutcomeOwner owner_p)
+    : retries(params.retries), retry_wait_ms(params.retry_wait_ms), retry_backoff(params.retry_backoff),
+      owner(owner_p) {
+#ifdef DUCKDB_NO_THREADS
+	// Without threads there is no back-off sleep, so the schedule settings go unused.
+	(void)retry_wait_ms;
+	(void)retry_backoff;
+#endif
 }
 
 uint64_t HTTPRetryBudget::ThrottledRetries() const {
 	return throttled_retries;
+}
+
+uint64_t HTTPRetryBudget::RetriesUsed() const {
+	return retries_used;
+}
+
+uint64_t HTTPRetryBudget::BeginAttempt() {
+	return ++attempts;
+}
+
+uint64_t HTTPRetryBudget::ThrottleExtraRetries() const {
+#ifndef DUCKDB_NO_THREADS
+	// http_retries=0 switches retries off entirely, throttled or not.
+	return retries > 0 ? THROTTLE_EXTRA_RETRIES : 0;
+#else
+	// Without threads we cannot sleep between retries, so do not add zero-delay retries.
+	return 0;
+#endif
+}
+
+uint64_t HTTPRetryBudget::Corrections() const {
+	// The first send and every admitted retry are accounted for; any other send was a corrected re-send.
+	const auto accounted = 1 + retries_used;
+	return attempts > accounted ? attempts - accounted : 0;
+}
+
+uint64_t HTTPRetryBudget::MaxAttempts() const {
+	return 1 + retries + ThrottleExtraRetries() + Corrections();
+}
+
+bool HTTPRetryBudget::InRun() const {
+	return run_depth > 0;
+}
+
+bool HTTPRetryBudget::QuotaExhausted() const {
+	return quota_exhausted;
+}
+
+bool HTTPRetryBudget::CorrectionsExhausted() const {
+	return corrections_exhausted;
+}
+
+void HTTPRetryBudget::BindQuota(shared_ptr<HTTPRetryQuota> quota_p) {
+	quota = std::move(quota_p);
+}
+
+HTTPRetryOutcomeOwner HTTPRetryBudget::Owner() const {
+	return owner;
+}
+
+void HTTPRetryBudget::RequireCoordinator(const char *what) const {
+	if (owner != HTTPRetryOutcomeOwner::COORDINATOR) {
+		throw InternalException(
+		    "HTTP retry budget: %s is the coordinator's decision, but this operation's outcome is "
+		    "owned by the HTTP status; construct the budget with HTTPRetryOutcomeOwner::COORDINATOR",
+		    what);
+	}
+}
+
+void HTTPRetryBudget::ReportSuccess() {
+	RequireCoordinator("ReportSuccess");
+	Settle(true);
+}
+
+void HTTPRetryBudget::ReportFailure() {
+	RequireCoordinator("ReportFailure");
+	Settle(false);
+}
+
+void HTTPRetryBudget::RecordStatusOutcome(bool success) {
+	if (owner != HTTPRetryOutcomeOwner::STATUS) {
+		// The coordinator validates the response and reports; what the status says is never final here.
+		return;
+	}
+	status_outcome = success ? RecordedOutcome::SUCCESS : RecordedOutcome::FAILURE;
+	if (!InRun()) {
+		// Nobody else is going to judge this response.
+		Settle(success);
+	}
+}
+
+void HTTPRetryBudget::Settle(bool success) {
+	status_outcome = RecordedOutcome::NONE;
+	if (outcome_settled) {
+		// Refunded or charged already: the operation has one outcome.
+		return;
+	}
+	outcome_settled = true;
+	if (success) {
+		if (last_retry_quota) {
+			last_retry_quota->Release(last_retry_cost);
+		} else if (quota) {
+			quota->Release(HTTPRetryQuota::NO_RETRY_REFUND);
+		}
+	}
+	ForgetLastRetry();
+}
+
+void HTTPRetryBudget::ForgetLastRetry() {
+	last_retry_quota.reset();
+	last_retry_cost = 0;
+}
+
+uint64_t HTTPRetryBudget::BackoffMs(uint64_t retry_wait_ms, float retry_backoff, uint64_t retry, uint64_t floor_ms,
+                                    uint64_t random_value, bool throttled) {
+	D_ASSERT(retry > 0);
+	const auto exponent = static_cast<double>(retry - 1);
+	// Cap in the double domain so the exponential cannot overflow the cast.
+	const auto base_ms =
+	    MinValue<double>(static_cast<double>(retry_wait_ms) * pow(static_cast<double>(retry_backoff), exponent),
+	                     static_cast<double>(MAX_BACKOFF_MS));
+	const auto base = static_cast<uint64_t>(base_ms);
+	// Throttled retries never collapse onto the moment the server asked us to slow down.
+	const auto lower = throttled ? base / 2 : 0;
+	const auto jittered = lower + random_value % (base - lower + 1);
+	return MaxValue<uint64_t>(jittered, MinValue<uint64_t>(floor_ms, MAX_BACKOFF_MS));
+}
+
+static const StrpTimeFormat &RetryAfterDateFormat() {
+	// RFC 7231 IMF-fixdate, e.g. "Sun, 06 Nov 1994 08:49:37 GMT".
+	static const StrpTimeFormat format = []() {
+		StrpTimeFormat result;
+		auto error = StrTimeFormat::ParseFormatSpecifier("%a, %d %b %Y %H:%M:%S GMT", result);
+		D_ASSERT(error.empty());
+		(void)error;
+		return result;
+	}();
+	return format;
+}
+
+bool HTTPRetryBudget::TryParseRetryAfterMs(const string &retry_after, uint64_t &delay_ms) {
+	string value = retry_after;
+	StringUtil::Trim(value);
+	if (value.empty()) {
+		return false;
+	}
+	uint64_t seconds = 0;
+	if (TryCast::Operation<string_t, uint64_t>(string_t(value), seconds)) {
+		delay_ms = seconds > MAX_BACKOFF_MS / 1000 ? MAX_BACKOFF_MS : seconds * 1000;
+		return true;
+	}
+	timestamp_t target;
+	if (!RetryAfterDateFormat().TryParseTimestamp(value.c_str(), value.size(), target)) {
+		return false;
+	}
+	const auto now_ms = Timestamp::GetEpochMs(Timestamp::GetCurrentTimestamp());
+	const auto target_ms = Timestamp::GetEpochMs(target);
+	delay_ms = target_ms > now_ms ? static_cast<uint64_t>(target_ms - now_ms) : 0;
+	return true;
 }
 
 void HTTPRetryBudget::Run(const std::function<HTTPRetryDecision()> &attempt) {
@@ -128,57 +249,110 @@ void HTTPRetryBudget::Run(const std::function<HTTPRetryDecision()> &attempt,
 	if (!attempt) {
 		throw InternalException("HTTP retry loop requires an attempt callback");
 	}
+	// A refusal belongs to the run that hit it, not to later requests sharing the budget.
+	quota_exhausted = false;
+	corrections_exhausted = false;
+	const bool outermost = !InRun();
+	if (outermost) {
+		// A new operation leg: whatever an earlier leg settled is history.
+		status_outcome = RecordedOutcome::NONE;
+		outcome_settled = false;
+	}
+	struct RunDepthGuard {
+		explicit RunDepthGuard(uint64_t &depth_p) : depth(depth_p) {
+			depth++;
+		}
+		~RunDepthGuard() {
+			depth--;
+		}
+		uint64_t &depth;
+	} depth_guard(run_depth);
 	for (;;) {
 		auto decision = attempt();
-		if (decision.type == HTTPRetryDecision::Type::FINISH || !ConsumeAndWait(decision)) {
+		switch (decision.type) {
+		case HTTPRetryDecision::Type::SUCCESS:
+			// The coordinator validated the response: the explicit outcome is final wherever it is decided.
+			RequireCoordinator("a Success decision");
+			Settle(true);
 			return;
-		}
-		if (before_retry) {
-			before_retry();
+		case HTTPRetryDecision::Type::FAILURE:
+			RequireCoordinator("a Failure decision");
+			Settle(false);
+			return;
+		case HTTPRetryDecision::Type::FINISH:
+			if (outermost && status_outcome != RecordedOutcome::NONE) {
+				// A status-owned operation is over and nobody judges it: the outcome core recorded from the status
+				// is settled now. Without one the caller records the outcome itself after the run. A
+				// coordinator-owned budget never records a status and waits for the coordinator's report.
+				Settle(status_outcome == RecordedOutcome::SUCCESS);
+			}
+			return;
+		case HTTPRetryDecision::Type::CORRECTION:
+			if (!AdmitCorrection()) {
+				return;
+			}
+			continue;
+		default:
+			if (!ConsumeAndWait(decision)) {
+				return;
+			}
+			if (before_retry) {
+				before_retry();
+			}
 		}
 	}
+}
+
+bool HTTPRetryBudget::AdmitCorrection() {
+	// The corrected request is a new send of the same operation: the last response does not count.
+	status_outcome = RecordedOutcome::NONE;
+	if (corrections_admitted >= MAX_CORRECTIONS) {
+		// The operation ends with the response it has, and its retries did not get it through.
+		corrections_exhausted = true;
+		ForgetLastRetry();
+		return false;
+	}
+	corrections_admitted++;
+	return true;
 }
 
 bool HTTPRetryBudget::ConsumeAndWait(const HTTPRetryDecision &decision) {
 	D_ASSERT(decision.type != HTTPRetryDecision::Type::FINISH);
 	const bool throttled = decision.type == HTTPRetryDecision::Type::THROTTLED;
-#ifndef DUCKDB_NO_THREADS
-	static constexpr uint64_t THROTTLE_EXTRA_RETRIES = 5;
-#else
-	// Without threads we cannot sleep between retries, so do not add zero-delay retries.
-	static constexpr uint64_t THROTTLE_EXTRA_RETRIES = 0;
-#endif
-	const auto extra_retries = throttled ? THROTTLE_EXTRA_RETRIES : 0;
+	const auto extra_retries = throttled ? ThrottleExtraRetries() : 0;
+	// Asking for a retry means the last attempt did not get the operation through, whatever a nested loop recorded.
+	status_outcome = RecordedOutcome::NONE;
 	if (retries_used >= retries && retries_used - retries >= extra_retries) {
+		// Nothing left to refund: the retries already spent did not get this request through.
+		ForgetLastRetry();
 		return false;
 	}
+	const auto cost = decision.type == HTTPRetryDecision::Type::TRANSIENT ? HTTPRetryQuota::TRANSIENT_RETRY_COST
+	                                                                      : HTTPRetryQuota::RETRY_COST;
+	if (quota && !quota->TryAcquire(cost)) {
+		quota_exhausted = true;
+		ForgetLastRetry();
+		return false;
+	}
+	// The admitted retry is the one a later success refunds; its outcome is still open.
+	last_retry_quota = quota;
+	last_retry_cost = cost;
+	outcome_settled = false;
 	retries_used++;
 	if (throttled) {
 		throttled_retries++;
 	}
 #ifndef DUCKDB_NO_THREADS
-	if (retries_used > 1 || throttled) {
-		static constexpr uint64_t THROTTLE_MAX_BACKOFF_MS = 10000;
-		const auto backoff_exp = static_cast<double>(throttled ? retries_used - 1 : retries_used - 2);
-		const auto backoff_ms = (double)retry_wait_ms * pow(retry_backoff, backoff_exp);
-		// Cap in the double domain to avoid overflow in the cast.
-		uint64_t sleep_amount = (uint64_t)MinValue<double>(backoff_ms, (double)NumericLimits<int64_t>::Maximum());
-		if (throttled) {
-			sleep_amount = MinValue<uint64_t>(sleep_amount, THROTTLE_MAX_BACKOFF_MS);
-			// Jitter the backoff before applying the server's requested delay as a floor.
-			RandomEngine random;
-			sleep_amount -= random.NextRandomInteger64() % (sleep_amount / 2 + 1);
-			uint64_t retry_after_ms;
-			if (TryParseRetryAfterMs(decision.retry_after, retry_after_ms)) {
-				sleep_amount =
-				    MaxValue<uint64_t>(sleep_amount, MinValue<uint64_t>(retry_after_ms, MAX_HONORED_RETRY_AFTER_MS));
-			}
-		}
-		std::this_thread::sleep_for(std::chrono::milliseconds(sleep_amount));
+	uint64_t floor_ms = 0;
+	if (throttled && !decision.retry_after.empty()) {
+		TryParseRetryAfterMs(decision.retry_after, floor_ms);
 	}
-#else
-	(void)retry_wait_ms;
-	(void)retry_backoff;
+	RandomEngine random;
+	const auto sleep_ms =
+	    BackoffMs(retry_wait_ms, retry_backoff, retries_used, floor_ms, random.NextRandomInteger64(), throttled);
+	if (sleep_ms > 0) {
+		std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
+	}
 #endif
 	return true;
 }
