@@ -2,6 +2,14 @@
 # platforms. Self-contained (does not reuse DuckDB's S3-staging-coupled release
 # workflows). Artifacts are uploaded for the haybarn-publish workflow to sign
 # and attach to a GitHub Release.
+#
+# DuckDB 2.0: mirrors upstream's release jobs (Main.yml linux-release /
+# linux-release-musl, OSX.yml, Windows.yml) — bundled_extensions.cmake,
+# DUCKDB_CAPABILITIES without the local extension repository, the CLI CPU
+# baseline, ThinLTO for glibc Linux, clang-cl on Windows, and
+# `make static-libs-release-artifact`. The static-libs archives are also staged
+# to Haybarn's R2 tree so extension builds link the Haybarn engine instead of
+# compiling it (and never DuckDB's own archives).
 name: Haybarn Release
 
 on:
@@ -11,11 +19,15 @@ on:
   workflow_dispatch:
     inputs:
       override_git_describe:
-        description: 'Version string to embed (defaults to the upstream tag, e.g. v1.5.5)'
+        description: 'Version string to embed (defaults to the upstream tag, e.g. v2.0.0)'
         type: string
       skip_tests:
         description: 'Pass "true" to skip tests'
         type: string
+      stage_prebuilt:
+        description: 'Upload the static-libs archives to Haybarn staging (always on for tag pushes)'
+        type: boolean
+        default: false
 
 concurrency:
   group: haybarn-release-${{ github.ref }}
@@ -28,15 +40,21 @@ permissions:
 
 env:
   # Haybarn is built from a specific upstream DuckDB tag. The version string the
-  # binary reports stays the upstream version (e.g. v1.5.5) for storage and
+  # binary reports stays the upstream version (e.g. v2.0.0) for storage and
   # extension-path compatibility; see the plan's branding decisions.
-  OVERRIDE_GIT_DESCRIBE: ${{ inputs.override_git_describe || 'v1.5.5' }}
+  OVERRIDE_GIT_DESCRIBE: ${{ inputs.override_git_describe || 'v2.0.0' }}
   # Haybarn-specific version string that drives the startup banner + `-version`
   # flag (distinct from the upstream OVERRIDE_GIT_DESCRIBE above which dictates
   # storage compat). On tag push (`refs/tags/haybarn-v...`) GITHUB_REF_NAME is
-  # the tag itself ("haybarn-v1.5.5-rc1"); on workflow_dispatch it's empty, and
+  # the tag itself ("haybarn-v2.0.0-rc1"); on workflow_dispatch it's empty, and
   # CMake will derive it from `git describe --match 'haybarn-v*'` instead.
   HAYBARN_GIT_DESCRIBE: ${{ startsWith(github.ref, 'refs/tags/haybarn-v') && github.ref_name || '' }}
+  # haybarn-ci build images (fork of duckdb/duckdb-ci, published by its
+  # haybarn-images.yml; alias v2.0.0).
+  HAYBARN_CI_IMAGE_VERSION: 20261021-824906a5
+  # Engine static libraries, in the order upstream packages them. Paths are
+  # relative to the build directory.
+  STATIC_LIBRARIES_UNIX: src/libhaybarn_static.a src/libduckdb_shell.a src/main/http/libduckdb_httplib.a src/main/extension/libduckdb_loadable_extensions.a
 
 jobs:
   linux:
@@ -45,11 +63,15 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - { runner: ubuntu-24.04,     arch: amd64, image: x86_64,  libc: glibc }
-          - { runner: ubuntu-24.04-arm,  arch: arm64, image: aarch64, libc: glibc }
-          - { runner: ubuntu-24.04,     arch: amd64,                 libc: musl  }
-          - { runner: ubuntu-24.04-arm,  arch: arm64,                 libc: musl  }
+          # glibc legs are upstream's "optimized" canonical builds (ThinLTO, native
+          # static archives); musl legs are its non-LTO builds.
+          - { runner: ubuntu-24.04,     arch: amd64, image: manylinux_2_28_amd64_main,  libc: glibc, march: x86-64-v3 }
+          - { runner: ubuntu-24.04-arm,  arch: arm64, image: manylinux_2_28_aarch64_main, libc: glibc, march: armv8-a }
+          - { runner: ubuntu-24.04,     arch: amd64, image: alpine_3_22_amd64_main,     libc: musl,  march: x86-64-v3 }
+          - { runner: ubuntu-24.04-arm,  arch: arm64, image: alpine_3_22_aarch64_main,   libc: musl,  march: armv8-a }
     runs-on: ${{ matrix.config.runner }}
+    env:
+      SUFFIX: ${{ matrix.config.arch }}${{ matrix.config.libc == 'musl' && '-musl' || '' }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -58,7 +80,9 @@ jobs:
       # Persist the ccache directory across runs. The docker builds set
       # CCACHE_DIR=$PWD/.ccache and bind-mount $PWD, so .ccache in the workspace
       # is the cache. Without this every release build is a cold full recompile.
+      # (The ThinLTO glibc legs bypass ccache, as upstream does.)
       - name: ccache
+        if: matrix.config.libc == 'musl'
         uses: actions/cache@v5
         with:
           path: .ccache
@@ -66,66 +90,58 @@ jobs:
           restore-keys: |
             ccache-release-linux-${{ matrix.config.arch }}-${{ matrix.config.libc }}-
 
-      # Phase A images already have cmake, ninja, ccache 4.13.6, perl-IPC-Cmd,
-      # git, and the full build toolchain pre-installed (built from
-      # haybarn-extension-ci-tools/docker/<arch>{,_musl}/Dockerfile). The
-      # release build only needs in-tree C++ extensions (no Rust/ODBC), so
-      # the `base` variant is sufficient. ~2-3 min of dnf/apk/curl setup per
-      # leg → ~30s of docker pull.
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pick GHCR image for this matrix leg
-        id: image
-        shell: bash
-        run: |
-          # Image taxonomy: haybarn-linux_<arch>{,_musl}-base:<engine_version>
-          case "${{ matrix.config.libc }}" in
-            glibc) suffix='' ;;
-            musl)  suffix='_musl' ;;
-          esac
-          echo "ref=ghcr.io/query-farm-haybarn/haybarn-linux_${{ matrix.config.arch }}${suffix}-base:v1.5.5" >> "$GITHUB_OUTPUT"
-
-      - name: Build (Linux glibc + musl, pre-built image)
+      - name: Build (haybarn-ci image)
         shell: bash
         env:
+          IMAGE: ghcr.io/query-farm-haybarn/haybarn-ci/${{ matrix.config.image }}:${{ env.HAYBARN_CI_IMAGE_VERSION }}
           CCACHE_REMOTE_STORAGE: "http://haybarn-vcpkg-cache.rusty-bb6.workers.dev/ccache|bearer-token=${{ secrets.HAYBARN_VCPKG_TOKEN }}|connect-timeout=10000|operation-timeout=30000"
+          # The unittest binary ships as haybarn-unittest, so it must launch from
+          # any cwd (consumers pass --test-dir).
+          BUILD_CMAKE_VARIABLES: >-
+            -DUNITTEST_ROOT_DIRECTORY=.
+            ${{ matrix.config.libc == 'glibc' && '-DCMAKE_C_COMPILER_LAUNCHER= -DCMAKE_CXX_COMPILER_LAUNCHER= -DNATIVE_LTO_STATIC_LIBRARIES=1' || '' }}
+          LTO: ${{ matrix.config.libc == 'glibc' && 'thin' || '' }}
+          LTO_JOBS: ${{ matrix.config.libc == 'glibc' && '8' || '' }}
         run: |
           export WORKSPACE="$(pwd)"
-          docker pull "${{ steps.image.outputs.ref }}"
+          docker pull "$IMAGE"
           # `-w "$WORKSPACE"` sets the container's working directory to the
-          # bind-mounted host path. Without this, the Phase A image's
-          # WORKDIR /duckdb_build_dir takes effect — and `$PWD` inside the
-          # bash command resolves there, missing the Makefile. (First run
-          # of this code failed with: `make: No targets specified and no
-          # makefile found. Stop. make: Entering directory '/duckdb_build_dir'`.)
-          # We also pass WORKSPACE explicitly so the bash command uses it
-          # rather than relying on $PWD (less fragile).
+          # bind-mounted host path; the images' own WORKDIR would otherwise miss
+          # the Makefile. The images default to clang (CC/CXX).
           docker run \
             -v"$WORKSPACE":"$WORKSPACE" \
             -w "$WORKSPACE" \
             -e GEN=ninja \
-            -e CC='ccache gcc' -e CXX='ccache g++' -e CCACHE_DIR="$WORKSPACE/.ccache" \
+            -e CCACHE_DIR="$WORKSPACE/.ccache" \
             -e CCACHE_BASEDIR="$WORKSPACE" -e CCACHE_NOHASHDIR=1 \
             -e CCACHE_SLOPPINESS=time_macros,include_file_mtime,pch_defines \
             -e CCACHE_COMPILERCHECK=content \
             -e CCACHE_REMOTE_STORAGE \
             -e OVERRIDE_GIT_DESCRIBE="$OVERRIDE_GIT_DESCRIBE" \
             -e HAYBARN_GIT_DESCRIBE \
-            -e EXTRA_CMAKE_VARIABLES="-DUNITTEST_ROOT_DIRECTORY=." \
-            -e EXTENSION_CONFIGS="$WORKSPACE/.github/config/in_tree_extensions.cmake" \
-            -e ENABLE_EXTENSION_AUTOLOADING=1 -e ENABLE_EXTENSION_AUTOINSTALL=1 \
+            -e EXTRA_CMAKE_VARIABLES="$BUILD_CMAKE_VARIABLES" \
+            -e LTO -e LTO_JOBS \
+            -e EXTENSION_CONFIGS="$WORKSPACE/.github/config/bundled_extensions.cmake" \
+            -e DUCKDB_CAPABILITIES='httplib loadable_extensions' \
             -e WORKSPACE="$WORKSPACE" \
-            "${{ steps.image.outputs.ref }}" \
+            "$IMAGE" \
             bash -c 'set -e; \
-                     ccache --version; \
+                     $CC --version | head -1; \
                      git config --global --add safe.directory "$WORKSPACE"; \
                      make -C "$WORKSPACE"; \
-                     ccache -s'
+                     ccache -s || true'
+
+      - name: Verify architecture flags
+        shell: bash
+        run: |
+          grep -Fq -- '-march=${{ matrix.config.march }}' build/release/compile_commands.json
+          grep -Fq -- '-mtune=generic' build/release/compile_commands.json
+          if [[ "${{ matrix.config.libc }}" == "glibc" ]]; then
+            grep -Fq -- '-flto=thin' build/release/compile_commands.json
+          elif grep -Fq -- '-flto' build/release/compile_commands.json; then
+            echo "musl build unexpectedly contains LTO flags" >&2
+            exit 1
+          fi
 
       # musl binaries are built inside Alpine and won't run on the glibc host
       # runner, so steps that *execute* the binary are glibc-only. The musl
@@ -133,7 +149,7 @@ jobs:
       # tests inside the alpine container.)
       - name: Print platform
         if: matrix.config.libc != 'musl'
-        run: ./build/release/haybarn -c "PRAGMA platform;"
+        run: ./build/release/haybarn -c "PRAGMA platform; PRAGMA version;"
 
       # Release builds run a fast smoke test only: the `release`-tagged unittest
       # subset plus the shell tests and a basic query. The full unit-test suite
@@ -150,27 +166,33 @@ jobs:
       - name: Package
         shell: bash
         run: |
-          SUFFIX="${{ matrix.config.arch }}${{ matrix.config.libc == 'musl' && '-musl' || '' }}"
-          python3 scripts/amalgamation.py
           zip -j haybarn_cli-linux-$SUFFIX.zip build/release/haybarn
           gzip -9 -k -n -c build/release/haybarn > haybarn_cli-linux-$SUFFIX.gz
-          zip -j libhaybarn-linux-$SUFFIX.zip build/release/src/libhaybarn*.* \
-            src/amalgamation/duckdb.hpp src/include/duckdb.h
+          zip -j libhaybarn-linux-$SUFFIX.zip build/release/src/libhaybarn*.so* \
+            src/include/duckdb.h src/include/duckdb_v2.h
           # unittest binary, shipped as haybarn-unittest via npm/PyPI. Built
           # with -DUNITTEST_ROOT_DIRECTORY=. (above) so it launches anywhere;
           # consumers pass --test-dir <their tests>. .zip only — no .gz parity
           # (npm/PyPI consume the zip; the GH-release zip covers manual download).
           cp build/release/test/unittest haybarn-unittest
           zip -j haybarn_unittest-linux-$SUFFIX.zip haybarn-unittest
+          # Engine static libraries + C headers, upstream's layout and name
+          # (duckdb-static-libs-<platform>.tar.gz) so extension-ci-tools can use
+          # it as a prebuilt engine and haybarn-go-bindings can vendor it.
+          libs=""
+          for l in $STATIC_LIBRARIES_UNIX; do libs="$libs build/release/$l"; done
+          make static-libs-release-artifact ARTIFACT_SUFFIX=linux-$SUFFIX \
+            STATIC_LIBRARIES="$libs $(ls build/release/extension/*/lib*_extension.a | tr '\n' ' ')"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: haybarn-linux-${{ matrix.config.arch }}${{ matrix.config.libc == 'musl' && '-musl' || '' }}
+          name: haybarn-linux-${{ env.SUFFIX }}
           path: |
             haybarn_cli-linux-*.zip
             haybarn_cli-linux-*.gz
             haybarn_unittest-linux-*.zip
             libhaybarn-linux-*.zip
+            duckdb-static-libs-linux-*.tar.gz
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v2
@@ -180,14 +202,14 @@ jobs:
             haybarn_cli-linux-*.gz
             haybarn_unittest-linux-*.zip
             libhaybarn-linux-*.zip
+            duckdb-static-libs-linux-*.tar.gz
 
   osx:
     name: macOS (universal)
     runs-on: macos-15
     env:
-      EXTENSION_CONFIGS: '${{ github.workspace }}/.github/config/in_tree_extensions.cmake'
-      ENABLE_EXTENSION_AUTOLOADING: 1
-      ENABLE_EXTENSION_AUTOINSTALL: 1
+      EXTENSION_CONFIGS: '${{ github.workspace }}/.github/config/bundled_extensions.cmake'
+      DUCKDB_CAPABILITIES: 'httplib loadable_extensions'
       OSX_BUILD_UNIVERSAL: 1
       # Build the unittest binary with a portable root dir so the shipped
       # haybarn-unittest launches from any cwd (consumers pass --test-dir).
@@ -225,8 +247,11 @@ jobs:
       - name: Build
         run: make
 
+      - name: Verify architecture flags
+        run: grep -Fq -- '-Xarch_arm64 -mcpu=apple-m1' build/release/compile_commands.json
+
       - name: Print platform
-        run: ./build/release/haybarn -c "PRAGMA platform;"
+        run: ./build/release/haybarn -c "PRAGMA platform; PRAGMA version;"
 
       # NOTE: macOS code signing / notarization is intentionally not wired up
       # yet. When an Apple Developer ID is available, add a codesign +
@@ -242,10 +267,9 @@ jobs:
       - name: Package
         shell: bash
         run: |
-          python3 scripts/amalgamation.py
           zip -j -y libhaybarn-osx-universal.zip build/release/src/libhaybarn*.dylib \
-            src/amalgamation/duckdb.hpp src/include/duckdb.h
-          mkdir build/release_arm64 build/release_amd64
+            src/include/duckdb.h src/include/duckdb_v2.h
+          mkdir -p build/release_arm64/libs build/release_amd64/libs
           lipo -extract arm64  -output build/release_arm64/haybarn  build/release/haybarn
           lipo -extract x86_64 -output build/release_amd64/haybarn  build/release/haybarn
           zip -j haybarn_cli-osx-universal.zip build/release/haybarn
@@ -261,6 +285,17 @@ jobs:
           lipo -extract x86_64 -output build/release_amd64/haybarn-unittest  build/release/test/unittest
           zip -j haybarn_unittest-osx-arm64.zip build/release_arm64/haybarn-unittest
           zip -j haybarn_unittest-osx-amd64.zip build/release_amd64/haybarn-unittest
+          # Thin per-arch static libraries, as upstream ships them.
+          for library in $STATIC_LIBRARIES_UNIX build/release/extension/*/lib*_extension.a; do
+            [[ "$library" == build/* ]] || library="build/release/$library"
+            name="$(basename "$library")"
+            lipo -extract arm64  -output "build/release_arm64/libs/$name" "$library"
+            lipo "build/release_arm64/libs/$name" -verify_arch arm64
+            lipo -extract x86_64 -output "build/release_amd64/libs/$name" "$library"
+            lipo "build/release_amd64/libs/$name" -verify_arch x86_64
+          done
+          make static-libs-release-artifact ARTIFACT_SUFFIX=osx-arm64 STATIC_LIBRARIES="$(ls build/release_arm64/libs/* | tr '\n' ' ')"
+          make static-libs-release-artifact ARTIFACT_SUFFIX=osx-amd64 STATIC_LIBRARIES="$(ls build/release_amd64/libs/* | tr '\n' ' ')"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -270,6 +305,7 @@ jobs:
             haybarn_cli-osx-*.gz
             haybarn_unittest-osx-*.zip
             libhaybarn-osx-universal.zip
+            duckdb-static-libs-osx-*.tar.gz
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v2
@@ -279,6 +315,7 @@ jobs:
             haybarn_cli-osx-*.gz
             haybarn_unittest-osx-*.zip
             libhaybarn-osx-universal.zip
+            duckdb-static-libs-osx-*.tar.gz
 
   windows:
     name: Windows ${{ matrix.arch }}
@@ -288,20 +325,22 @@ jobs:
         arch: [amd64]
     runs-on: windows-2022
     env:
-      EXTENSION_CONFIGS: '.github/config/in_tree_extensions.cmake'
-      ENABLE_EXTENSION_AUTOLOADING: 1
-      ENABLE_EXTENSION_AUTOINSTALL: 1
+      # Upstream 2.0 builds Windows releases with clang-cl through
+      # `make windows_release` (bundled_extensions.cmake, httplib +
+      # loadable_extensions capabilities, Release, in-tree build directory).
+      GEN: ninja
+      CC: clang-cl
+      CXX: clang-cl
+      EXTRA_CMAKE_VARIABLES: '-DBUILD_UNITTESTS=1 -DUNITTEST_ROOT_DIRECTORY=.'
       # ccache R2 remote backend + tuning (same Cloudflare Worker / token as
       # Linux/macOS — content-addressed hashes mean cross-platform sharing for
-      # the few translation units that actually overlap is free). MSVC support
-      # in ccache landed in 4.6 and has been solid since 4.8; chocolatey ships
-      # a recent version.
+      # the few translation units that actually overlap is free). ccache
+      # recognizes clang-cl itself.
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_BASEDIR: ${{ github.workspace }}
       CCACHE_NOHASHDIR: "1"
       CCACHE_SLOPPINESS: "time_macros,include_file_mtime,pch_defines"
       CCACHE_COMPILERCHECK: "content"
-      CCACHE_COMPILERTYPE: "msvc"
       CCACHE_REMOTE_STORAGE: "http://haybarn-vcpkg-cache.rusty-bb6.workers.dev/ccache|bearer-token=${{ secrets.HAYBARN_VCPKG_TOKEN }}|connect-timeout=10000|operation-timeout=30000"
     steps:
       - uses: actions/checkout@v6
@@ -312,11 +351,9 @@ jobs:
         with:
           python-version: '3.12'
 
-      # CMAKE_CXX_COMPILER_LAUNCHER only works with Ninja/Make generators
-      # (MSBuild silently ignores it), so the Windows build switches from
-      # the default Visual Studio generator → Ninja Multi-Config. That
-      # requires cl.exe + nmake on PATH, which msvc-dev-cmd provides.
-      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Set up MSVC environment (x64)
+        uses: ./.github/actions/setup-msvc-env
+
       - name: Install ccache
         shell: pwsh
         run: choco install ccache --yes --no-progress
@@ -332,49 +369,51 @@ jobs:
       - name: Build
         shell: bash
         run: |
+          clang-cl --version
           python scripts/windows_ci.py
-          cmake -G "Ninja Multi-Config" \
-            -DCMAKE_BUILD_TYPE=Release -DBUILD_UNITTESTS=1 \
-            -DUNITTEST_ROOT_DIRECTORY=. \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-            -DEXTENSION_CONFIGS=.github/config/in_tree_extensions.cmake \
-            -DENABLE_EXTENSION_AUTOLOADING=1 -DENABLE_EXTENSION_AUTOINSTALL=1 \
-            -DOVERRIDE_GIT_DESCRIBE="$OVERRIDE_GIT_DESCRIBE" -B build .
-          cmake --build build --config Release
-          ccache -s
+          make windows_release
+          ccache -s || true
 
-      # Smoke the unittest binary — Windows had no unittest coverage before we
-      # enabled BUILD_UNITTESTS, so confirm it both built and launches (the
-      # -DUNITTEST_ROOT_DIRECTORY=. fix means it shouldn't chdir-throw). Locate
-      # it via find: Ninja Multi-Config nests the test/ subtarget under
-      # build/test/Release/unittest.exe, but find avoids a hard-coded guess.
-      - name: Smoke test (unittest)
+      - name: Verify architecture flags
+        shell: pwsh
+        run: |
+          $commands = Get-Content compile_commands.json -Raw
+          if (!$commands.Contains('clang-cl')) {
+            throw 'Windows amd64 Release compile commands are not using clang-cl'
+          }
+          if (!$commands.Contains('-march=haswell') -or !$commands.Contains('-mtune=generic')) {
+            throw 'Windows amd64 Release compile commands are missing the CLI architecture flags'
+          }
+
+      # Smoke the unittest binary — confirm it both built and launches (the
+      # -DUNITTEST_ROOT_DIRECTORY=. fix means it shouldn't chdir-throw).
+      - name: Smoke test
         if: ${{ inputs.skip_tests != 'true' }}
         shell: bash
         run: |
-          UNITTEST="$(find build -name unittest.exe -type f | head -1)"
-          if [[ -z "$UNITTEST" ]]; then echo "::error::unittest.exe not found under build/"; ls -R build | grep -i unittest || true; exit 1; fi
+          ./haybarn.exe -c "PRAGMA platform; PRAGMA version;"
+          UNITTEST="$(find test -name unittest.exe -type f | head -1)"
+          if [[ -z "$UNITTEST" ]]; then echo "::error::unittest.exe not found under test/"; exit 1; fi
           echo "unittest.exe at: $UNITTEST"
           "$UNITTEST" --select-tag release
 
       # NOTE: Windows code signing (Azure Trusted Signing) is intentionally not
-      # wired up yet. Add a signing step here over build/Release/haybarn.exe and
-      # build/src/Release/haybarn.dll when AZURE_CODESIGN_* secrets are available.
+      # wired up yet. Add a signing step here over haybarn.exe and
+      # src/haybarn.dll when AZURE_CODESIGN_* secrets are available.
 
       - name: Package
         shell: bash
         run: |
-          python scripts/amalgamation.py
-          7z a haybarn_cli-windows-${{ matrix.arch }}.zip ./build/Release/haybarn.exe
+          7z a haybarn_cli-windows-${{ matrix.arch }}.zip ./haybarn.exe
           7z a libhaybarn-windows-${{ matrix.arch }}.zip \
-            ./build/src/Release/haybarn.dll ./build/src/Release/haybarn.lib \
-            ./src/amalgamation/duckdb.hpp ./src/include/duckdb.h
-          # unittest binary, shipped as haybarn-unittest via npm/PyPI. Locate via
-          # find (same reason as the smoke step) and rename to the shipped name.
-          UNITTEST="$(find build -name unittest.exe -type f | head -1)"
+            ./src/haybarn.dll ./src/haybarn.lib \
+            ./src/include/duckdb.h ./src/include/duckdb_v2.h
+          # unittest binary, shipped as haybarn-unittest via npm/PyPI.
+          UNITTEST="$(find test -name unittest.exe -type f | head -1)"
           cp "$UNITTEST" haybarn-unittest.exe
           7z a haybarn_unittest-windows-${{ matrix.arch }}.zip ./haybarn-unittest.exe
+          make static-libs-release-artifact ARTIFACT_SUFFIX=windows-${{ matrix.arch }} \
+            STATIC_LIBRARIES="src/haybarn_static.lib src/duckdb_shell.lib src/main/http/duckdb_httplib.lib src/main/extension/duckdb_loadable_extensions.lib $(ls extension/*/*_extension.lib | tr '\n' ' ')"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -383,6 +422,7 @@ jobs:
             haybarn_cli-windows-*.zip
             haybarn_unittest-windows-*.zip
             libhaybarn-windows-*.zip
+            duckdb-static-libs-windows-*.tar.gz
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v2
@@ -391,20 +431,22 @@ jobs:
             haybarn_cli-windows-*.zip
             haybarn_unittest-windows-*.zip
             libhaybarn-windows-*.zip
+            duckdb-static-libs-windows-*.tar.gz
 
-  src-amalgamation:
-    name: libhaybarn source amalgamation
+  # DuckDB 2.0 dropped the amalgamation; like upstream's libduckdb-src.zip this
+  # now carries the C API headers.
+  src-headers:
+    name: libhaybarn C headers
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Build amalgamation
+      - name: Package headers
         run: |
-          python3 scripts/amalgamation.py
           zip -j libhaybarn-src.zip \
-            src/amalgamation/duckdb.hpp src/amalgamation/duckdb.cpp \
-            src/include/duckdb.h src/include/duckdb_extension.h
+            src/include/duckdb.h src/include/duckdb_v2.h \
+            src/include/duckdb_extension.h src/include/duckdb_extension_v2.h
       - uses: actions/upload-artifact@v7
         with:
           name: haybarn-src
@@ -414,3 +456,49 @@ jobs:
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: libhaybarn-src.zip
+
+  # Haybarn's counterpart of upstream's staging upload: extension-ci-tools
+  # (haybarn-2.0 ci_phase.py) fetches
+  #   <base>/<commit10>/latest_alpha_version.txt and
+  #   <base>/<commit10>/<version>/duckdb/duckdb/github_release/duckdb-static-libs-<platform>.tar.gz
+  # from https://haybarn-extensions.query.farm/staging. Objects are keyed by the
+  # engine commit, so re-staging a commit only replaces identical builds.
+  stage-prebuilt:
+    name: Stage prebuilt engine
+    needs: [linux, osx, windows]
+    if: ${{ startsWith(github.ref, 'refs/tags/haybarn-v') || inputs.stage_prebuilt }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          pattern: haybarn-*
+          merge-multiple: true
+
+      - name: Upload to R2 staging
+        shell: bash
+        env:
+          AWS_ENDPOINT_URL:      ${{ secrets.R2_ENDPOINT }}
+          AWS_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
+          # The org secret holding the secret half is named R2_SECRET_KEY_ID.
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_KEY_ID }}
+          AWS_DEFAULT_REGION:    auto
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          set -euo pipefail
+          commit10="$(echo "$GITHUB_SHA" | cut -c1-10 | tr 'A-F' 'a-f')"
+          version="$OVERRIDE_GIT_DESCRIBE"
+          [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|rc|dev)[0-9]+)?$ ]] || { echo "::error::unstageable version $version"; exit 1; }
+          prefix="s3://$R2_BUCKET/staging/$commit10"
+          shopt -s nullglob
+          archives=(artifacts/duckdb-static-libs-*.tar.gz)
+          (( ${#archives[@]} == 7 )) || { echo "::error::expected 7 static-libs archives, found ${#archives[@]}"; ls artifacts; exit 1; }
+          for archive in "${archives[@]}"; do
+            aws s3 cp --no-progress "$archive" "$prefix/$version/duckdb/duckdb/github_release/$(basename "$archive")"
+          done
+          # Written last, so a reader that finds the pointer finds the archives.
+          printf '%s\n' "$version" > latest_alpha_version.txt
+          aws s3 cp --no-progress --content-type text/plain latest_alpha_version.txt "$prefix/latest_alpha_version.txt"
+          echo "Staged ${#archives[@]} archives under https://haybarn-extensions.query.farm/staging/$commit10/$version/"
