@@ -63,9 +63,9 @@ include("${EXTENSION_CONFIG_BASE_DIR}/unity_catalog.cmake")
 # httpfs, iceberg, ducklake and delta come from the Query-farm-haybarn
 # build-forks; their pins live in haybarn/extensions/ (shared with the CI group
 # configs haybarn/cloud.cmake and haybarn/rust_based_extensions.cmake).
-include("${CMAKE_CURRENT_LIST_DIR}/haybarn/extensions/httpfs.cmake")
-include("${CMAKE_CURRENT_LIST_DIR}/haybarn/extensions/delta.cmake")
-include("${CMAKE_CURRENT_LIST_DIR}/haybarn/extensions/ducklake.cmake")
+include("${EXTENSION_CONFIG_BASE_DIR}/../haybarn/extensions/httpfs.cmake")
+include("${EXTENSION_CONFIG_BASE_DIR}/../haybarn/extensions/delta.cmake")
+include("${EXTENSION_CONFIG_BASE_DIR}/../haybarn/extensions/ducklake.cmake")
 # iceberg ships Unity-Catalog support and defines duckdb::GetUCCreateView,
 # which collides with unity_catalog when both are statically linked into one
 # binary. CI builds them in separate groups; this merged local config builds

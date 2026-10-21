@@ -1,7 +1,9 @@
 # Haybarn variant of .github/config/cloud.cmake: identical, except httpfs,
 # iceberg and ducklake come from the Haybarn build-forks.
-# Includes are CMAKE_CURRENT_LIST_DIR-relative so both CMake and
-# scripts/sync_out_of_tree_extensions.py resolve them from this directory.
+# CI inlines this file into the extension's extension_config.cmake, so includes
+# resolve from EXTENSION_CONFIG_BASE_DIR (duckdb/.github/config/extensions),
+# never from this file's location. To parse it with
+# scripts/sync_out_of_tree_extensions.py, pass that directory explicitly.
 
 if (NOT DEFINED DUCKDB_MAIN_EXTENSION_CONFIG_TYPE OR DUCKDB_MAIN_EXTENSION_CONFIG_TYPE STREQUAL "IN_TREE")
     duckdb_extension_load(json)
@@ -9,10 +11,10 @@ if (NOT DEFINED DUCKDB_MAIN_EXTENSION_CONFIG_TYPE OR DUCKDB_MAIN_EXTENSION_CONFI
 endif()
 
 if (NOT DEFINED DUCKDB_MAIN_EXTENSION_CONFIG_TYPE OR DUCKDB_MAIN_EXTENSION_CONFIG_TYPE STREQUAL "OUT_OF_TREE")
-    include("${CMAKE_CURRENT_LIST_DIR}/../extensions/aws.cmake")
-    include("${CMAKE_CURRENT_LIST_DIR}/../extensions/azure.cmake")
-    include("${CMAKE_CURRENT_LIST_DIR}/extensions/ducklake.cmake")
-    include("${CMAKE_CURRENT_LIST_DIR}/../extensions/glue.cmake")
-    include("${CMAKE_CURRENT_LIST_DIR}/extensions/httpfs.cmake")
-    include("${CMAKE_CURRENT_LIST_DIR}/extensions/iceberg.cmake")
+    include("${EXTENSION_CONFIG_BASE_DIR}/aws.cmake")
+    include("${EXTENSION_CONFIG_BASE_DIR}/azure.cmake")
+    include("${EXTENSION_CONFIG_BASE_DIR}/../haybarn/extensions/ducklake.cmake")
+    include("${EXTENSION_CONFIG_BASE_DIR}/glue.cmake")
+    include("${EXTENSION_CONFIG_BASE_DIR}/../haybarn/extensions/httpfs.cmake")
+    include("${EXTENSION_CONFIG_BASE_DIR}/../haybarn/extensions/iceberg.cmake")
 endif()
