@@ -108,9 +108,13 @@ jobs:
           # `-w "$WORKSPACE"` sets the container's working directory to the
           # bind-mounted host path; the images' own WORKDIR would otherwise miss
           # the Makefile. The images default to clang (CC/CXX).
+          # CI=true as in a job container: DuckDB's CMake only picks the mold
+          # linker (as upstream's release builds use) when CI is set; GNU ld
+          # rejects the native-LTO engine archive next to libduckdb_zstd.a.
           docker run \
             -v"$WORKSPACE":"$WORKSPACE" \
             -w "$WORKSPACE" \
+            -e CI=true -e GITHUB_ACTIONS=true \
             -e GEN=ninja \
             -e CCACHE_DIR="$WORKSPACE/.ccache" \
             -e CCACHE_BASEDIR="$WORKSPACE" -e CCACHE_NOHASHDIR=1 \
@@ -136,6 +140,7 @@ jobs:
         run: |
           grep -Fq -- '-march=${{ matrix.config.march }}' build/release/compile_commands.json
           grep -Fq -- '-mtune=generic' build/release/compile_commands.json
+          grep -Fq -- '-fuse-ld=mold' build/release/build.ninja
           if [[ "${{ matrix.config.libc }}" == "glibc" ]]; then
             grep -Fq -- '-flto=thin' build/release/compile_commands.json
           elif grep -Fq -- '-flto' build/release/compile_commands.json; then
