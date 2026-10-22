@@ -162,6 +162,14 @@ public:
 	static bool CheckExtensionBufferSignature(DatabaseInstance &db, const char *buffer, idx_t total_buffer_length,
 	                                          ExtensionRepositoryType repository_type, const string &repository_name,
 	                                          optional_ptr<string> signature_key_fingerprint = nullptr);
+	// Check a signature against the two-level hash of an extension that the caller computed itself, e.g. with
+	// WebCrypto while downloading it: the SHA-256 of the concatenated SHA-256 digests of every 1 MiB chunk of the file
+	// up to its signature (the last chunk may be shorter), as 32 raw bytes. Only the hashing is skipped: the trusted
+	// keys are those of CheckExtensionBufferSignature. When a key matches, its fingerprint is written to
+	// signature_key_fingerprint (if provided)
+	static bool CheckExtensionHashSignature(DatabaseInstance &db, const string &two_level_hash, const string &signature,
+	                                        ExtensionRepositoryType repository_type, const string &repository_name,
+	                                        optional_ptr<string> signature_key_fingerprint = nullptr);
 	static ParsedExtensionMetaData ParseExtensionMetaData(const char *metadata) noexcept;
 	static ParsedExtensionMetaData ParseExtensionMetaData(FileHandle &handle);
 

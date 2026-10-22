@@ -457,6 +457,17 @@ bool ExtensionHelper::CheckExtensionBufferSignature(DatabaseInstance &db, const 
 	                            signature_key_fingerprint);
 }
 
+bool ExtensionHelper::CheckExtensionHashSignature(DatabaseInstance &db, const string &two_level_hash,
+                                                  const string &signature, ExtensionRepositoryType repository_type,
+                                                  const string &repository_name,
+                                                  optional_ptr<string> signature_key_fingerprint) {
+	if (two_level_hash.size() != duckdb_mbedtls::MbedTlsWrapper::SHA256_HASH_LENGTH_BYTES) {
+		return false;
+	}
+	return CheckKnownSignatures(db, two_level_hash, signature, repository_type, repository_name,
+	                            signature_key_fingerprint);
+}
+
 bool ExtensionHelper::CheckExtensionBufferSignature(DatabaseInstance &db, const char *buffer, idx_t total_buffer_length,
                                                     ExtensionRepositoryType repository_type,
                                                     const string &repository_name,
