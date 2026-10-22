@@ -521,3 +521,27 @@ jobs:
     secrets: inherit
     with:
       tag: ${{ startsWith(github.ref, 'refs/tags/haybarn-v') && github.ref_name || '' }}
+
+  # The npm and PyPI CLI/unittest publishers. They must run as top-level
+  # workflows (npm and PyPI Trusted Publishers name the workflow file), and
+  # workflow_run would start the default (1.5) branch's copies, so dispatch
+  # the copies at the release tag.
+  publish-registries:
+    name: Start npm + PyPI publishers
+    needs: github-release
+    if: ${{ startsWith(github.ref, 'refs/tags/haybarn-v2.') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch publishers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          for wf in haybarn-npm-publish.yml haybarn-npm-unittest-publish.yml \
+                    haybarn-pypi-cli-publish.yml haybarn-pypi-unittest-publish.yml; do
+            gh workflow run "$wf" -R "$GITHUB_REPOSITORY" --ref "$TAG" -f tag="$TAG"
+            echo "::notice::dispatched $wf for $TAG"
+          done

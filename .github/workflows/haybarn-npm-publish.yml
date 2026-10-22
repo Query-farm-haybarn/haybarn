@@ -32,7 +32,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag to publish (e.g. haybarn-v1.5.5-rc7)'
+        description: 'Release tag to publish (e.g. haybarn-v2.0.0-rc3)'
         type: string
         required: true
 
@@ -94,14 +94,15 @@ jobs:
           echo "::notice::Re-derived TAG via head_sha lookup: $LOOKUP"
           echo "TAG=$LOOKUP" >> "$GITHUB_ENV"
 
-      # Haybarn: the 1.5-line publisher. workflow_run always runs the default
-      # branch's copy, so refuse anything but a haybarn-v1.* release; the 2.0
-      # line publishes from its own workflows.
-      - name: Refuse non-1.5 release tags
+      # Haybarn: the 2.0-line copy of this publisher. workflow_run always runs
+      # the default (1.5) branch's copy, so the 2.0 release starts this one by
+      # workflow_dispatch on the release tag instead; refuse anything but a
+      # haybarn-v2.* release.
+      - name: Refuse non-2.0 release tags
         run: |
           case "$TAG" in
-            haybarn-v1.*) ;;
-            *) echo "::error::'$TAG' is not a 1.5-line release tag; this workflow publishes only haybarn-v1.* releases"; exit 1 ;;
+            haybarn-v2.*) ;;
+            *) echo "::error::'$TAG' is not a 2.0-line release tag; this copy publishes only haybarn-v2.* releases"; exit 1 ;;
           esac
 
       # Node 24 ships with npm 11.x bundled. npm 11.5+ is required for
