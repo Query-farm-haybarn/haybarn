@@ -17,6 +17,8 @@
 namespace duckdb {
 
 struct HTTPParams;
+struct BaseRequest;
+class ClientContext;
 
 //! An attempt's decision; constructing one does not consume retry budget.
 //!
@@ -125,6 +127,8 @@ public:
 	//! Corrected re-sends admitted per operation: a credential refresh and a region redirect, with room for a
 	//! provider that needs both again after the other; past this the operation ends with the last response.
 	static constexpr uint64_t MAX_CORRECTIONS = 4;
+	//! Longest slice of a back-off sleep between two cancellation checks.
+	static constexpr uint64_t CANCELLATION_POLL_MS = 100;
 
 public:
 	DUCKDB_API explicit HTTPRetryBudget(const HTTPParams &params,
@@ -169,6 +173,10 @@ public:
 	DUCKDB_API void RecordStatusOutcome(bool success);
 	//! Whether a Run of this budget is in progress, i.e. a nested loop is running inside an outer one.
 	DUCKDB_API bool InRun() const;
+	//! Whether the operation should be abandoned: the request core's loop is running is cancelled
+	//! (HTTPUtil::CancellationRequested), or the query of the client context of the parameters the budget was created
+	//! for was interrupted. A cancellation ends the back-off at once and no further retry is admitted.
+	DUCKDB_API bool CancellationRequested() const;
 
 	//! Back-off window for `retry` is [0, min(wait * backoff^(retry - 1), MAX_BACKOFF_MS)]: full jitter, or its upper
 	//! half for throttled retries so they always keep some distance. The result is raised to `floor_ms`.
@@ -190,6 +198,8 @@ private:
 	void RequireCoordinator(const char *what) const;
 	//! Forget the last admitted retry, so that nothing is refunded for it.
 	void ForgetLastRetry();
+	//! Sleep the back-off in slices; false when a cancellation cut it short.
+	bool WaitBackoff(uint64_t sleep_ms) const;
 
 private:
 	//! Retry settings captured for the operation.
@@ -198,6 +208,10 @@ private:
 	const float retry_backoff;
 	//! Who settles the outcome with the quota.
 	const HTTPRetryOutcomeOwner owner;
+	//! The client context of the parameters the budget was created for, whose interrupt cancels the operation.
+	const weak_ptr<ClientContext> interrupt_context;
+	//! The request core's retry loop is running, set for the duration of that loop.
+	optional_ptr<const BaseRequest> cancellation_request;
 
 	//! Retries admitted across all participating requests.
 	uint64_t retries_used = 0;

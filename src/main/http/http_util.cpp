@@ -462,12 +462,25 @@ HTTPUtil::RunRequestWithRetry(const std::function<unique_ptr<HTTPResponse>(void)
 	}
 	// Charge this request's host, even when a shared budget was bound to another host before.
 	retry_budget->BindQuota(params.http_util.GetRetryQuota(request.proto_host_port));
+	// The back-off ends early once this request is cancelled; a shared budget goes back to its own sources after.
+	struct CancellationScope {
+		CancellationScope(HTTPRetryBudget &budget_p, const BaseRequest &request)
+		    : budget(budget_p), previous(budget_p.cancellation_request) {
+			budget.cancellation_request = &request;
+		}
+		~CancellationScope() {
+			budget.cancellation_request = previous;
+		}
+		HTTPRetryBudget &budget;
+		optional_ptr<const BaseRequest> previous;
+	} cancellation_scope(*retry_budget, request);
 
 	unique_ptr<HTTPResponse> response;
 	std::exception_ptr caught_e;
 	ErrorData caught_error;
 	string exception_error;
 	bool should_retry = false;
+	bool cancelled_before_attempt = false;
 	retry_budget->Run(
 	    [&]() {
 		    response.reset();
@@ -475,6 +488,12 @@ HTTPUtil::RunRequestWithRetry(const std::function<unique_ptr<HTTPResponse>(void)
 		    caught_error = ErrorData();
 		    exception_error.clear();
 		    unique_ptr<HTTPResponse> caught_response;
+		    // A cancelled request is never (re)attempted: nobody will read its result.
+		    if (HTTPUtil::CancellationRequested(request)) {
+			    cancelled_before_attempt = true;
+			    should_retry = false;
+			    return HTTPRetryDecision::Finish();
+		    }
 		    // Attempts are numbered per operation, so a re-send after a correction counts as the attempt it is; the
 		    // bound grows with such re-sends, which do not consume retries.
 		    const auto attempt = retry_budget->BeginAttempt();
@@ -532,6 +551,23 @@ HTTPUtil::RunRequestWithRetry(const std::function<unique_ptr<HTTPResponse>(void)
 	    },
 	    retry_cb);
 
+	// A cancelled request is terminal: it was not attempted, the backend aborted its transfer, or the back-off before
+	// its next attempt was cut short. A try_request gets a cancelled response back, anything else is interrupted.
+	if (cancelled_before_attempt || (response && response->IsCancelled()) ||
+	    (should_retry && HTTPUtil::CancellationRequested(request))) {
+		retry_budget->RecordStatusOutcome(false);
+		if (!request.try_request) {
+			throw InterruptException();
+		}
+		if (!response || !response->IsCancelled()) {
+			response = make_uniq<HTTPResponse>(HTTPStatusCode::INVALID);
+			response->url = request.url;
+			response->request_error = "Request cancelled";
+			response->cancelled = true;
+		}
+		response->success = false;
+		return response;
+	}
 	// With a coordinator-owned budget the outcome is settled by the coordinator once it has validated the response:
 	// an error document behind HTTP 200 is a failure or a retry there and must not refund the retry it consumed.
 	if (!should_retry && response) {

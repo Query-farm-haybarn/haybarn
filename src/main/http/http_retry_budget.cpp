@@ -6,6 +6,7 @@
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/common/types/timestamp.hpp"
 #include "duckdb/function/scalar/strftime_format.hpp"
+#include "duckdb/main/client_context.hpp"
 #include "duckdb/main/http/http_util.hpp"
 
 #include <cmath>
@@ -78,8 +79,8 @@ int64_t HTTPRetryQuota::IdleMs(int64_t now_ms) const {
 }
 
 HTTPRetryBudget::HTTPRetryBudget(const HTTPParams &params, HTTPRetryOutcomeOwner owner_p)
-    : retries(params.retries), retry_wait_ms(params.retry_wait_ms), retry_backoff(params.retry_backoff),
-      owner(owner_p) {
+    : retries(params.retries), retry_wait_ms(params.retry_wait_ms), retry_backoff(params.retry_backoff), owner(owner_p),
+      interrupt_context(params.interrupt_context) {
 #ifdef DUCKDB_NO_THREADS
 	// Without threads there is no back-off sleep, so the schedule settings go unused.
 	(void)retry_wait_ms;
@@ -121,6 +122,34 @@ uint64_t HTTPRetryBudget::MaxAttempts() const {
 
 bool HTTPRetryBudget::InRun() const {
 	return run_depth > 0;
+}
+
+bool HTTPRetryBudget::CancellationRequested() const {
+	if (cancellation_request && HTTPUtil::CancellationRequested(*cancellation_request)) {
+		return true;
+	}
+	auto context = interrupt_context.lock();
+	return context && context->IsInterrupted();
+}
+
+bool HTTPRetryBudget::WaitBackoff(uint64_t sleep_ms) const {
+#ifndef DUCKDB_NO_THREADS
+	const auto wake = std::chrono::steady_clock::now() + std::chrono::milliseconds(sleep_ms);
+	for (;;) {
+		if (CancellationRequested()) {
+			return false;
+		}
+		const auto now = std::chrono::steady_clock::now();
+		if (now >= wake) {
+			return true;
+		}
+		std::this_thread::sleep_for(
+		    MinValue<std::chrono::steady_clock::duration>(wake - now, std::chrono::milliseconds(CANCELLATION_POLL_MS)));
+	}
+#else
+	(void)sleep_ms;
+	return !CancellationRequested();
+#endif
 }
 
 bool HTTPRetryBudget::QuotaExhausted() const {
@@ -322,6 +351,11 @@ bool HTTPRetryBudget::ConsumeAndWait(const HTTPRetryDecision &decision) {
 	const auto extra_retries = throttled ? ThrottleExtraRetries() : 0;
 	// Asking for a retry means the last attempt did not get the operation through, whatever a nested loop recorded.
 	status_outcome = RecordedOutcome::NONE;
+	if (CancellationRequested()) {
+		// Nobody will read the result of a cancelled operation: do not charge the quota for a retry.
+		ForgetLastRetry();
+		return false;
+	}
 	if (retries_used >= retries && retries_used - retries >= extra_retries) {
 		// Nothing left to refund: the retries already spent did not get this request through.
 		ForgetLastRetry();
@@ -350,8 +384,10 @@ bool HTTPRetryBudget::ConsumeAndWait(const HTTPRetryDecision &decision) {
 	RandomEngine random;
 	const auto sleep_ms =
 	    BackoffMs(retry_wait_ms, retry_backoff, retries_used, floor_ms, random.NextRandomInteger64(), throttled);
-	if (sleep_ms > 0) {
-		std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
+	if (sleep_ms > 0 && !WaitBackoff(sleep_ms)) {
+		// Cancelled during the back-off: the admitted retry is never sent, so nothing is refunded for it.
+		ForgetLastRetry();
+		return false;
 	}
 #endif
 	return true;

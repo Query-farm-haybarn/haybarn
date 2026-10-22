@@ -39,28 +39,54 @@ TEST_CASE("Cancelled HTTP responses are terminal for every method", "[http_retry
 	HTTPParams params(http);
 	params.retries = 4;
 	params.retry_wait_ms = 0;
-	atomic<bool> cancellation {true};
 	for (auto method : {RequestType::GET_REQUEST, RequestType::HEAD_REQUEST, RequestType::PUT_REQUEST,
 	                    RequestType::POST_REQUEST, RequestType::DELETE_REQUEST, RequestType::OPTIONS_REQUEST}) {
-		BaseRequest request(method, "http://localhost/cancelled", HTTPHeaders(), params);
-		request.cancellation = cancellation;
-		idx_t attempts = 0;
-		idx_t retries = 0;
-		auto response = HTTPUtil::RunRequestWithRetry(
-		    [&]() {
-			    attempts++;
-			    auto result = make_uniq<HTTPResponse>(HTTPStatusCode::INVALID);
-			    result->cancelled = request.cancellation->load();
-			    result->request_error = "cancelled";
-			    return result;
-		    },
-		    request, [&]() { retries++; });
-		REQUIRE(response);
-		CHECK(response->IsCancelled());
-		CHECK_FALSE(response->Success());
-		CHECK_FALSE(response->ShouldRetry());
-		CHECK(attempts == 1);
-		CHECK(retries == 0);
+		for (bool try_request : {true, false}) {
+			// the backend aborts the transfer once the flag is set, and reports the response cancelled
+			atomic<bool> cancellation {false};
+			BaseRequest request(method, "http://localhost/cancelled", HTTPHeaders(), params);
+			request.cancellation = cancellation;
+			request.try_request = try_request;
+			idx_t attempts = 0;
+			idx_t retries = 0;
+			auto run = [&]() {
+				return HTTPUtil::RunRequestWithRetry(
+				    [&]() {
+					    attempts++;
+					    cancellation = true;
+					    auto result = make_uniq<HTTPResponse>(HTTPStatusCode::INVALID);
+					    result->cancelled = true;
+					    result->request_error = "cancelled";
+					    return result;
+				    },
+				    request, [&]() { retries++; });
+			};
+			if (try_request) {
+				auto response = run();
+				REQUIRE(response);
+				CHECK(response->IsCancelled());
+				CHECK_FALSE(response->Success());
+				CHECK_FALSE(response->ShouldRetry());
+			} else {
+				// nobody reads the result of a cancelled request: it surfaces as the interrupt it is
+				CHECK_THROWS_AS(run(), InterruptException);
+			}
+			CHECK(attempts == 1);
+			CHECK(retries == 0);
+
+			// a request that is cancelled already is not attempted at all
+			attempts = 0;
+			if (try_request) {
+				auto response = run();
+				REQUIRE(response);
+				CHECK(response->IsCancelled());
+				CHECK_FALSE(response->Success());
+			} else {
+				CHECK_THROWS_AS(run(), InterruptException);
+			}
+			CHECK(attempts == 0);
+			CHECK(retries == 0);
+		}
 	}
 }
 
