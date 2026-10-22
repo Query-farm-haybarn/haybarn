@@ -438,6 +438,97 @@ jobs:
             libhaybarn-windows-*.zip
             duckdb-static-libs-windows-*.tar.gz
 
+  # MinGW static libraries only, for cgo (haybarn-go-bindings links them on
+  # windows-amd64; the clang-cl .lib archives above are MSVC ABI). Mirrors
+  # upstream's Windows.yml mingw job: Rtools42 gcc, `make release` with the
+  # bundled extensions and capabilities. Ships no CLI or shared library.
+  windows-mingw:
+    name: Windows amd64 (MinGW static libs)
+    runs-on: windows-2022
+    env:
+      GEN: ninja
+      CC: C:/rtools42/x86_64-w64-mingw32.static.posix/bin/gcc.exe
+      CXX: C:/rtools42/x86_64-w64-mingw32.static.posix/bin/g++.exe
+      EXTENSION_CONFIGS: '${GITHUB_WORKSPACE}/.github/config/bundled_extensions.cmake'
+      DUCKDB_CAPABILITIES: 'httplib loadable_extensions'
+      EXTRA_CMAKE_VARIABLES: '-DUNITTEST_ROOT_DIRECTORY=.'
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_NOHASHDIR: "1"
+      CCACHE_SLOPPINESS: "time_macros,include_file_mtime,pch_defines"
+      CCACHE_COMPILERCHECK: "content"
+      CCACHE_REMOTE_STORAGE: "http://haybarn-vcpkg-cache.rusty-bb6.workers.dev/ccache|bearer-token=${{ secrets.HAYBARN_VCPKG_TOKEN }}|connect-timeout=10000|operation-timeout=30000"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Setup Rtools
+        uses: r-lib/actions/setup-r@d3c5be51b12e724e68f33216ca3c148b66d5f0b6 # v2.12.1
+        with:
+          r-version: devel
+          update-rtools: true
+          rtools-version: '42'
+
+      - name: Install ccache and make
+        shell: pwsh
+        run: choco install ccache make --yes --no-progress
+
+      - name: ccache (actions/cache for L1 persistence)
+        uses: actions/cache@v5
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-release-windows-mingw-${{ github.sha }}
+          restore-keys: |
+            ccache-release-windows-mingw-
+
+      - name: Build environment
+        shell: bash
+        run: |
+          {
+            # bash from Git
+            echo 'C:/Program Files/Git/bin'
+            # make, ninja and ccache from Chocolatey
+            echo 'C:/ProgramData/Chocolatey/bin'
+            # gcc and g++ from Rtools42
+            echo 'C:/rtools42/x86_64-w64-mingw32.static.posix/bin'
+          } >> "${GITHUB_PATH}"
+
+      - name: Build
+        shell: bash
+        run: |
+          g++ --version | head -1
+          python scripts/ci/retry.py -- make release
+          ccache -s || true
+
+      - name: Smoke test
+        if: ${{ inputs.skip_tests != 'true' }}
+        shell: bash
+        run: |
+          ./build/release/haybarn.exe -c "PRAGMA platform; PRAGMA version;"
+          ./build/release/test/unittest.exe --select-tag release
+
+      - name: Package
+        shell: bash
+        run: |
+          make static-libs-release-artifact ARTIFACT_SUFFIX=windows-amd64-mingw \
+            STATIC_LIBRARIES="build/release/src/libhaybarn_static.a build/release/src/libduckdb_shell.a build/release/src/main/http/libduckdb_httplib.a build/release/src/main/extension/libduckdb_loadable_extensions.a $(ls build/release/extension/*/lib*_extension.a | tr '\n' ' ')"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: haybarn-windows-amd64-mingw
+          path: duckdb-static-libs-windows-amd64-mingw.tar.gz
+          if-no-files-found: error
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: duckdb-static-libs-windows-amd64-mingw.tar.gz
+
   # DuckDB 2.0 dropped the amalgamation; like upstream's libduckdb-src.zip this
   # now carries the C API headers.
   src-headers:
@@ -498,7 +589,12 @@ jobs:
           [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|rc|dev)[0-9]+)?$ ]] || { echo "::error::unstageable version $version"; exit 1; }
           prefix="s3://$R2_BUCKET/staging/$commit10"
           shopt -s nullglob
-          archives=(artifacts/duckdb-static-libs-*.tar.gz)
+          # The MinGW archive (windows-mingw job) is for cgo only and isn't
+          # staged; this job doesn't wait for it.
+          archives=()
+          for archive in artifacts/duckdb-static-libs-*.tar.gz; do
+            [[ "$archive" == *-mingw.tar.gz ]] || archives+=("$archive")
+          done
           (( ${#archives[@]} == 7 )) || { echo "::error::expected 7 static-libs archives, found ${#archives[@]}"; ls artifacts; exit 1; }
           for archive in "${archives[@]}"; do
             aws s3 cp --no-progress "$archive" "$prefix/$version/duckdb/duckdb/github_release/$(basename "$archive")"
@@ -514,7 +610,7 @@ jobs:
   # Releases only for now; npm and PyPI follow once a 2.0 rc is verified.
   github-release:
     name: GitHub Release
-    needs: [linux, osx, windows, src-headers]
+    needs: [linux, osx, windows, windows-mingw, src-headers]
     uses: ./.github/workflows/haybarn-github-release.yml
     permissions:
       contents: write
