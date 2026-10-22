@@ -17,6 +17,7 @@
 #include "duckdb/common/atomic.hpp"
 #include "duckdb/common/mutex.hpp"
 #include "duckdb/common/unordered_map.hpp"
+#include "duckdb/common/shared_ptr.hpp"
 #include "duckdb/main/http/http_retry_budget.hpp"
 #include <functional>
 
@@ -24,6 +25,7 @@ namespace duckdb {
 class DatabaseInstance;
 class Logger;
 class HTTPUtil;
+class ClientContext;
 class HTTPRetryBudget;
 class HTTPTransportManager;
 class HTTPTransportManagerState;
@@ -64,9 +66,15 @@ struct HTTPParams {
 	unordered_map<string, string> extra_headers;
 	HTTPUtil &http_util;
 	shared_ptr<Logger> logger;
+	//! The client context the parameters were initialized for: interrupting its query cancels the requests made
+	//! with them. Weak, so parameters that outlive the connection never touch a destroyed context; empty for
+	//! database-level openers.
+	weak_ptr<ClientContext> interrupt_context;
 
 public:
 	void Initialize(optional_ptr<FileOpener> opener);
+	//! Whether the query of interrupt_context was interrupted. Safe to call from any thread.
+	DUCKDB_API bool IsInterrupted() const;
 	DUCKDB_API idx_t GetTransportReuseDomain() const;
 
 	template <class TARGET>
@@ -222,7 +230,8 @@ struct BaseRequest {
 	//! Borrowed operation-local budget; it must outlive all participating requests.
 	optional_ptr<HTTPRetryBudget> retry_budget;
 	//! Caller-owned flag, polled by the backend for every HTTP method. It must outlive Request(),
-	//! including any cross-thread curl dispatcher access. Cancellation is cooperative.
+	//! including any cross-thread curl dispatcher access. Cancellation is cooperative. Backends check it together
+	//! with the interrupt of params.interrupt_context through HTTPUtil::CancellationRequested.
 	optional_ptr<const atomic<bool>> cancellation;
 
 	//! Requests will optionally contain their timings
@@ -429,6 +438,14 @@ public:
 
 	//! Whether replaying this request is safe. POST is the only method we cannot assume is idempotent.
 	DUCKDB_API static bool IsIdempotent(RequestType type);
+
+	//! Whether a request should be abandoned: its caller-owned cancellation flag is set, or the query of the client
+	//! context its parameters were initialized for was interrupted. Backends poll it during a transfer, possibly from
+	//! another thread, and report an abandoned transfer as a cancelled response; the retry loop checks it between
+	//! attempts and during the back-off.
+	DUCKDB_API static bool CancellationRequested(const BaseRequest &request);
+	//! Whether any cancellation source is attached to the request, so a backend can skip arming its transfer hook.
+	DUCKDB_API static bool CancellationArmed(const BaseRequest &request);
 
 	static void ParseHTTPProxyHost(string &proxy_value, string &hostname_out, idx_t &port_out, idx_t default_port = 80);
 	static void DecomposeURL(const string &url, string &path_out, string &proto_host_port_out);

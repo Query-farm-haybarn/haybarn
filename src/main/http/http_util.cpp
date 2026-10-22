@@ -18,6 +18,11 @@ namespace duckdb {
 HTTPParams::~HTTPParams() {
 }
 
+bool HTTPParams::IsInterrupted() const {
+	auto context = interrupt_context.lock();
+	return context && context->IsInterrupted();
+}
+
 bool HTTPParams::ShouldRedactLogs() const {
 	return !db || Settings::Get<RedactHttpLogsSetting>(*db);
 }
@@ -152,6 +157,17 @@ bool HTTPUtil::IsRetryableStatus(HTTPStatusCode status) {
 
 bool HTTPUtil::IsIdempotent(RequestType type) {
 	return type != RequestType::POST_REQUEST;
+}
+
+bool HTTPUtil::CancellationRequested(const BaseRequest &request) {
+	if (request.cancellation && request.cancellation->load(std::memory_order_relaxed)) {
+		return true;
+	}
+	return request.params.IsInterrupted();
+}
+
+bool HTTPUtil::CancellationArmed(const BaseRequest &request) {
+	return request.cancellation || !request.params.interrupt_context.expired();
 }
 
 bool HTTPUtil::ShouldRetry(const BaseRequest &request, const HTTPResponse &response) {
@@ -582,6 +598,7 @@ void HTTPParams::Initialize(optional_ptr<FileOpener> opener) {
 	auto client_context = FileOpener::TryGetClientContext(opener);
 	if (client_context) {
 		logger = client_context->logger;
+		interrupt_context = client_context->shared_from_this();
 	}
 }
 

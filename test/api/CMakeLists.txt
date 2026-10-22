@@ -78,7 +78,8 @@ set(TEST_API_OBJECTS
     test_scheduler_fairness.cpp
     test_buffer_pool_eviction.cpp
     test_block_allocator_tls.cpp
-    test_data_table_scan_without_row_groups.cpp)
+    test_data_table_scan_without_row_groups.cpp
+    test_http_retry_cancel.cpp)
 
 if(NOT WIN32)
   set(TEST_API_OBJECTS ${TEST_API_OBJECTS} test_read_only.cpp
