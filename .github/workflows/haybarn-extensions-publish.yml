@@ -132,8 +132,11 @@ jobs:
           TAG_BUILD: ${{ steps.context.outputs.tag_build }}
         run: |
           set -euo pipefail
+          # test-support/ holds the build's test bundles (unittest + libs), not extensions.
           roots=()
-          for d in /tmp/staged/*/; do roots+=("$(basename "$d")"); done
+          for d in /tmp/staged/*/; do
+            [ "$(basename "$d")" = test-support ] || roots+=("$(basename "$d")")
+          done
           if [ "${#roots[@]}" -ne 1 ]; then
             echo "::error::expected one <version>/ root in the artifacts, found: ${roots[*]}"
             exit 1
