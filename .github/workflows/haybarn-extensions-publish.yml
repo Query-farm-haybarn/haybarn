@@ -50,9 +50,15 @@ jobs:
     name: Sign and publish to R2
     # workflow_run fires for every completion (including failures and
     # cancellations); only proceed if the build actually succeeded.
+    # This is the 1.5-line publisher. workflow_run always runs the default
+    # branch's copy of this file, so it also fires for builds of other lines
+    # (next-2.0 and haybarn-v2.* tags, which publish from their own workflow);
+    # only act on 1.5 sources: the haybarn branch or haybarn-v1.* tags.
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+      (github.event.workflow_run.conclusion == 'success' &&
+       (github.event.workflow_run.head_branch == 'haybarn' ||
+        startsWith(github.event.workflow_run.head_branch, 'haybarn-v1.')))
     runs-on: ubuntu-24.04
     outputs:
       source_run_id: ${{ steps.context.outputs.source_run_id }}
@@ -70,6 +76,14 @@ jobs:
             SOURCE_RUN_ID='${{ inputs.source_run_id }}'
             DEPLOY='${{ inputs.deploy }}'
             HEAD_SHA=$(gh api repos/${{ github.repository }}/actions/runs/$SOURCE_RUN_ID --jq .head_sha)
+            SOURCE_BRANCH=$(gh api repos/${{ github.repository }}/actions/runs/$SOURCE_RUN_ID --jq .head_branch)
+            case "$SOURCE_BRANCH" in
+              haybarn|haybarn-v1.*) ;;
+              *)
+                echo "::error::run $SOURCE_RUN_ID was built from '$SOURCE_BRANCH'; this workflow publishes only the 1.5 line (haybarn branch or haybarn-v1.* tags)"
+                exit 1
+                ;;
+            esac
           else
             SOURCE_RUN_ID='${{ github.event.workflow_run.id }}'
             DEPLOY='false'
