@@ -507,3 +507,17 @@ jobs:
           printf '%s\n' "$version" > latest_alpha_version.txt
           aws s3 cp --no-progress --content-type text/plain latest_alpha_version.txt "$prefix/latest_alpha_version.txt"
           echo "Staged ${#archives[@]} archives under https://haybarn-extensions.query.farm/staging/$commit10/$version/"
+
+  # GitHub Release for haybarn-v2.* tags (dry run otherwise). Runs inside this
+  # run, so it raises no workflow_run event and never wakes the 1.5-line
+  # haybarn-publish / npm / PyPI chain. The 2.0 line publishes to GitHub
+  # Releases only for now; npm and PyPI follow once a 2.0 rc is verified.
+  github-release:
+    name: GitHub Release
+    needs: [linux, osx, windows, src-headers]
+    uses: ./.github/workflows/haybarn-github-release.yml
+    permissions:
+      contents: write
+    secrets: inherit
+    with:
+      tag: ${{ startsWith(github.ref, 'refs/tags/haybarn-v') && github.ref_name || '' }}

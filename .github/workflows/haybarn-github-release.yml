@@ -1,0 +1,170 @@
+# Haybarn 2.0: GitHub Release for an engine release build.
+#
+# Called by haybarn-release.yml at the end of its own run (workflow_call runs
+# inside the caller's run, so it raises no workflow_run event and never wakes
+# the 1.5-line haybarn-publish / npm / PyPI chain). For a haybarn-v2.* tag it
+# creates the GitHub Release with SHA256SUMS + detached GPG signature; any
+# other run is a dry run that assembles, checksums and signs without
+# releasing. npm and PyPI publishing for 2.0 is deliberately not wired here.
+name: Haybarn GitHub Release
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Release tag (haybarn-v2.*); empty for a dry run'
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: GitHub Release
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - name: Release or dry run
+        id: mode
+        run: |
+          if [[ "$TAG" =~ ^haybarn-v2\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            [[ "$TAG" == *-rc* ]] && echo "prerelease=true" >> "$GITHUB_OUTPUT" || echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::creating GitHub Release $TAG"
+          elif [[ -z "$TAG" ]]; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::dry run: assembling, checksumming and signing without a release"
+          else
+            echo "::error::'$TAG' is not a 2.0-line release tag (haybarn-v2.X.Y[-rcN])"
+            exit 1
+          fi
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: haybarn-*
+          path: /tmp/artifacts
+          merge-multiple: true
+
+      - name: Collect artifacts and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          find /tmp/artifacts -type f \( -name '*.zip' -o -name '*.gz' \) -exec cp {} release/ \;
+          cd release
+          # The build names the static-library archives after upstream's layout,
+          # which the Haybarn prebuilt staging keeps; on GitHub Releases they
+          # carry the Haybarn name.
+          for f in duckdb-static-libs-*.tar.gz; do
+            [ -e "$f" ] || continue
+            mv -- "$f" "haybarn-${f#duckdb-}"
+          done
+          if ls -- *duckdb* 2>/dev/null | grep -q .; then
+            echo "::error::release asset named after duckdb: $(ls -- *duckdb*)"
+            exit 1
+          fi
+          ls -la
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: GPG sign checksums
+        shell: bash
+        env:
+          HAYBARN_GPG_PRIVATE_KEY: ${{ secrets.HAYBARN_GPG_PRIVATE_KEY }}
+          HAYBARN_GPG_PASSPHRASE: ${{ secrets.HAYBARN_GPG_PASSPHRASE }}
+        run: |
+          # GPG import resilience — see haybarn-publish.yml history for why.
+          # The secret value's shape was forgotten and the first attempt
+          # (assume ASCII-armored) failed. Try every plausible shape in
+          # order, importing the FIRST one that gpg accepts. If all fail,
+          # emit a character-class profile (counts only, no key bytes ever
+          # leave the workflow) so we can diagnose how the secret was stored.
+          set -uo pipefail
+          KEYFILE="$(mktemp)"
+          trap 'shred -u "$KEYFILE" 2>/dev/null || rm -f "$KEYFILE"' EXIT
+
+          try_import() {
+            local label="$1"
+            if gpg --batch --import "$KEYFILE" 2>/tmp/gpg.err; then
+              echo "✅ imported as: $label"
+              return 0
+            fi
+            echo "✗ $label: $(head -c 200 /tmp/gpg.err)"
+            return 1
+          }
+
+          # 1. Direct (ASCII-armored, embedded newlines preserved).
+          printf '%s\n' "$HAYBARN_GPG_PRIVATE_KEY" > "$KEYFILE"
+          if try_import "ascii-armored (direct, $(wc -c <"$KEYFILE") bytes)"; then : ;
+          # 2. Literal `\n` escape sequences → real newlines.
+          elif printf '%s' "$HAYBARN_GPG_PRIVATE_KEY" | sed $'s/\\\\n/\\\n/g' > "$KEYFILE" && try_import "armored with \\n escape sequences ($(wc -c <"$KEYFILE") bytes)"; then : ;
+          # 3. Base64 (no framing) → binary key.
+          elif printf '%s' "$HAYBARN_GPG_PRIVATE_KEY" | tr -d '[:space:]' | base64 -d > "$KEYFILE" 2>/dev/null && [ -s "$KEYFILE" ] && try_import "base64-decoded ($(wc -c <"$KEYFILE") bytes)"; then : ;
+          # 4. Base64 of armored text (one-line "safe paste" pattern).
+          elif printf '%s' "$HAYBARN_GPG_PRIVATE_KEY" | tr -d '[:space:]' | base64 -d 2>/dev/null > "$KEYFILE" && head -c 5 "$KEYFILE" | grep -q '^-----' && try_import "base64-of-armored ($(wc -c <"$KEYFILE") bytes)"; then : ;
+          # 5. Hex-encoded binary.
+          elif printf '%s' "$HAYBARN_GPG_PRIVATE_KEY" | tr -d '[:space:]' | xxd -r -p > "$KEYFILE" 2>/dev/null && [ -s "$KEYFILE" ] && try_import "hex-decoded ($(wc -c <"$KEYFILE") bytes)"; then : ;
+          # 6. Raw bytes (last resort).
+          elif printf '%s' "$HAYBARN_GPG_PRIVATE_KEY" > "$KEYFILE" && try_import "raw-bytes ($(wc -c <"$KEYFILE") bytes)"; then : ;
+          else
+            # ALL paths failed — emit non-leaky character-class diagnostics.
+            v="$HAYBARN_GPG_PRIVATE_KEY"
+            total=${#v}
+            echo "----- Cannot decode HAYBARN_GPG_PRIVATE_KEY. Diagnostic profile (counts only): -----"
+            count_class() {
+              local label="$1" re="$2"
+              printf '%s' "$v" | tr -cd "$re" | wc -c | awk -v l="$label" -v t="$total" '{printf "  %-25s %d / %d (%.1f%%)\n", l, $1, t, ($1*100.0/t)}'
+            }
+            echo "  total bytes:              $total"
+            count_class "dashes (-)"          '-'
+            count_class "equals (=)"          '='
+            count_class "uppercase A-Z"       'A-Z'
+            count_class "lowercase a-z"       'a-z'
+            count_class "digits 0-9"          '0-9'
+            count_class "hex chars [0-9a-f]"  '0-9a-f'
+            count_class "+/* (base64 extras)" '+/*'
+            count_class "newlines (\\n)"      '\n'
+            count_class "carriage returns"    '\r'
+            count_class "spaces"              ' '
+            count_class "backslashes"         '\\'
+            echo "  first byte (hex):         $(printf '%s' "$v" | head -c 1 | xxd -p)"
+            echo "  last byte (hex):          $(printf '%s' "$v" | tail -c 1 | xxd -p)"
+            echo "  contains '\\n' literal:    $(printf '%s' "$v" | grep -c '\\n' || true)"
+            echo "  starts with -----:         $(printf '%s' "$v" | head -c 5 | grep -cF -- '-----' || true)"
+            echo "-----------------------------------------------------------------------------------"
+            exit 1
+          fi
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase "$HAYBARN_GPG_PASSPHRASE" \
+            --armor --detach-sign --output release/SHA256SUMS.asc release/SHA256SUMS
+
+      - name: Create GitHub Release
+        if: ${{ steps.mode.outputs.release == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: ${{ env.TAG }}
+          prerelease: ${{ steps.mode.outputs.prerelease == 'true' }}
+          body: |
+            Haybarn ${{ env.TAG }} — powered by DuckDB.
+
+            An independent derived distribution of DuckDB. Not affiliated with or
+            endorsed by the DuckDB Foundation. DuckDB is a trademark of the
+            DuckDB Foundation.
+
+            ## Verifying downloads
+            - `SHA256SUMS` — checksums for every artifact.
+            - `SHA256SUMS.asc` — detached GPG signature of `SHA256SUMS`.
+            - GitHub build attestations — SLSA provenance binding each artifact
+              to the commit, workflow, and run that built it.
+
+            ```
+            sha256sum -c SHA256SUMS
+            gpg --verify SHA256SUMS.asc SHA256SUMS
+            gh attestation verify <file> --repo Query-farm-haybarn/haybarn
+            ```
+          files: release/*
+          fail_on_unmatched_files: true
