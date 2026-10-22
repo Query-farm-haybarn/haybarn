@@ -1,22 +1,27 @@
-# Haybarn: validates the DuckDB 2.0 extension build path.
+# Haybarn 2.0 core extension build.
 #
-# This development workflow is BUILD ONLY. It initially builds a small smoke
-# set; publication stays disabled until the complete 2.0 extension matrix is
-# repinned and validated.
+# Builds upstream 2.0's extension groups (core, cloud, search, scanner, rust)
+# through the Haybarn ci-tools build.yml against this engine, with the
+# httpfs/iceberg/ducklake/delta build-forks in the cloud and rust groups. Every
+# run then dry-runs haybarn-extensions-publish.yml on its own artifacts; real
+# publishing is a manual dispatch of that workflow against a tag build.
 #
-# The `build` job uses the DuckDB 2.0 extension-ci-tools build workflow carried
-# by Haybarn. It checks out this repository as the engine, then builds the
-# extension-template with Haybarn's 2.0 smoke configuration.
+# Triggers: haybarn-v2.* tags build every group on every architecture; pushes
+# to next-2.0 build the smoke group on the reduced architecture set; dispatch
+# chooses the groups.
 name: Haybarn Extensions (2.0)
 
 on:
   push:
     branches:
       - next-2.0
+    tags:
+      - 'haybarn-v2.[0-9]+.[0-9]+*'
     paths:
       - '.github/config/haybarn_extensions_next_2_0.cmake'
       - '.github/config/haybarn/**'
       - '.github/workflows/haybarn-extensions.yml'
+      - '.github/workflows/haybarn-extensions-publish.yml'
       - 'extension/**'
       - 'src/**'
       - 'tools/shell/**'
@@ -25,8 +30,8 @@ on:
       engine_ref:
         description: 'Haybarn engine ref to build against. Defaults to the workflow commit.'
         type: string
-      override_git_describe:
-        description: 'DuckDB-compatible version string to embed, e.g. v2.0.0. Empty uses the engine ref.'
+      duckdb_version:
+        description: 'DuckDB-compatible version to embed, e.g. v2.0.0. Empty derives it like upstream (vX.Y.0-devN).'
         type: string
       skip_tests:
         description: 'Build artifacts without running extension tests.'
@@ -42,15 +47,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  groups:
-    name: Select extension groups
+  prepare:
+    name: Select version and groups
     runs-on: ubuntu-latest
     outputs:
       groups: ${{ steps.select.outputs.groups }}
+      duckdb_version: ${{ steps.version.outputs.duckdb_version }}
+      duckdb_commit: ${{ steps.version.outputs.duckdb_commit }}
+      tag_build: ${{ steps.version.outputs.tag_build }}
     steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.engine_ref || github.sha }}
+          # version.py counts commits for the -devN iteration.
+          fetch-depth: 0
+          filter: blob:none
+      # The embedded DuckDB version decides extension compatibility and the
+      # repository folder: ci-tools exports it as DUCKDB_VERSION, which the
+      # engine's CMake prefers over OVERRIDE_GIT_DESCRIBE. A haybarn-vX.Y.Z[-rcN]
+      # tag embeds vX.Y.Z (what that engine reports); otherwise upstream's
+      # scripts/ci/version.py derives vX.Y.0-devN, filed under the commit hash.
+      - id: version
+        env:
+          INPUT_VERSION: ${{ inputs.duckdb_version }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="$INPUT_VERSION"
+          tag_build=false
+          if [[ -z "$version" && "$REF_TYPE" == tag && "$REF_NAME" =~ ^haybarn-(v[0-9]+\.[0-9]+\.[0-9]+)(-rc[0-9]+)?$ ]]; then
+            version="${BASH_REMATCH[1]}"
+            tag_build=true
+          fi
+          python3 scripts/ci/version.py --duckdb-commit "$(git rev-parse HEAD)" --duckdb-version "$version" --github-output >> "$GITHUB_OUTPUT"
+          echo "tag_build=$tag_build" >> "$GITHUB_OUTPUT"
+          sed -n 's/^duckdb_/Using duckdb_/p' "$GITHUB_OUTPUT"
       - id: select
         env:
-          REQUESTED: ${{ inputs.groups || 'smoke' }}
+          REQUESTED: ${{ inputs.groups || (github.ref_type == 'tag' && 'all') || 'smoke' }}
         # Upstream Main.yml's groups, with cloud and rust swapped for the Haybarn
         # variants that build the httpfs/iceberg/ducklake/delta build-forks.
         run: |
@@ -72,19 +107,20 @@ jobs:
 
   build:
     name: Build extensions
-    needs: groups
+    needs: prepare
     # ci-tools haybarn-2.0 (upstream v2.0-cyanoptera + Haybarn): haybarn-ci images/actions, Haybarn-only prebuilt.
     uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/build.yml@94019a66c8c084806e74fc090fea1f1298dc5997
     with:
-      duckdb_version: ${{ inputs.engine_ref || github.sha }}
-      override_git_describe: ${{ inputs.override_git_describe }}
+      duckdb_version: ${{ needs.prepare.outputs.duckdb_version }}
+      duckdb_commit: ${{ needs.prepare.outputs.duckdb_commit }}
       ci_tools_version: 94019a66c8c084806e74fc090fea1f1298dc5997
       ci_tools_repository: Query-farm-haybarn/haybarn-extension-ci-tools
       duckdb_repository: Query-farm-haybarn/haybarn
       extension_repository: duckdb/extension-template
       extension_ref: main
-      groups: ${{ needs.groups.outputs.groups }}
-      reduced_ci_mode: enabled
+      groups: ${{ needs.prepare.outputs.groups }}
+      # Release tags build every architecture; development builds the reduced set.
+      reduced_ci_mode: ${{ needs.prepare.outputs.tag_build == 'true' && 'disabled' || 'enabled' }}
       # Haybarn ships osx_amd64, which upstream made opt-in.
       opt_in_archs: osx_amd64
       # No engine archive is produced in this run and none may come from DuckDB; build the engine from source.
@@ -93,4 +129,18 @@ jobs:
       skip_tests: ${{ inputs.skip_tests || false }}
     secrets:
       vcpkg_token: ${{ secrets.HAYBARN_VCPKG_TOKEN }}
+
+  publish-dry-run:
+    name: Publish (dry run)
+    needs: build
+    uses: ./.github/workflows/haybarn-extensions-publish.yml
+    # The called workflow's registry job declares id-token: write; it only runs
+    # on a manual deploy dispatch, never from this call.
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    secrets: inherit
+    with:
+      source_run_id: ${{ github.run_id }}
 # Haybarn fork — workflow re-index marker.
