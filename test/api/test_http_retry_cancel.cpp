@@ -192,3 +192,107 @@ TEST_CASE("A coordinator's retry budget stops waiting once its client context is
 	REQUIRE(more_attempts == 1);
 	REQUIRE(budget.RetriesUsed() == 1);
 }
+
+#ifndef _WIN32
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
+
+namespace {
+
+// A loopback server that answers every request with a 200 whose 10 byte body trickles out one byte per second, so a
+// download is in flight for ~10 s unless the client gives up.
+struct TrickleServer {
+	int listen_fd = -1;
+	uint16_t port = 0;
+	std::atomic<bool> stop {false};
+	std::thread th;
+
+	void Start() {
+		listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+		REQUIRE(listen_fd >= 0);
+		int yes = 1;
+		setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+		sockaddr_in addr {};
+		addr.sin_family = AF_INET;
+		addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+		addr.sin_port = 0;
+		REQUIRE(bind(listen_fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) == 0);
+		socklen_t len = sizeof(addr);
+		REQUIRE(getsockname(listen_fd, reinterpret_cast<sockaddr *>(&addr), &len) == 0);
+		port = ntohs(addr.sin_port);
+		REQUIRE(listen(listen_fd, 8) == 0);
+		th = std::thread([this] {
+			while (!stop.load()) {
+				int fd = accept(listen_fd, nullptr, nullptr);
+				if (fd < 0) {
+					break;
+				}
+#ifdef SO_NOSIGPIPE
+				int no_sigpipe = 1;
+				setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &no_sigpipe, sizeof(no_sigpipe));
+#endif
+				char buf[4096];
+				recv(fd, buf, sizeof(buf), 0);
+				const char *head = "HTTP/1.1 200 OK\r\nContent-Length: 10\r\nConnection: close\r\n\r\n";
+				send(fd, head, strlen(head), MSG_NOSIGNAL);
+				for (int i = 0; i < 10 && !stop.load(); i++) {
+					if (send(fd, "x", 1, MSG_NOSIGNAL) != 1) {
+						break;
+					}
+					for (int slice = 0; slice < 10 && !stop.load(); slice++) {
+						std::this_thread::sleep_for(milliseconds(100));
+					}
+				}
+				close(fd);
+			}
+		});
+	}
+
+	~TrickleServer() {
+		stop.store(true);
+		if (listen_fd >= 0) {
+			shutdown(listen_fd, SHUT_RDWR);
+			close(listen_fd);
+		}
+		if (th.joinable()) {
+			th.join();
+		}
+	}
+};
+
+} // namespace
+
+TEST_CASE("The built-in HTTP client aborts a download once its client context is interrupted", "[api][http]") {
+	DuckDB db(nullptr);
+	Connection con(db);
+	auto &http_util = HTTPUtil::Get(*db.instance);
+	if (http_util.GetName() != "Built-In") {
+		// another HTTP client (e.g. httpfs) is registered, its own tests cover it
+		return;
+	}
+	TrickleServer server;
+	server.Start();
+	const string url = "http://127.0.0.1:" + to_string(server.port) + "/trickle";
+	auto params = http_util.InitializeParameters(*con.context, url);
+	HTTPHeaders headers;
+	idx_t received = 0;
+	GetRequestInfo get(
+	    url, headers, *params, [](const HTTPResponse &) { return true; },
+	    [&](const_data_ptr_t, idx_t length) {
+		    received += length;
+		    return true;
+	    });
+
+	auto canceller = CancelAfter(milliseconds(1500), [&]() { con.Interrupt(); });
+	auto started = steady_clock::now();
+	REQUIRE_THROWS_AS(http_util.Request(get), InterruptException);
+	canceller.join();
+	REQUIRE(steady_clock::now() - started < std::chrono::seconds(5));
+	REQUIRE(received < 10);
+}
+#endif

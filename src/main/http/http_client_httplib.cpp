@@ -46,18 +46,27 @@ public:
 	}
 	unique_ptr<HTTPResponse> Get(GetRequestInfo &info) override {
 		auto headers = TransformHeaders(info.headers, info.params);
+		// Stop the download once the request is cancelled; httplib then reports Error::Canceled.
+		duckdb_httplib::DownloadProgress progress;
+		if (HTTPUtil::CancellationArmed(info)) {
+			progress = [&](size_t, size_t) {
+				return !HTTPUtil::CancellationRequested(info);
+			};
+		}
 		if (!info.response_handler && !info.content_handler) {
-			return TransformResult(client->Get(info.path, headers));
+			return TransformResult(client->Get(info.path, headers, progress), info);
 		} else {
 			return TransformResult(client->Get(
-			    info.path, headers,
-			    [&](const duckdb_httplib::Response &response) {
-				    auto http_response = TransformResponse(response);
-				    return info.response_handler(*http_response);
-			    },
-			    [&](const char *data, size_t data_length) {
-				    return info.content_handler(const_data_ptr_cast(data), data_length);
-			    }));
+			                           info.path, headers,
+			                           [&](const duckdb_httplib::Response &response) {
+				                           auto http_response = TransformResponse(response);
+				                           return info.response_handler(*http_response);
+			                           },
+			                           [&](const char *data, size_t data_length) {
+				                           return info.content_handler(const_data_ptr_cast(data), data_length);
+			                           },
+			                           progress),
+			                       info);
 		}
 	}
 	unique_ptr<HTTPResponse> Put(PutRequestInfo &info) override {
@@ -102,13 +111,15 @@ private:
 		return result;
 	}
 
-	unique_ptr<HTTPResponse> TransformResult(const duckdb_httplib::Result &res) {
+	unique_ptr<HTTPResponse> TransformResult(const duckdb_httplib::Result &res, const BaseRequest &info) {
 		if (res.error() == duckdb_httplib::Error::Success) {
 			auto &response = res.value();
 			return TransformResponse(response);
 		} else {
 			auto result = make_uniq<HTTPResponse>(HTTPStatusCode::INVALID);
 			result->request_error = to_string(res.error());
+			// A transfer that failed while the request was cancelled is terminal, not a transport error to retry.
+			result->cancelled = HTTPUtil::CancellationRequested(info);
 			return result;
 		}
 	}
