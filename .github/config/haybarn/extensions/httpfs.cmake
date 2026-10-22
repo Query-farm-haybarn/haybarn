@@ -9,5 +9,5 @@
 duckdb_extension_load(httpfs
     LOAD_TESTS
     GIT_URL https://github.com/Query-farm-haybarn/haybarn-httpfs
-    GIT_TAG cc996e268a46863e69df97aab0b30f8ccd3b6a18
+    GIT_TAG 4babcc0ca5d9a2e1fe8489b91dbcf92291aa0170
 )
