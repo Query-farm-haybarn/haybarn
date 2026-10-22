@@ -98,6 +98,16 @@ jobs:
           echo "::notice::Re-derived TAG via head_sha lookup: $LOOKUP"
           echo "TAG=$LOOKUP" >> "$GITHUB_ENV"
 
+      # Haybarn: the 1.5-line publisher. workflow_run always runs the default
+      # branch's copy, so refuse anything but a haybarn-v1.* release; the 2.0
+      # line publishes from its own workflows.
+      - name: Refuse non-1.5 release tags
+        run: |
+          case "$TAG" in
+            haybarn-v1.*) ;;
+            *) echo "::error::'$TAG' is not a 1.5-line release tag; this workflow publishes only haybarn-v1.* releases"; exit 1 ;;
+          esac
+
       # Node 24 / npm 11. setup-node writes an .npmrc that reads the auth token
       # from the NODE_AUTH_TOKEN env var, which we supply from the
       # HAYBARN_NPM_TOKEN org secret on the publish steps below. (--provenance
