@@ -1201,4 +1201,25 @@ TEST_CASE("An unfinished prepared insert into a temporary table closed inside a 
 	REQUIRE(CHECK_COLUMN(count, 0, {0}));
 }
 
+TEST_CASE("A materializing query waiting on worker threads ends promptly on an interrupt", "[api][query_result]") {
+	DuckDB db(nullptr);
+	Connection con(db);
+	REQUIRE_NO_FAIL(con.Query("SET threads=4"));
+	// Three row groups whose cost grows with i: once the collecting thread is out of tasks it waits for the
+	// workers on the heavier ones. Uninterrupted, the query runs for minutes
+	REQUIRE_NO_FAIL(con.Query("CREATE TABLE few AS SELECT range AS i FROM range(360000)"));
+	std::thread interrupter([&]() {
+		std::this_thread::sleep_for(std::chrono::milliseconds(300));
+		con.Interrupt();
+	});
+	auto begin = std::chrono::steady_clock::now();
+	auto result = con.Query("SELECT count(*) FROM few, range(few.i) r(j)");
+	auto elapsed = std::chrono::steady_clock::now() - begin;
+	interrupter.join();
+	REQUIRE(result->HasError());
+	REQUIRE(result->GetErrorType() == ExceptionType::INTERRUPT);
+	REQUIRE(elapsed < std::chrono::seconds(10));
+	REQUIRE_NO_FAIL(con.Query("SELECT 42"));
+}
+
 #endif
