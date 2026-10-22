@@ -62,10 +62,11 @@ jobs:
             [ -e "$f" ] || continue
             mv -- "$f" "haybarn-${f#duckdb-}"
           done
-          if ls -- *duckdb* 2>/dev/null | grep -q .; then
-            echo "::error::release asset named after duckdb: $(ls -- *duckdb*)"
+          for f in *duckdb*; do
+            [ -e "$f" ] || continue
+            echo "::error::release asset named after duckdb: $f"
             exit 1
-          fi
+          done
           ls -la
           sha256sum -- * > SHA256SUMS
           cat SHA256SUMS
@@ -141,30 +142,53 @@ jobs:
             --passphrase "$HAYBARN_GPG_PASSPHRASE" \
             --armor --detach-sign --output release/SHA256SUMS.asc release/SHA256SUMS
 
-      - name: Create GitHub Release
+      # The org enforces immutable releases: assets can only be attached while a
+      # release is a draft. Create the draft, upload every asset, then publish,
+      # and check the published release carries them all. (softprops/action-gh-release
+      # publishes a prerelease before uploading, which immutability rejects; that
+      # left haybarn-v2.0.0-rc1 published with no assets.)
+      - name: Create GitHub Release (draft, upload, publish)
         if: ${{ steps.mode.outputs.release == 'true' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.TAG }}
-          name: ${{ env.TAG }}
-          prerelease: ${{ steps.mode.outputs.prerelease == 'true' }}
-          body: |
-            Haybarn ${{ env.TAG }} — powered by DuckDB.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PRERELEASE: ${{ steps.mode.outputs.prerelease }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Quoted: the notes contain backticks; the tag is filled in by Actions before the shell runs.
+          cat > /tmp/release-notes.md <<'NOTES'
+          Haybarn ${{ env.TAG }} — powered by DuckDB.
 
-            An independent derived distribution of DuckDB. Not affiliated with or
-            endorsed by the DuckDB Foundation. DuckDB is a trademark of the
-            DuckDB Foundation.
+          An independent derived distribution of DuckDB. Not affiliated with or
+          endorsed by the DuckDB Foundation. DuckDB is a trademark of the
+          DuckDB Foundation.
 
-            ## Verifying downloads
-            - `SHA256SUMS` — checksums for every artifact.
-            - `SHA256SUMS.asc` — detached GPG signature of `SHA256SUMS`.
-            - GitHub build attestations — SLSA provenance binding each artifact
-              to the commit, workflow, and run that built it.
+          ## Verifying downloads
+          - `SHA256SUMS` — checksums for every artifact.
+          - `SHA256SUMS.asc` — detached GPG signature of `SHA256SUMS`.
+          - GitHub build attestations — SLSA provenance binding each artifact
+            to the commit, workflow, and run that built it.
 
-            ```
-            sha256sum -c SHA256SUMS
-            gpg --verify SHA256SUMS.asc SHA256SUMS
-            gh attestation verify <file> --repo Query-farm-haybarn/haybarn
-            ```
-          files: release/*
-          fail_on_unmatched_files: true
+          ```
+          sha256sum -c SHA256SUMS
+          gpg --verify SHA256SUMS.asc SHA256SUMS
+          gh attestation verify <file> --repo Query-farm-haybarn/haybarn
+          ```
+          NOTES
+          flags=(--draft --verify-tag --title "$TAG" --notes-file /tmp/release-notes.md)
+          if [[ "$PRERELEASE" == true ]]; then flags+=(--prerelease --latest=false); fi
+          gh release create "$TAG" "${flags[@]}" release/*
+          expected=$(find release -maxdepth 1 -type f | wc -l)
+          drafted=$(gh release view "$TAG" --json assets --jq '.assets | length')
+          if [[ "$drafted" -ne "$expected" ]]; then
+            echo "::error::draft has $drafted of $expected assets; leaving it unpublished"
+            exit 1
+          fi
+          gh release edit "$TAG" --draft=false
+          published=$(gh release view "$TAG" --json assets,isDraft --jq 'select(.isDraft == false) | .assets | length')
+          if [[ "$published" -ne "$expected" ]]; then
+            echo "::error::published release has ${published:-0} of $expected assets"
+            exit 1
+          fi
+          echo "::notice::published $TAG with $published assets"
