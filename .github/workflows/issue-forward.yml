@@ -5,10 +5,10 @@ name: Forward issue events to community-issue-tracker
 # tracked repo with no per-repo edit.
 
 on:
-  issues:
-    types: [opened, reopened, closed]
-  issue_comment:
-    types: [created]
+  # Haybarn: upstream auto-triggers removed so this workflow
+  # does not run on the fork (it forwards to DuckDB's own trackers or
+  # acts on PRs with base-repository privileges). Still runnable manually.
+  workflow_dispatch:
 
 permissions:
   contents: read

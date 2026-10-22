@@ -7,9 +7,10 @@ name: Forward review activity to pr-tracker
 # the workflow_run on a fork PR review).
 
 on:
-  workflow_run:
-    workflows: ["Review relay"]
-    types: [completed]
+  # Haybarn: upstream auto-triggers removed so this workflow
+  # does not run on the fork (it forwards to DuckDB's own trackers or
+  # acts on PRs with base-repository privileges). Still runnable manually.
+  workflow_dispatch:
 
 permissions:
   contents: read

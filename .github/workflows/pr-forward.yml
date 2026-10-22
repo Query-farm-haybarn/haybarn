@@ -6,19 +6,10 @@ name: Forward PR events to pr-tracker
 # the trigger list a generous superset so this file rarely needs to change.
 
 on:
-  pull_request_target:
-    types: [opened, reopened, ready_for_review, converted_to_draft, closed, labeled, unlabeled, review_requested]
-  issue_comment:
-    types: [created]
-  # CI signal: auto-assign a reviewer once CI finishes (pass or fail). check_suite/status
-  # do NOT fire for GitHub-Actions CI (Actions-created suites don't trigger workflows),
-  # so react to the repo's CI workflow finishing. `workflows:` is THIS repo's CI/gate
-  # workflow `name:` (per-repo, literal — no wildcards): duckdb-rs=CI, duckdb-iceberg=
-  # "Build & Test against catalogs", community-extensions="Community Extension Build",
-  # duckdb=Main.
-  workflow_run:
-    workflows: ["Main"]
-    types: [completed]
+  # Haybarn: upstream auto-triggers removed so this workflow
+  # does not run on the fork (it forwards to DuckDB's own trackers or
+  # acts on PRs with base-repository privileges). Still runnable manually.
+  workflow_dispatch:
 
 permissions:
   contents: read
