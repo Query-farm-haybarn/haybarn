@@ -33,12 +33,22 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
-       startsWith(github.event.workflow_run.head_branch, 'haybarn-v'))
+       startsWith(github.event.workflow_run.head_branch, 'haybarn-v1.'))
     runs-on: ubuntu-24.04
     env:
       RUN_ID: ${{ inputs.run_id || github.event.workflow_run.id }}
       TAG: ${{ inputs.tag || github.event.workflow_run.head_branch }}
     steps:
+      # Haybarn: the 1.5-line publisher. workflow_run always runs the default
+      # branch's copy, so refuse anything but a haybarn-v1.* release; the 2.0
+      # line publishes from its own workflows.
+      - name: Refuse non-1.5 release tags
+        run: |
+          case "$TAG" in
+            haybarn-v1.*) ;;
+            *) echo "::error::'$TAG' is not a 1.5-line release tag; this workflow publishes only haybarn-v1.* releases"; exit 1 ;;
+          esac
+
       - uses: actions/checkout@v6
 
       - name: Download release artifacts
