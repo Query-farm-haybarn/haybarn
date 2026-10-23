@@ -19,7 +19,6 @@ the pre-built `haybarn-unittest` binary for one platform, tagged so `pip` /
 - `manylinux_2_28_aarch64` — glibc-based Linux on aarch64
 - `musllinux_1_2_x86_64` — Alpine / musl Linux on x86_64
 - `musllinux_1_2_aarch64` — Alpine / musl Linux on aarch64
-- `macosx_11_0_x86_64` — macOS 11+ on Intel
 - `macosx_11_0_arm64` — macOS 11+ on Apple Silicon
 - `win_amd64` — 64-bit Windows
 

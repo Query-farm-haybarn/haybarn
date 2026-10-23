@@ -9,7 +9,6 @@
 #     │   @haybarn/cli-linux-arm64
 #     │   @haybarn/cli-linux-x64-musl
 #     │   @haybarn/cli-linux-arm64-musl
-#     │   @haybarn/cli-darwin-x64
 #     │   @haybarn/cli-darwin-arm64
 #     │   @haybarn/cli-win32-x64
 #
@@ -165,7 +164,6 @@ jobs:
             "haybarn_cli-linux-arm64.zip          cli-linux-arm64       linux  arm64  glibc"
             "haybarn_cli-linux-amd64-musl.zip     cli-linux-x64-musl    linux  x64    musl"
             "haybarn_cli-linux-arm64-musl.zip     cli-linux-arm64-musl  linux  arm64  musl"
-            "haybarn_cli-osx-amd64.zip            cli-darwin-x64        darwin x64    -"
             "haybarn_cli-osx-arm64.zip            cli-darwin-arm64      darwin arm64  -"
             "haybarn_cli-windows-amd64.zip        cli-win32-x64         win32  x64    -"
           )

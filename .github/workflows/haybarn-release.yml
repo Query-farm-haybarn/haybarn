@@ -210,12 +210,13 @@ jobs:
             duckdb-static-libs-linux-*.tar.gz
 
   osx:
-    name: macOS (universal)
+    # Haybarn 2.0 ships macOS arm64 only (no x86_64, no universal binary).
+    name: macOS (arm64)
     runs-on: macos-15
     env:
       EXTENSION_CONFIGS: '${{ github.workspace }}/.github/config/bundled_extensions.cmake'
       DUCKDB_CAPABILITIES: 'httplib loadable_extensions'
-      OSX_BUILD_UNIVERSAL: 1
+      OSX_BUILD_ARCH: arm64
       # Build the unittest binary with a portable root dir so the shipped
       # haybarn-unittest launches from any cwd (consumers pass --test-dir).
       EXTRA_CMAKE_VARIABLES: '-DUNITTEST_ROOT_DIRECTORY=.'
@@ -253,7 +254,9 @@ jobs:
         run: make
 
       - name: Verify architecture flags
-        run: grep -Fq -- '-Xarch_arm64 -mcpu=apple-m1' build/release/compile_commands.json
+        run: |
+          grep -Fq -- '-mcpu=apple-m1' build/release/compile_commands.json
+          ! grep -Fq -- '-Xarch_' build/release/compile_commands.json
 
       - name: Print platform
         run: ./build/release/haybarn -c "PRAGMA platform; PRAGMA version;"
@@ -272,35 +275,28 @@ jobs:
       - name: Package
         shell: bash
         run: |
-          zip -j -y libhaybarn-osx-universal.zip build/release/src/libhaybarn*.dylib \
+          set -euo pipefail
+          # Every shipped Mach-O must be arm64 only.
+          for f in build/release/haybarn build/release/test/unittest build/release/src/libhaybarn*.dylib; do
+            [[ -L "$f" ]] && continue
+            lipo "$f" -verify_arch arm64
+            ! lipo "$f" -verify_arch x86_64
+          done
+          zip -j -y libhaybarn-osx-arm64.zip build/release/src/libhaybarn*.dylib \
             src/include/duckdb.h src/include/duckdb_v2.h
-          mkdir -p build/release_arm64/libs build/release_amd64/libs
-          lipo -extract arm64  -output build/release_arm64/haybarn  build/release/haybarn
-          lipo -extract x86_64 -output build/release_amd64/haybarn  build/release/haybarn
-          zip -j haybarn_cli-osx-universal.zip build/release/haybarn
-          zip -j haybarn_cli-osx-arm64.zip     build/release_arm64/haybarn
-          zip -j haybarn_cli-osx-amd64.zip     build/release_amd64/haybarn
-          gzip -9 -k -n -c build/release/haybarn        > haybarn_cli-osx-universal.gz
-          gzip -9 -k -n -c build/release_arm64/haybarn  > haybarn_cli-osx-arm64.gz
-          gzip -9 -k -n -c build/release_amd64/haybarn  > haybarn_cli-osx-amd64.gz
-          # unittest binary (shipped as haybarn-unittest). The build is
-          # universal; split per-arch like the CLI. Per-arch zips only — npm/
-          # PyPI consume per-arch, so no universal/.gz variants.
-          lipo -extract arm64  -output build/release_arm64/haybarn-unittest  build/release/test/unittest
-          lipo -extract x86_64 -output build/release_amd64/haybarn-unittest  build/release/test/unittest
+          zip -j haybarn_cli-osx-arm64.zip build/release/haybarn
+          gzip -9 -k -n -c build/release/haybarn > haybarn_cli-osx-arm64.gz
+          # unittest binary (shipped as haybarn-unittest).
+          mkdir -p build/release_arm64
+          cp build/release/test/unittest build/release_arm64/haybarn-unittest
           zip -j haybarn_unittest-osx-arm64.zip build/release_arm64/haybarn-unittest
-          zip -j haybarn_unittest-osx-amd64.zip build/release_amd64/haybarn-unittest
-          # Thin per-arch static libraries, as upstream ships them.
+          static_libraries=()
           for library in $STATIC_LIBRARIES_UNIX build/release/extension/*/lib*_extension.a; do
             [[ "$library" == build/* ]] || library="build/release/$library"
-            name="$(basename "$library")"
-            lipo -extract arm64  -output "build/release_arm64/libs/$name" "$library"
-            lipo "build/release_arm64/libs/$name" -verify_arch arm64
-            lipo -extract x86_64 -output "build/release_amd64/libs/$name" "$library"
-            lipo "build/release_amd64/libs/$name" -verify_arch x86_64
+            lipo "$library" -verify_arch arm64
+            static_libraries+=("$library")
           done
-          make static-libs-release-artifact ARTIFACT_SUFFIX=osx-arm64 STATIC_LIBRARIES="$(ls build/release_arm64/libs/* | tr '\n' ' ')"
-          make static-libs-release-artifact ARTIFACT_SUFFIX=osx-amd64 STATIC_LIBRARIES="$(ls build/release_amd64/libs/* | tr '\n' ' ')"
+          make static-libs-release-artifact ARTIFACT_SUFFIX=osx-arm64 STATIC_LIBRARIES="${static_libraries[*]}"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -309,7 +305,7 @@ jobs:
             haybarn_cli-osx-*.zip
             haybarn_cli-osx-*.gz
             haybarn_unittest-osx-*.zip
-            libhaybarn-osx-universal.zip
+            libhaybarn-osx-arm64.zip
             duckdb-static-libs-osx-*.tar.gz
 
       - name: Attest build provenance
@@ -319,7 +315,7 @@ jobs:
             haybarn_cli-osx-*.zip
             haybarn_cli-osx-*.gz
             haybarn_unittest-osx-*.zip
-            libhaybarn-osx-universal.zip
+            libhaybarn-osx-arm64.zip
             duckdb-static-libs-osx-*.tar.gz
 
   windows:
@@ -595,7 +591,7 @@ jobs:
           for archive in artifacts/duckdb-static-libs-*.tar.gz; do
             [[ "$archive" == *-mingw.tar.gz ]] || archives+=("$archive")
           done
-          (( ${#archives[@]} == 7 )) || { echo "::error::expected 7 static-libs archives, found ${#archives[@]}"; ls artifacts; exit 1; }
+          (( ${#archives[@]} == 6 )) || { echo "::error::expected 6 static-libs archives, found ${#archives[@]}"; ls artifacts; exit 1; }
           for archive in "${archives[@]}"; do
             aws s3 cp --no-progress "$archive" "$prefix/$version/duckdb/duckdb/github_release/$(basename "$archive")"
           done

@@ -16,7 +16,6 @@ npx haybarn -c "SELECT 'powered by DuckDB' AS haybarn;"
 - `@haybarn/cli-linux-arm64`
 - `@haybarn/cli-linux-x64-musl`
 - `@haybarn/cli-linux-arm64-musl`
-- `@haybarn/cli-darwin-x64`
 - `@haybarn/cli-darwin-arm64`
 - `@haybarn/cli-win32-x64`
 

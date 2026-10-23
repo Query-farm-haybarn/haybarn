@@ -49,8 +49,8 @@ function platformPackageName() {
     return `@haybarn/unittest-linux-${arch}${suffix}`;
   }
   if (platform === 'darwin') {
-    if (arch !== 'x64' && arch !== 'arm64') return null;
-    return `@haybarn/unittest-darwin-${arch}`;
+    if (arch !== 'arm64') return null;
+    return '@haybarn/unittest-darwin-arm64';
   }
   if (platform === 'win32') {
     if (arch !== 'x64') return null;
@@ -67,7 +67,7 @@ const pkg = platformPackageName();
 if (!pkg) {
   console.error(
     `haybarn-unittest: no prebuilt binary for ${process.platform}/${process.arch}.\n` +
-    `Supported: linux x64/arm64 (glibc + musl), darwin x64/arm64, win32 x64.\n` +
+    `Supported: linux x64/arm64 (glibc + musl), darwin arm64, win32 x64.\n` +
     `Build from source: https://github.com/Query-farm-haybarn/haybarn`
   );
   process.exit(1);

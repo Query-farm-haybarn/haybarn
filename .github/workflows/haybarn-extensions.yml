@@ -121,8 +121,10 @@ jobs:
       groups: ${{ needs.prepare.outputs.groups }}
       # Release tags build every architecture; development builds the reduced set.
       reduced_ci_mode: ${{ needs.prepare.outputs.tag_build == 'true' && 'disabled' || 'enabled' }}
-      # Haybarn ships osx_amd64, which upstream made opt-in.
-      opt_in_archs: osx_amd64
+      # Haybarn 2.0 builds no osx_amd64 (opt-in upstream; excluded here too so
+      # no group can opt back in) and no wasm_mvp (DuckDB-Wasm 2.0 has no mvp
+      # bundle). The matrix adds these to every group's default_exclude_archs.
+      exclude_archs: osx_amd64;wasm_mvp
       # No engine archive is produced in this run and none may come from DuckDB; build the engine from source.
       prebuilt_source: disabled
       save_cache: true

@@ -17,7 +17,6 @@ binaries:
 - `@haybarn/unittest-linux-arm64`
 - `@haybarn/unittest-linux-x64-musl`
 - `@haybarn/unittest-linux-arm64-musl`
-- `@haybarn/unittest-darwin-x64`
 - `@haybarn/unittest-darwin-arm64`
 - `@haybarn/unittest-win32-x64`
 

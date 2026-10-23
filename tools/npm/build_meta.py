@@ -38,7 +38,6 @@ PLATFORMS = [
     ("linux-arm64", "linux-arm64"),
     ("linux-amd64-musl", "linux-x64-musl"),
     ("linux-arm64-musl", "linux-arm64-musl"),
-    ("osx-amd64", "darwin-x64"),
     ("osx-arm64", "darwin-arm64"),
     ("windows-amd64", "win32-x64"),
 ]
