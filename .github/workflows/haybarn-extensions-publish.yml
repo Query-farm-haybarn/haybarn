@@ -272,9 +272,10 @@ jobs:
     secrets: inherit
     with:
       artifact_shape: bundled
-      # Extension wheels to PyPI as haybarn-ext-<name>-h<M>-<m>-<p> (account
-      # token; skip-existing, so a rerun resumes after a PyPI rate limit).
-      publish_pypi: true
+      # Extension wheels to PyPI (haybarn-ext-<name>-h<M>-<m>-<p>) are off for
+      # 2.0: PyPI's new-project limit blocks the 25 missing projects. Turn back
+      # on after registering pending trusted publishers for them.
+      publish_pypi: false
       # MUST match the ref in the `uses:` line above.
       ci_tools_ref: 94019a66c8c084806e74fc090fea1f1298dc5997
       duckdb_version: ${{ needs.publish.outputs.duckdb_version }}
