@@ -41,6 +41,10 @@ on:
         description: 'Comma-separated extension groups: smoke, core, cloud, search, scanner, rust, or all.'
         type: string
         default: smoke
+      full_matrix:
+        description: 'Build every architecture a tag build does (reduced_ci_mode disabled), e.g. to include osx_arm64.'
+        type: boolean
+        default: false
 
 concurrency:
   group: haybarn-extensions-${{ github.ref }}
@@ -119,8 +123,9 @@ jobs:
       extension_repository: duckdb/extension-template
       extension_ref: main
       groups: ${{ needs.prepare.outputs.groups }}
-      # Release tags build every architecture; development builds the reduced set.
-      reduced_ci_mode: ${{ needs.prepare.outputs.tag_build == 'true' && 'disabled' || 'enabled' }}
+      # Release tags (or full_matrix) build every architecture; development builds the reduced set.
+      # Reduced mode has no macOS legs (osx_arm64 is not a reduced-CI arch).
+      reduced_ci_mode: ${{ (needs.prepare.outputs.tag_build == 'true' || inputs.full_matrix) && 'disabled' || 'enabled' }}
       # Haybarn 2.0 builds no osx_amd64 (opt-in upstream; excluded here too so
       # no group can opt back in) and no wasm_mvp (DuckDB-Wasm 2.0 has no mvp
       # bundle). The matrix adds these to every group's default_exclude_archs.
