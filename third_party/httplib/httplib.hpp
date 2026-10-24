@@ -116,7 +116,9 @@
 #endif
 
 #ifndef CPPHTTPLIB_HEADER_MAX_LENGTH
-#define CPPHTTPLIB_HEADER_MAX_LENGTH 8192
+// One header line, name and value. GitHub's release-asset redirects send a
+// content-security-policy line of more than 9 KiB, so 8 KiB is too small.
+#define CPPHTTPLIB_HEADER_MAX_LENGTH 16384
 #endif
 
 #ifndef CPPHTTPLIB_HEADER_MAX_COUNT

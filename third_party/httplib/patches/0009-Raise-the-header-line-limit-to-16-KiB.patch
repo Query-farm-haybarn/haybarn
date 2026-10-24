@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Haybarn <noreply@query.farm>
+Date: Sat, 24 Oct 2026 18:00:00 +0000
+Subject: [PATCH 9/9] Raise the header line limit to 16 KiB
+
+GitHub release-asset redirects send a single content-security-policy
+line of 9,243 bytes (since 2026-10-24), over the 8 KiB default, and the
+response is then rejected as a read error.
+
+diff --git a/third_party/httplib/httplib.hpp b/third_party/httplib/httplib.hpp
+index 5675d76..29747d0 100644
+--- a/third_party/httplib/httplib.hpp
++++ b/third_party/httplib/httplib.hpp
+@@ -116,7 +116,9 @@
+ #endif
+ 
+ #ifndef CPPHTTPLIB_HEADER_MAX_LENGTH
+-#define CPPHTTPLIB_HEADER_MAX_LENGTH 8192
++// One header line, name and value. GitHub's release-asset redirects send a
++// content-security-policy line of more than 9 KiB, so 8 KiB is too small.
++#define CPPHTTPLIB_HEADER_MAX_LENGTH 16384
+ #endif
+ 
+ #ifndef CPPHTTPLIB_HEADER_MAX_COUNT
+-- 
+2.43.0
+
