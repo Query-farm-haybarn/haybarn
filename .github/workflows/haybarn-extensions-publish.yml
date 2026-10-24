@@ -50,7 +50,7 @@ concurrency:
 env:
   # ci-tools haybarn-2.0: publish_extensions.py and _extension_registry_publish.yml.
   # Keep in sync with the build.yml pin in haybarn-extensions.yml.
-  HAYBARN_CI_TOOLS_REF: 32194a08d43670f1496a40c4793e05e337405424
+  HAYBARN_CI_TOOLS_REF: 93efd132ded18564358b46da67818a3b904e6850
 
 jobs:
   publish:
@@ -264,7 +264,7 @@ jobs:
     name: Publish PyPI + npm
     needs: publish
     if: ${{ needs.publish.outputs.deploy == 'true' }}
-    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/_extension_registry_publish.yml@32194a08d43670f1496a40c4793e05e337405424
+    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/_extension_registry_publish.yml@93efd132ded18564358b46da67818a3b904e6850
     permissions:
       contents: read
       actions:  read
@@ -277,6 +277,6 @@ jobs:
       # on after registering pending trusted publishers for them.
       publish_pypi: false
       # MUST match the ref in the `uses:` line above.
-      ci_tools_ref: 32194a08d43670f1496a40c4793e05e337405424
+      ci_tools_ref: 93efd132ded18564358b46da67818a3b904e6850
       duckdb_version: ${{ needs.publish.outputs.duckdb_version }}
       source_run_id: ''
