@@ -116,11 +116,11 @@ jobs:
     name: Build extensions
     needs: prepare
     # ci-tools haybarn-2.0 (upstream v2.0-cyanoptera + Haybarn): haybarn-ci images/actions, Haybarn-only prebuilt.
-    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/build.yml@f58e14858320a4897f31eacfb3f15096ee7cb3e7
+    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/build.yml@1033e6a97e1f3f87978c78869965dfe29030c0ff
     with:
       duckdb_version: ${{ needs.prepare.outputs.duckdb_version }}
       duckdb_commit: ${{ needs.prepare.outputs.duckdb_commit }}
-      ci_tools_version: f58e14858320a4897f31eacfb3f15096ee7cb3e7
+      ci_tools_version: 1033e6a97e1f3f87978c78869965dfe29030c0ff
       ci_tools_repository: Query-farm-haybarn/haybarn-extension-ci-tools
       duckdb_repository: Query-farm-haybarn/haybarn
       extension_repository: duckdb/extension-template
