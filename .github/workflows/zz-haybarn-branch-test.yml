@@ -1,0 +1,61 @@
+# Scratch: builds this branch in the haybarn-ci image and runs the extension
+# repository tests. Not for merging; drop this commit before next-2.0.
+name: Branch test (extension repositories)
+on:
+  push:
+    branches:
+      - feat/haybarn-extension-repo
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Build (haybarn-ci image)
+        shell: bash
+        env:
+          IMAGE: ghcr.io/query-farm-haybarn/haybarn-ci/manylinux_2_28_amd64_main:20261021-824906a5
+          CCACHE_REMOTE_STORAGE: "http://haybarn-vcpkg-cache.rusty-bb6.workers.dev/ccache|bearer-token=${{ secrets.HAYBARN_VCPKG_TOKEN }}|connect-timeout=10000|operation-timeout=30000"
+        run: |
+          export WORKSPACE="$(pwd)"
+          docker pull "$IMAGE"
+          docker run \
+            -v"$WORKSPACE":"$WORKSPACE" \
+            -w "$WORKSPACE" \
+            -e CI=true -e GITHUB_ACTIONS=true \
+            -e GEN=ninja \
+            -e CCACHE_DIR="$WORKSPACE/.ccache" \
+            -e CCACHE_BASEDIR="$WORKSPACE" -e CCACHE_NOHASHDIR=1 \
+            -e CCACHE_SLOPPINESS=time_macros,include_file_mtime,pch_defines \
+            -e CCACHE_COMPILERCHECK=content \
+            -e CCACHE_REMOTE_STORAGE \
+            -e OVERRIDE_GIT_DESCRIBE=v2.0.0 \
+            -e EXTENSION_CONFIGS="$WORKSPACE/.github/config/bundled_extensions.cmake" \
+            -e DUCKDB_CAPABILITIES='httplib loadable_extensions' \
+            -e WORKSPACE="$WORKSPACE" \
+            "$IMAGE" \
+            bash -c 'set -e; \
+                     git config --global --add safe.directory "$WORKSPACE"; \
+                     make -C "$WORKSPACE"; \
+                     ccache -s || true'
+
+      - name: Extension repository tests
+        run: |
+          ./build/release/test/unittest "test/sql/extensions/extension_repositor*"
+          ./build/release/test/unittest "*repositor*"
+          ./build/release/test/unittest "*signing keys a load trusts*"
+          ./build/release/test/unittest "*Haybarn trust root*"
+
+      - name: query.farm repository, end to end
+        run: |
+          home=$(mktemp -d)
+          HOME=$home ./build/release/haybarn -c "
+            SET allow_extension_repositories = 'allowed';
+            CREATE EXTENSION REPOSITORY IF NOT EXISTS query_farm
+              WITH PREFIX 'https://duckdb-extensions.query.farm';
+          " && exit 1 || echo "rejected as expected: query.farm does not publish the Haybarn file yet"
+          ls "$home/.haybarn" 2>/dev/null || true
+          test ! -e "$home/.duckdb/extension_repositories"
