@@ -73,13 +73,13 @@ SELECT public_keys FROM duckdb_extension_repositories() WHERE repository_name='m
 statement ok
 DROP EXTENSION REPOSITORY multi
 
-# when no key is provided, it is fetched from `<prefix>/.well-known/duckdb-extension-repo.json` and pinned. The
+# when no key is provided, it is fetched from `<prefix>/.well-known/haybarn-extension-repo.json` and pinned. The
 # "signature_keys" array may contain more than one key. PER_THREAD_OUTPUT is used to create the .well-known directory
 statement ok
 COPY (SELECT 1 AS a) TO '{TEST_DIR}/.well-known' (FORMAT csv, PER_THREAD_OUTPUT true)
 
 statement ok
-COPY (SELECT '{"signature_keys":["-----BEGIN PUBLIC KEY-----MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt9+KeDkWJa7SiBb7AMdXAPV2qpRunztoC2c7DtRmN9+Lq2YQm4rMQmmAQcwyxTxcK8vwPKOiE4mLMwmQMvTty9tL+buREfvg5KJ+FY3Bv05cZYsf7VuYgUDcw41zSEE5W1thh5PiafcrMn7CPF0jN0oFfVvAHB/fAM0yaZGPKs3WYqnHAHa6v/cVMeiWZ/lQORCBqqL2hii1fEiuIqw6AOEoZVsN0/lqm7GfnD899zrzLOPRuP4YFg46drL1UyNdg+4TquJ2OV9kR4CAfdGRexqHFWLmoxkTfnUxJ4yL+gkV57K1H+smEdKrDhDX68pEFM/34E2eVKZoRU/0paxDZQIDAQAB-----END PUBLIC KEY-----"]}') TO '{TEST_DIR}/.well-known/duckdb-extension-repo.json' (FORMAT csv, HEADER false, QUOTE '', USE_TMP_FILE false)
+COPY (SELECT '{"signature_keys":["-----BEGIN PUBLIC KEY-----MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt9+KeDkWJa7SiBb7AMdXAPV2qpRunztoC2c7DtRmN9+Lq2YQm4rMQmmAQcwyxTxcK8vwPKOiE4mLMwmQMvTty9tL+buREfvg5KJ+FY3Bv05cZYsf7VuYgUDcw41zSEE5W1thh5PiafcrMn7CPF0jN0oFfVvAHB/fAM0yaZGPKs3WYqnHAHa6v/cVMeiWZ/lQORCBqqL2hii1fEiuIqw6AOEoZVsN0/lqm7GfnD899zrzLOPRuP4YFg46drL1UyNdg+4TquJ2OV9kR4CAfdGRexqHFWLmoxkTfnUxJ4yL+gkV57K1H+smEdKrDhDX68pEFM/34E2eVKZoRU/0paxDZQIDAQAB-----END PUBLIC KEY-----"]}') TO '{TEST_DIR}/.well-known/haybarn-extension-repo.json' (FORMAT csv, HEADER false, QUOTE '', USE_TMP_FILE false)
 
 query III
 CREATE EXTENSION REPOSITORY fetched WITH PREFIX '{TEST_DIR}'
@@ -97,7 +97,7 @@ DROP EXTENSION REPOSITORY fetched
 
 # a "signature_keys" array with two keys pins both keys (the .well-known directory already exists from above)
 statement ok
-COPY (SELECT '{"signature_keys":["-----BEGIN PUBLIC KEY-----MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt9+KeDkWJa7SiBb7AMdXAPV2qpRunztoC2c7DtRmN9+Lq2YQm4rMQmmAQcwyxTxcK8vwPKOiE4mLMwmQMvTty9tL+buREfvg5KJ+FY3Bv05cZYsf7VuYgUDcw41zSEE5W1thh5PiafcrMn7CPF0jN0oFfVvAHB/fAM0yaZGPKs3WYqnHAHa6v/cVMeiWZ/lQORCBqqL2hii1fEiuIqw6AOEoZVsN0/lqm7GfnD899zrzLOPRuP4YFg46drL1UyNdg+4TquJ2OV9kR4CAfdGRexqHFWLmoxkTfnUxJ4yL+gkV57K1H+smEdKrDhDX68pEFM/34E2eVKZoRU/0paxDZQIDAQAB-----END PUBLIC KEY-----","-----BEGIN PUBLIC KEY-----MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA42wcKQCSwoEFA89qFVyjug5NIRKtExLQ+cCIdb8tbKICvGmiK6aQY5sO1iNiTxaRzfeDcxH4dSVxBIY7RZoNPjPpakd1K06gGv2R31LUg2JZY6P/oqvliHdhxMOcMdMnzsyQPJuSXFrzBXsy4xpAbYfNbdjZfPgH27iORiiUEjG6gmEeXzWe9bis5hEExvWD5GIRV6B+YCaAt41+g+nP4byZ5MPCw9dXHIk5+OMakOsiM/dTj66SxdRfeYJE7HBdmk2zXD2t1st3gHydJQyX3Ov6a1Q/mhnWJq3tni5ZzkmaDKHHcnitI7iQxrCp+XWzVsT5N9wQeFvQLcFLcrR9ZQIDAQAB-----END PUBLIC KEY-----"]}') TO '{TEST_DIR}/.well-known/duckdb-extension-repo.json' (FORMAT csv, HEADER false, QUOTE '', USE_TMP_FILE false)
+COPY (SELECT '{"signature_keys":["-----BEGIN PUBLIC KEY-----MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt9+KeDkWJa7SiBb7AMdXAPV2qpRunztoC2c7DtRmN9+Lq2YQm4rMQmmAQcwyxTxcK8vwPKOiE4mLMwmQMvTty9tL+buREfvg5KJ+FY3Bv05cZYsf7VuYgUDcw41zSEE5W1thh5PiafcrMn7CPF0jN0oFfVvAHB/fAM0yaZGPKs3WYqnHAHa6v/cVMeiWZ/lQORCBqqL2hii1fEiuIqw6AOEoZVsN0/lqm7GfnD899zrzLOPRuP4YFg46drL1UyNdg+4TquJ2OV9kR4CAfdGRexqHFWLmoxkTfnUxJ4yL+gkV57K1H+smEdKrDhDX68pEFM/34E2eVKZoRU/0paxDZQIDAQAB-----END PUBLIC KEY-----","-----BEGIN PUBLIC KEY-----MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA42wcKQCSwoEFA89qFVyjug5NIRKtExLQ+cCIdb8tbKICvGmiK6aQY5sO1iNiTxaRzfeDcxH4dSVxBIY7RZoNPjPpakd1K06gGv2R31LUg2JZY6P/oqvliHdhxMOcMdMnzsyQPJuSXFrzBXsy4xpAbYfNbdjZfPgH27iORiiUEjG6gmEeXzWe9bis5hEExvWD5GIRV6B+YCaAt41+g+nP4byZ5MPCw9dXHIk5+OMakOsiM/dTj66SxdRfeYJE7HBdmk2zXD2t1st3gHydJQyX3Ov6a1Q/mhnWJq3tni5ZzkmaDKHHcnitI7iQxrCp+XWzVsT5N9wQeFvQLcFLcrR9ZQIDAQAB-----END PUBLIC KEY-----"]}') TO '{TEST_DIR}/.well-known/haybarn-extension-repo.json' (FORMAT csv, HEADER false, QUOTE '', USE_TMP_FILE false)
 
 query III
 CREATE EXTENSION REPOSITORY fetched_multi WITH PREFIX '{TEST_DIR}'
@@ -107,9 +107,51 @@ fetched_multi	{TEST_DIR}	['sha256:172c29bbb3cd41c70a8225d36ba3a53c94ca9236389fba
 statement ok
 DROP EXTENSION REPOSITORY fetched_multi
 
+# Haybarn: the metadata can serve the extensions from another prefix (e.g. a separate host for the Haybarn builds),
+# which is pinned along with the keys
+statement ok
+COPY (SELECT '{"signature_keys":["-----BEGIN PUBLIC KEY-----MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt9+KeDkWJa7SiBb7AMdXAPV2qpRunztoC2c7DtRmN9+Lq2YQm4rMQmmAQcwyxTxcK8vwPKOiE4mLMwmQMvTty9tL+buREfvg5KJ+FY3Bv05cZYsf7VuYgUDcw41zSEE5W1thh5PiafcrMn7CPF0jN0oFfVvAHB/fAM0yaZGPKs3WYqnHAHa6v/cVMeiWZ/lQORCBqqL2hii1fEiuIqw6AOEoZVsN0/lqm7GfnD899zrzLOPRuP4YFg46drL1UyNdg+4TquJ2OV9kR4CAfdGRexqHFWLmoxkTfnUxJ4yL+gkV57K1H+smEdKrDhDX68pEFM/34E2eVKZoRU/0paxDZQIDAQAB-----END PUBLIC KEY-----"],"prefix":"http://haybarn.example.com/community"}') TO '{TEST_DIR}/.well-known/haybarn-extension-repo.json' (FORMAT csv, HEADER false, QUOTE '', USE_TMP_FILE false)
+
+query III
+CREATE EXTENSION REPOSITORY redirected WITH PREFIX '{TEST_DIR}'
+----
+redirected	http://haybarn.example.com/community	['sha256:172c29bbb3cd41c70a8225d36ba3a53c94ca9236389fba11a71d45ef0524fa3b']
+
+query II
+SELECT repository_name, prefix FROM duckdb_extension_repositories() WHERE repository_name='redirected'
+----
+redirected	http://haybarn.example.com/community
+
+statement ok
+DROP EXTENSION REPOSITORY redirected
+
+# the prefix must be a non-empty string
+statement ok
+COPY (SELECT '{"signature_keys":["-----BEGIN PUBLIC KEY-----MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt9+KeDkWJa7SiBb7AMdXAPV2qpRunztoC2c7DtRmN9+Lq2YQm4rMQmmAQcwyxTxcK8vwPKOiE4mLMwmQMvTty9tL+buREfvg5KJ+FY3Bv05cZYsf7VuYgUDcw41zSEE5W1thh5PiafcrMn7CPF0jN0oFfVvAHB/fAM0yaZGPKs3WYqnHAHa6v/cVMeiWZ/lQORCBqqL2hii1fEiuIqw6AOEoZVsN0/lqm7GfnD899zrzLOPRuP4YFg46drL1UyNdg+4TquJ2OV9kR4CAfdGRexqHFWLmoxkTfnUxJ4yL+gkV57K1H+smEdKrDhDX68pEFM/34E2eVKZoRU/0paxDZQIDAQAB-----END PUBLIC KEY-----"],"prefix":""}') TO '{TEST_DIR}/.well-known/haybarn-extension-repo.json' (FORMAT csv, HEADER false, QUOTE '', USE_TMP_FILE false)
+
+statement error
+CREATE EXTENSION REPOSITORY empty_prefix WITH PREFIX '{TEST_DIR}'
+----
+<REGEX>:IO Error.*'prefix' must be a non-empty string.*
+
+# Haybarn does not read DuckDB's metadata file: a repository that only publishes that one serves DuckDB builds
+statement ok
+COPY (SELECT 1 AS a) TO '{TEST_DIR}/duckdb_only' (FORMAT csv, PER_THREAD_OUTPUT true)
+
+statement ok
+COPY (SELECT 1 AS a) TO '{TEST_DIR}/duckdb_only/.well-known' (FORMAT csv, PER_THREAD_OUTPUT true)
+
+statement ok
+COPY (SELECT '{"signature_keys":["-----BEGIN PUBLIC KEY-----MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt9+KeDkWJa7SiBb7AMdXAPV2qpRunztoC2c7DtRmN9+Lq2YQm4rMQmmAQcwyxTxcK8vwPKOiE4mLMwmQMvTty9tL+buREfvg5KJ+FY3Bv05cZYsf7VuYgUDcw41zSEE5W1thh5PiafcrMn7CPF0jN0oFfVvAHB/fAM0yaZGPKs3WYqnHAHa6v/cVMeiWZ/lQORCBqqL2hii1fEiuIqw6AOEoZVsN0/lqm7GfnD899zrzLOPRuP4YFg46drL1UyNdg+4TquJ2OV9kR4CAfdGRexqHFWLmoxkTfnUxJ4yL+gkV57K1H+smEdKrDhDX68pEFM/34E2eVKZoRU/0paxDZQIDAQAB-----END PUBLIC KEY-----"]}') TO '{TEST_DIR}/duckdb_only/.well-known/duckdb-extension-repo.json' (FORMAT csv, HEADER false, QUOTE '', USE_TMP_FILE false)
+
+statement error
+CREATE EXTENSION REPOSITORY duckdb_only WITH PREFIX '{TEST_DIR}/duckdb_only'
+----
+<REGEX>:IO Error.*Failed to read the metadata file.*haybarn-extension-repo.json.*
+
 # a metadata file that is not valid json is rejected
 statement ok
-COPY (SELECT 'not json at all') TO '{TEST_DIR}/.well-known/duckdb-extension-repo.json' (FORMAT csv, HEADER false, QUOTE '', USE_TMP_FILE false)
+COPY (SELECT 'not json at all') TO '{TEST_DIR}/.well-known/haybarn-extension-repo.json' (FORMAT csv, HEADER false, QUOTE '', USE_TMP_FILE false)
 
 statement error
 CREATE EXTENSION REPOSITORY bad_json WITH PREFIX '{TEST_DIR}'
@@ -118,7 +160,7 @@ CREATE EXTENSION REPOSITORY bad_json WITH PREFIX '{TEST_DIR}'
 
 # a metadata file without a "signature_keys" array is rejected
 statement ok
-COPY (SELECT '{"other":1}') TO '{TEST_DIR}/.well-known/duckdb-extension-repo.json' (FORMAT csv, HEADER false, QUOTE '', USE_TMP_FILE false)
+COPY (SELECT '{"other":1}') TO '{TEST_DIR}/.well-known/haybarn-extension-repo.json' (FORMAT csv, HEADER false, QUOTE '', USE_TMP_FILE false)
 
 statement error
 CREATE EXTENSION REPOSITORY no_keys WITH PREFIX '{TEST_DIR}'

@@ -128,10 +128,12 @@ string ExtensionRepositoryManager::GetPublicKeyFingerprint(const string &compact
 //===--------------------------------------------------------------------===//
 // Repository storage
 //===--------------------------------------------------------------------===//
-//! Fetch the public keys that the repository publishes at its prefix. Note that the keys are pinned when the repository
-//! is created: the fingerprints that are reported back are what identify the keys from there on
-vector<string> ExtensionRepositoryManager::FetchPublicKeys(DatabaseInstance &db, optional_ptr<ClientContext> context,
-                                                           const string &prefix) {
+//! Fetch the metadata that the repository publishes at its prefix. Note that the keys (and the prefix the metadata
+//! points to) are pinned when the repository is created: the fingerprints that are reported back are what identify the
+//! keys from there on
+ExtensionRepositoryMetadata ExtensionRepositoryManager::FetchMetadata(DatabaseInstance &db,
+                                                                      optional_ptr<ClientContext> context,
+                                                                      const string &prefix) {
 	auto metadata_path = prefix;
 	StringUtil::RTrim(metadata_path, "/");
 	metadata_path += "/" + string(METADATA_FILE);
@@ -156,9 +158,11 @@ vector<string> ExtensionRepositoryManager::FetchPublicKeys(DatabaseInstance &db,
 		contents = string(buffer.get(), file_size);
 	} catch (std::exception &ex) {
 		ErrorData error(ex);
-		throw IOException("Failed to read the metadata file of the extension repository from '%s': %s\nProvide the key "
-		                  "directly using `USING PUBLIC KEY '<key>'` if the repository does not serve it",
-		                  metadata_path, error.RawMessage());
+		throw IOException("Failed to read the metadata file of the extension repository from '%s': %s\nA repository "
+		                  "that serves Haybarn extensions publishes '%s' at its prefix (a repository that only serves "
+		                  "DuckDB builds does not). Provide the key directly using `USING PUBLIC KEY '<key>'` if the "
+		                  "repository serves Haybarn extensions without it",
+		                  metadata_path, error.RawMessage(), METADATA_FILE);
 	}
 
 	RepositoryJSONDocument document(yyjson_read(contents.c_str(), contents.size(), 0));
@@ -178,7 +182,7 @@ vector<string> ExtensionRepositoryManager::FetchPublicKeys(DatabaseInstance &db,
 		    metadata_path);
 	}
 
-	vector<string> result;
+	ExtensionRepositoryMetadata result;
 	size_t idx, max;
 	yyjson_val *key;
 	yyjson_arr_foreach(keys, idx, max, key) {
@@ -187,13 +191,31 @@ vector<string> ExtensionRepositoryManager::FetchPublicKeys(DatabaseInstance &db,
 			    "Failed to read extension repository metadata file '%s': 'signature_keys' must be a list of strings",
 			    metadata_path);
 		}
-		result.push_back(ToCompactPublicKey(string(yyjson_get_str(key), yyjson_get_len(key))));
+		result.signature_keys.push_back(ToCompactPublicKey(string(yyjson_get_str(key), yyjson_get_len(key))));
 	}
-	if (result.empty()) {
+	if (result.signature_keys.empty()) {
 		throw IOException(
 		    "Failed to read extension repository metadata file '%s': 'signature_keys' cannot be empty\nProvide the key "
 		    "directly using `USING PUBLIC KEY '<key>'` if the repository does not serve it",
 		    metadata_path);
+	}
+
+	// Haybarn: the extensions may be served from another prefix than the one the repository was created with, so a
+	// publisher can keep its DuckDB and Haybarn builds apart (e.g. on separate hosts) behind one repository url
+	auto served_prefix = yyjson_obj_get(root, "prefix");
+	if (served_prefix) {
+		if (!yyjson_is_str(served_prefix) || yyjson_get_len(served_prefix) == 0) {
+			throw IOException(
+			    "Failed to read extension repository metadata file '%s': 'prefix' must be a non-empty string",
+			    metadata_path);
+		}
+		result.prefix = string(yyjson_get_str(served_prefix), yyjson_get_len(served_prefix));
+		// a repository that is served remotely cannot point installs at the local file system
+		if (FileSystem::IsRemoteFile(prefix) && !FileSystem::IsRemoteFile(result.prefix)) {
+			throw IOException("Failed to read extension repository metadata file '%s': 'prefix' must be a remote url, "
+			                  "got '%s'",
+			                  metadata_path, result.prefix);
+		}
 	}
 	return result;
 }
@@ -275,7 +297,9 @@ string ExtensionRepositoryManager::NormalizeRepositoryName(const string &name) {
 string ExtensionRepositoryManager::GetRepositoryDirectory(DatabaseInstance &db, FileSystem &fs) {
 	auto directory = Settings::Get<ExtensionRepositoryDirectorySetting>(db);
 	if (directory.empty()) {
-		directory = fs.JoinPath(fs.JoinPath(fs.GetHomeDirectory(), ".duckdb"), "extension_repositories");
+		// Haybarn: a trust store of its own, next to ~/.haybarn/extensions. A repository created in DuckDB points at
+		// DuckDB builds, so it must not be picked up by Haybarn (and the other way around)
+		directory = fs.JoinPath(fs.JoinPath(fs.GetHomeDirectory(), ".haybarn"), "extension_repositories");
 	}
 	return fs.ExpandPath(fs.ConvertSeparators(directory));
 }
@@ -392,9 +416,18 @@ ExtensionRepository ExtensionRepositoryManager::CreateRepository(DatabaseInstanc
 	}
 
 	// if no key was provided, the repository is expected to serve it at its prefix. The keys are pinned here: they are
-	// stored alongside the repository and never fetched again
-	auto public_keys = repository.public_keys.empty() ? FetchPublicKeys(db, context, repository.path)
-	                                                  : NormalizePublicKeys(repository.public_keys);
+	// stored alongside the repository and never fetched again. So is the prefix the metadata points to, if any
+	auto path = repository.path;
+	vector<string> public_keys;
+	if (repository.public_keys.empty()) {
+		auto metadata = FetchMetadata(db, context, repository.path);
+		public_keys = std::move(metadata.signature_keys);
+		if (!metadata.prefix.empty()) {
+			path = metadata.prefix;
+		}
+	} else {
+		public_keys = NormalizePublicKeys(repository.public_keys);
+	}
 	if (public_keys.empty()) {
 		throw InvalidInputException("Cannot create extension repository '%s': no public key was provided or served",
 		                            name);
@@ -409,7 +442,11 @@ ExtensionRepository ExtensionRepositoryManager::CreateRepository(DatabaseInstanc
 	yyjson_mut_doc_set_root(document.doc, root);
 	yyjson_mut_obj_add_uint(document.doc, root, "version", FORMAT_VERSION);
 	yyjson_mut_obj_add_strcpy(document.doc, root, "name", name.c_str());
-	yyjson_mut_obj_add_strcpy(document.doc, root, "url", repository.path.c_str());
+	yyjson_mut_obj_add_strcpy(document.doc, root, "url", path.c_str());
+	if (path != repository.path) {
+		// informational only: the prefix the repository was created with, before the metadata pointed elsewhere
+		yyjson_mut_obj_add_strcpy(document.doc, root, "requested_url", repository.path.c_str());
+	}
 	auto keys_array = yyjson_mut_arr(document.doc);
 	yyjson_mut_obj_add_val(document.doc, root, "public_keys", keys_array);
 	for (auto &public_key : public_keys) {
@@ -437,7 +474,7 @@ ExtensionRepository ExtensionRepositoryManager::CreateRepository(DatabaseInstanc
 	fs.TryRemoveFile(file_path);
 	fs.MoveFile(temp_path, file_path);
 
-	ExtensionRepository result(name, repository.path, std::move(public_keys));
+	ExtensionRepository result(name, path, std::move(public_keys));
 	result.type = ExtensionRepositoryType::USER_PROVIDED;
 	return result;
 }

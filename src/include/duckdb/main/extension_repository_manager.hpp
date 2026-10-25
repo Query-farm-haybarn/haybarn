@@ -17,8 +17,16 @@ class ClientContext;
 class DatabaseInstance;
 class FileSystem;
 
+//! The contents of the metadata file that a repository serves under its prefix
+struct ExtensionRepositoryMetadata {
+	//! The keys that are trusted to sign the extensions of the repository
+	vector<string> signature_keys;
+	//! The prefix from which the extensions are served, or empty to use the prefix of the repository itself
+	string prefix;
+};
+
 //! Manages the trusted extension repositories of a DuckDB installation. Trusted repositories are stored as json files
-//! in the extension repository directory (by default `~/.duckdb/extension_repositories`). Every repository has a
+//! in the extension repository directory (by default `~/.haybarn/extension_repositories`). Every repository has a
 //! locally unique name, a url prefix from which extensions are downloaded and one or more public keys that are trusted
 //! to sign the extensions that are served by the repository. The keys of a trusted repository are only trusted for the
 //! extensions that are installed from that repository.
@@ -32,7 +40,10 @@ public:
 	//! The version of the repository file format
 	static constexpr const idx_t FORMAT_VERSION = 1;
 	//! The metadata file that a repository serves under its prefix, describing its trusted signing keys
-	static constexpr const char *METADATA_FILE = ".well-known/duckdb-extension-repo.json";
+	//! Haybarn: a Haybarn-specific file rather than DuckDB's `.well-known/duckdb-extension-repo.json`. A publisher
+	//! serves both from the same prefix, and each engine reads its own, so the same CREATE EXTENSION REPOSITORY works
+	//! in both while Haybarn is pointed at Haybarn builds (DuckDB builds do not run in Haybarn, and vice versa)
+	static constexpr const char *METADATA_FILE = ".well-known/haybarn-extension-repo.json";
 
 public:
 	//! The directory in which the trusted extension repositories are stored
@@ -63,10 +74,11 @@ public:
 	//! The string representation of an access value, as used by the allow_extension_repositories setting
 	static string AccessToString(ExtensionRepositoryAccess access);
 
-	//! Fetch the trusted signing keys from the metadata file that a repository serves under its prefix. The file is a
-	//! json object with a "signature_keys" array of PEM-encoded keys
-	static vector<string> FetchPublicKeys(DatabaseInstance &db, optional_ptr<ClientContext> context,
-	                                      const string &prefix);
+	//! Fetch the metadata file that a repository serves under its prefix. The file is a json object with a
+	//! "signature_keys" array of PEM-encoded keys and an optional "prefix" from which the extensions are served, when
+	//! that differs from the prefix the repository was created with (e.g. a separate host for the Haybarn builds)
+	static ExtensionRepositoryMetadata FetchMetadata(DatabaseInstance &db, optional_ptr<ClientContext> context,
+	                                                 const string &prefix);
 
 	//! The sha256 fingerprint of a public key, used to compare a key against the fingerprint published by a repository
 	static string GetPublicKeyFingerprint(const string &compact_key);
