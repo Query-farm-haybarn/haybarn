@@ -385,6 +385,11 @@ jobs:
           if (!$commands.Contains('-march=haswell') -or !$commands.Contains('-mtune=generic')) {
             throw 'Windows amd64 Release compile commands are missing the CLI architecture flags'
           }
+          # Haybarn: the static libs extensions link must not pool string literals
+          # (CMakeLists.txt, duckdb/duckdb#27857).
+          if (!$commands.Contains('/GF-')) {
+            throw 'Windows amd64 Release compile commands are missing /GF- (string pooling off)'
+          }
 
       # Smoke the unittest binary — confirm it both built and launches (the
       # -DUNITTEST_ROOT_DIRECTORY=. fix means it shouldn't chdir-throw).

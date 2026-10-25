@@ -872,6 +872,18 @@ if(DISABLE_RTTI)
   endif()
 endif()
 
+# Haybarn: no string pooling under clang-cl. It emits pooled literals as COMDATs
+# with 1-byte alignment, while MSVC gives the same-named COMDAT 16 and reads it
+# with aligned SSE loads. When an MSVC-built extension (or a vcpkg library it
+# links, e.g. Arrow's base64 table) shares a literal with the static library, the
+# linker can keep this copy and the aligned load faults at DLL load
+# (duckdb/duckdb#27857, duckdb/extension-ci-tools#430). Unpooled, our literals
+# stay private and MSVC's copy is the one kept.
+if(MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GF-")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /GF-")
+endif()
+
 if(DESTROY_UNPINNED_BLOCKS)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DDUCKDB_DEBUG_DESTROY_BLOCKS")
 endif()
