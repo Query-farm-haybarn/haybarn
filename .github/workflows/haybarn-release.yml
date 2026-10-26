@@ -439,8 +439,8 @@ jobs:
             libhaybarn-windows-*.zip
             duckdb-static-libs-windows-*.tar.gz
 
-  # MinGW static libraries only, for cgo (haybarn-go-bindings links them on
-  # windows-amd64; the clang-cl .lib archives above are MSVC ABI). Mirrors
+  # MinGW static libraries for cgo and MinGW extension builds (the clang-cl
+  # .lib archives above are MSVC ABI). Mirrors
   # upstream's Windows.yml mingw job: Rtools42 gcc, `make release` with the
   # bundled extensions and capabilities. Ships no CLI or shared library.
   windows-mingw:
@@ -562,10 +562,15 @@ jobs:
   # engine commit, so re-staging a commit only replaces identical builds.
   stage-prebuilt:
     name: Stage prebuilt engine
-    needs: [linux, osx, windows]
+    needs: [linux, osx, windows, windows-mingw]
     if: ${{ startsWith(github.ref, 'refs/tags/haybarn-v') || inputs.stage_prebuilt }}
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v6
+
+      - name: Test staging contract
+        run: python3 -m unittest scripts.ci.test_stage_prebuilt
+
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
@@ -583,27 +588,7 @@ jobs:
           AWS_REQUEST_CHECKSUM_CALCULATION: when_required
           AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
-        run: |
-          set -euo pipefail
-          commit10="$(echo "$GITHUB_SHA" | cut -c1-10 | tr 'A-F' 'a-f')"
-          version="$OVERRIDE_GIT_DESCRIBE"
-          [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|rc|dev)[0-9]+)?$ ]] || { echo "::error::unstageable version $version"; exit 1; }
-          prefix="s3://$R2_BUCKET/staging/$commit10"
-          shopt -s nullglob
-          # The MinGW archive (windows-mingw job) is for cgo only and isn't
-          # staged; this job doesn't wait for it.
-          archives=()
-          for archive in artifacts/duckdb-static-libs-*.tar.gz; do
-            [[ "$archive" == *-mingw.tar.gz ]] || archives+=("$archive")
-          done
-          (( ${#archives[@]} == 6 )) || { echo "::error::expected 6 static-libs archives, found ${#archives[@]}"; ls artifacts; exit 1; }
-          for archive in "${archives[@]}"; do
-            aws s3 cp --no-progress "$archive" "$prefix/$version/duckdb/duckdb/github_release/$(basename "$archive")"
-          done
-          # Written last, so a reader that finds the pointer finds the archives.
-          printf '%s\n' "$version" > latest_alpha_version.txt
-          aws s3 cp --no-progress --content-type text/plain latest_alpha_version.txt "$prefix/latest_alpha_version.txt"
-          echo "Staged ${#archives[@]} archives under https://haybarn-extensions.query.farm/staging/$commit10/$version/"
+        run: bash scripts/ci/stage_prebuilt.sh
 
   # GitHub Release for haybarn-v2.* tags (dry run otherwise). Runs inside this
   # run, so it raises no workflow_run event and never wakes the 1.5-line
