@@ -52,10 +52,48 @@ jobs:
       - name: query.farm repository, end to end
         run: |
           home=$(mktemp -d)
+          if curl -fsS https://duckdb-extensions.query.farm/.well-known/haybarn-extension-repo.json; then
+            echo "query.farm publishes the Haybarn file: installing a5 from it"
+            HOME=$home ./build/release/haybarn -c "
+              SET allow_extension_repositories = 'allowed';
+              CREATE EXTENSION REPOSITORY IF NOT EXISTS query_farm
+                WITH PREFIX 'https://duckdb-extensions.query.farm';
+              INSTALL a5 FROM query_farm; LOAD a5 FROM query_farm;
+              SELECT extension_name, loaded, installed_from, install_path FROM duckdb_extensions() WHERE extension_name = 'a5';"
+          else
+            HOME=$home ./build/release/haybarn -c "
+              SET allow_extension_repositories = 'allowed';
+              CREATE EXTENSION REPOSITORY IF NOT EXISTS query_farm
+                WITH PREFIX 'https://duckdb-extensions.query.farm';
+            " && exit 1 || echo "rejected as expected: query.farm does not publish the Haybarn file yet"
+          fi
+          test ! -e "$home/.duckdb/extension_repositories"
+
+      - name: Stand-in for query.farm (local prefix redirecting to haybarn-extensions)
+        run: |
+          set -x
+          srv=$(mktemp -d)
+          mkdir -p "$srv/.well-known"
+          cp .github/zz-test/haybarn-extension-repo.json "$srv/.well-known/"
+          (cd "$srv" && python3 -m http.server 8765 --bind 127.0.0.1 > /dev/null 2>&1 &)
+          sleep 2
+          home=$(mktemp -d)
           HOME=$home ./build/release/haybarn -c "
             SET allow_extension_repositories = 'allowed';
-            CREATE EXTENSION REPOSITORY IF NOT EXISTS query_farm
-              WITH PREFIX 'https://duckdb-extensions.query.farm';
-          " && exit 1 || echo "rejected as expected: query.farm does not publish the Haybarn file yet"
-          ls "$home/.haybarn" 2>/dev/null || true
+            CREATE EXTENSION REPOSITORY IF NOT EXISTS query_farm WITH PREFIX 'http://127.0.0.1:8765';
+            INSTALL a5 FROM query_farm;
+            LOAD a5;
+            SELECT extension_name, loaded, installed_from, install_path FROM duckdb_extensions() WHERE extension_name = 'a5';
+            SELECT function_name FROM duckdb_functions() WHERE function_name LIKE 'a5%' ORDER BY 1 LIMIT 3;"
+          cat "$home"/.haybarn/extension_repositories/*.json
           test ! -e "$home/.duckdb/extension_repositories"
+
+      - name: Mainline build with the Haybarn key is refused
+        run: |
+          home=$(mktemp -d)
+          key=$(python3 -c 'import json; print(json.load(open(".github/zz-test/haybarn-extension-repo.json"))["signature_keys"][0])')
+          HOME=$home ./build/release/haybarn -c "
+            SET allow_extension_repositories = 'allowed';
+            CREATE EXTENSION REPOSITORY mainline WITH PREFIX 'https://duckdb-extensions.query.farm' USING PUBLIC KEY '$key';
+            INSTALL a5 FROM mainline;
+          " && { echo "mainline build installed: FAIL"; exit 1; } || echo "refused as expected"
