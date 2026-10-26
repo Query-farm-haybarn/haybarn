@@ -82,7 +82,7 @@ jobs:
             SET allow_extension_repositories = 'allowed';
             CREATE EXTENSION REPOSITORY IF NOT EXISTS query_farm WITH PREFIX 'http://127.0.0.1:8765';
             INSTALL a5 FROM query_farm;
-            LOAD a5;
+            LOAD a5 FROM query_farm;
             SELECT extension_name, loaded, installed_from, install_path FROM duckdb_extensions() WHERE extension_name = 'a5';
             SELECT function_name FROM duckdb_functions() WHERE function_name LIKE 'a5%' ORDER BY 1 LIMIT 3;"
           cat "$home"/.haybarn/extension_repositories/*.json
