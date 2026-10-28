@@ -18,6 +18,10 @@ namespace duckdb {
 HTTPParams::~HTTPParams() {
 }
 
+unique_ptr<HTTPParams> HTTPParams::Clone() const {
+	return make_uniq<HTTPParams>(*this);
+}
+
 bool HTTPParams::IsInterrupted() const {
 	auto context = interrupt_context.lock();
 	return context && context->IsInterrupted();

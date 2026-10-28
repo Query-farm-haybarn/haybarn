@@ -36,6 +36,9 @@ struct HTTPParams {
 	explicit HTTPParams(HTTPUtil &http_util) : http_util(http_util) {
 	}
 	virtual ~HTTPParams();
+	//! Copy parameters for one request without mutating shared provider state. Providers with
+	//! derived parameter classes override this to preserve their fields and transport identity.
+	DUCKDB_API virtual unique_ptr<HTTPParams> Clone() const;
 
 	static constexpr uint64_t DEFAULT_TIMEOUT_SECONDS = 30; // 30 sec
 	static constexpr uint64_t DEFAULT_RETRIES = 3;

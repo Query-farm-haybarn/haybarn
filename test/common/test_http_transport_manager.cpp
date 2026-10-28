@@ -22,6 +22,26 @@
 
 namespace duckdb {
 
+TEST_CASE("HTTP parameter clones keep configuration and isolate request policy", "[http_retry_budget][http_params_clone]") {
+	HTTPUtil http;
+	HTTPParams params(http);
+	params.timeout = 17;
+	params.retries = 4;
+	params.http_proxy = "proxy.example";
+	params.extra_headers["x-fixture"] = "value";
+	auto clone = params.Clone();
+	REQUIRE(clone);
+	CHECK(&clone->http_util == &params.http_util);
+	CHECK(clone->timeout == 17);
+	CHECK(clone->retries == 4);
+	CHECK(clone->http_proxy == "proxy.example");
+	CHECK(clone->extra_headers["x-fixture"] == "value");
+	clone->retries = 0;
+	clone->extra_headers["x-fixture"] = "request-only";
+	CHECK(params.retries == 4);
+	CHECK(params.extra_headers["x-fixture"] == "value");
+}
+
 TEST_CASE("HTTP requests own their URL and PUT content type", "[http_retry_budget]") {
 	HTTPUtil http;
 	HTTPParams params(http);
