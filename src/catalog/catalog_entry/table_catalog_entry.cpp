@@ -373,6 +373,10 @@ unique_ptr<Expression> TableCatalogEntry::GetDefaultExpressionForColumn(ClientCo
 	                                          result_type);
 }
 
+virtual_column_map_t TableCatalogEntry::GetDeleteReturningVirtualColumns() const {
+	return GetVirtualColumns();
+}
+
 virtual_column_map_t TableCatalogEntry::GetVirtualColumns() const {
 	virtual_column_map_t virtual_columns;
 	virtual_columns.insert(make_pair(COLUMN_IDENTIFIER_ROW_ID, TableColumn("rowid", LogicalType::ROW_TYPE)));
