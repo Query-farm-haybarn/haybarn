@@ -1,0 +1,50 @@
+# name: test/sql/types/hugeint/hugeint_vector_comparison.test
+# description: HUGEINT comparisons across vectorized blocks and tails
+# group: [hugeint]
+
+# Exercise both the vectorized loop and its tail with mixed integer types.
+query I
+SELECT count(*) FILTER (WHERE a = b)
+FROM (SELECT x::BIGINT AS a, x::HUGEINT AS b FROM range(1, 21) t(x));
+----
+20
+
+query I
+SELECT count(*) FILTER (WHERE x::HUGEINT = x::HUGEINT)
+FROM range(1, 2049) t(x);
+----
+2048
+
+query I
+SELECT count(*) FILTER (WHERE x::HUGEINT = x::HUGEINT)
+FROM range(1, 2050) t(x);
+----
+2049
+
+# Include nulls, negative values, and non-zero upper words.
+query II
+SELECT count(*) FILTER (WHERE a = a), count(*) FILTER (WHERE a != a)
+FROM (
+    SELECT CASE WHEN x % 2 = 0 THEN NULL ELSE x::HUGEINT * 18446744073709551616::HUGEINT END AS a
+    FROM range(-1024, 1024) t(x)
+);
+----
+1024	0
+
+query I
+SELECT count(*) FILTER (WHERE a = b)
+FROM (
+    SELECT sum(x) OVER (ORDER BY x)::BIGINT AS a, sum(x) OVER (ORDER BY x) AS b
+    FROM range(1, 21) t(x)
+);
+----
+20
+
+statement ok
+PRAGMA disable_optimizer;
+
+query I
+SELECT count(*) FILTER (WHERE a = b)
+FROM (SELECT x::BIGINT AS a, x::HUGEINT AS b FROM range(1, 21) t(x));
+----
+20
