@@ -25,4 +25,9 @@
 //! divergences from upstream. Bump by 1 whenever a change is introduced that
 //! compiled consumers must branch on, then gate with:
 //!   #if defined(HAYBARN) && HAYBARN_ABI_VERSION >= N
-#define HAYBARN_ABI_VERSION 1
+//!
+//! Versions:
+//!   1 - initial Haybarn build identity.
+//!   2 - HTTPParams::Clone, TableCatalogEntry::GetDeleteReturningVirtualColumns
+//!       and TableFunction::runtime_filter_pushdown.
+#define HAYBARN_ABI_VERSION 2
