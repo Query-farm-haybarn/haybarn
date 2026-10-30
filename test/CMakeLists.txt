@@ -102,7 +102,12 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_compile_options(unittest PRIVATE -Wno-error=maybe-uninitialized)
 endif()
 
-if(TARGET duckdb AND NOT WIN32)
+# Haybarn: the release unittest ships standalone as haybarn-unittest (PyPI/npm)
+# without libhaybarn beside it, so release builds link it statically.
+option(HAYBARN_STATIC_UNITTEST
+       "Link unittest against the static engine instead of libhaybarn" FALSE)
+
+if(TARGET duckdb AND NOT WIN32 AND NOT HAYBARN_STATIC_UNITTEST)
   # Some tests reference internal third-party symbols (e.g. re2/mbedtls) that
   # are linked into duckdb but not exported from the shared library.
   target_link_libraries(
@@ -115,6 +120,7 @@ if(TARGET duckdb AND NOT WIN32)
     duckdb_cpp_api)
 else()
   # On Windows, tests require internal DuckDB symbols that are not DLL-exported.
+  # Haybarn: also the standalone release build (HAYBARN_STATIC_UNITTEST).
   target_link_libraries(unittest duckdb_static test_helpers duckdb_cpp_api)
   link_extension_libraries(unittest "")
 endif()

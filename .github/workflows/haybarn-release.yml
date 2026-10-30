@@ -96,9 +96,9 @@ jobs:
           IMAGE: ghcr.io/query-farm-haybarn/haybarn-ci/${{ matrix.config.image }}:${{ env.HAYBARN_CI_IMAGE_VERSION }}
           CCACHE_REMOTE_STORAGE: "http://haybarn-vcpkg-cache.rusty-bb6.workers.dev/ccache|bearer-token=${{ secrets.HAYBARN_VCPKG_TOKEN }}|connect-timeout=10000|operation-timeout=30000"
           # The unittest binary ships as haybarn-unittest, so it must launch from
-          # any cwd (consumers pass --test-dir).
+          # any cwd (consumers pass --test-dir) and without libhaybarn beside it.
           BUILD_CMAKE_VARIABLES: >-
-            -DUNITTEST_ROOT_DIRECTORY=.
+            -DUNITTEST_ROOT_DIRECTORY=. -DHAYBARN_STATIC_UNITTEST=1
             ${{ matrix.config.libc == 'glibc' && '-DCMAKE_C_COMPILER_LAUNCHER= -DCMAKE_CXX_COMPILER_LAUNCHER= -DNATIVE_LTO_STATIC_LIBRARIES=1' || '' }}
           LTO: ${{ matrix.config.libc == 'glibc' && 'thin' || '' }}
           LTO_JOBS: ${{ matrix.config.libc == 'glibc' && '8' || '' }}
@@ -180,6 +180,10 @@ jobs:
           # consumers pass --test-dir <their tests>. .zip only — no .gz parity
           # (npm/PyPI consume the zip; the GH-release zip covers manual download).
           cp build/release/test/unittest haybarn-unittest
+          # It ships alone, so it must not need libhaybarn.so.
+          if readelf -d haybarn-unittest | grep -q 'libhaybarn'; then
+            echo "::error::haybarn-unittest links libhaybarn.so dynamically"; exit 1
+          fi
           zip -j haybarn_unittest-linux-$SUFFIX.zip haybarn-unittest
           # Engine static libraries + C headers, upstream's layout and name
           # (duckdb-static-libs-<platform>.tar.gz) so extension-ci-tools can use
@@ -217,9 +221,10 @@ jobs:
       EXTENSION_CONFIGS: '${{ github.workspace }}/.github/config/bundled_extensions.cmake'
       DUCKDB_CAPABILITIES: 'httplib loadable_extensions'
       OSX_BUILD_ARCH: arm64
-      # Build the unittest binary with a portable root dir so the shipped
-      # haybarn-unittest launches from any cwd (consumers pass --test-dir).
-      EXTRA_CMAKE_VARIABLES: '-DUNITTEST_ROOT_DIRECTORY=.'
+      # Build the unittest binary with a portable root dir and a static engine
+      # link so the shipped haybarn-unittest launches from any cwd (consumers
+      # pass --test-dir) without libhaybarn.dylib beside it.
+      EXTRA_CMAKE_VARIABLES: '-DUNITTEST_ROOT_DIRECTORY=. -DHAYBARN_STATIC_UNITTEST=1'
       GEN: ninja
       # DuckDB's CMake auto-detects ccache as the compiler launcher when it is
       # on PATH; CCACHE_DIR points it at the cached directory.
@@ -289,6 +294,10 @@ jobs:
           # unittest binary (shipped as haybarn-unittest).
           mkdir -p build/release_arm64
           cp build/release/test/unittest build/release_arm64/haybarn-unittest
+          # It ships alone, so it must not need libhaybarn.dylib.
+          if otool -L build/release_arm64/haybarn-unittest | grep -q 'libhaybarn'; then
+            echo "::error::haybarn-unittest links libhaybarn.dylib dynamically"; exit 1
+          fi
           zip -j haybarn_unittest-osx-arm64.zip build/release_arm64/haybarn-unittest
           static_libraries=()
           for library in $STATIC_LIBRARIES_UNIX build/release/extension/*/lib*_extension.a; do
