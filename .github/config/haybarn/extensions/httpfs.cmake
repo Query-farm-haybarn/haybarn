@@ -5,10 +5,11 @@
 # under http_compressed_download_threshold read with one compressed GET; range
 # GETs and HEAD stay identity), If-Unmodified-Since for files without a strong
 # ETag, and cancellation of in-flight requests through the engine's HTTPParams
-# interrupt context, and a 16 KiB httplib header line limit. Branch
-# haybarn-2.0; the 1.5 line is `haybarn`.
+# interrupt context, and a 16 KiB httplib header line limit; HTTPFSParams::Clone
+# overrides the engine's virtual HTTPParams::Clone. Branch haybarn-2.0; the 1.5
+# line is `haybarn`.
 duckdb_extension_load(httpfs
     LOAD_TESTS
     GIT_URL https://github.com/Query-farm-haybarn/haybarn-httpfs
-    GIT_TAG d312888956c2edef09c68a42f3fdb28e1dd55acf
+    GIT_TAG bfc432fae9111229dfedf5f479cd6d7b67f86baf
 )
