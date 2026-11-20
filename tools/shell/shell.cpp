@@ -2875,6 +2875,14 @@ int ShellState::DoMetaCommand(const string &zLine) {
 		return 1;
 	}
 	if (!metadata_command) {
+		// Haybarn: catalog dot-commands take the rest of the line as their input. Since v2.0.1 the
+		// arguments after the command name are only parsed once a built-in command is found, so
+		// parse them here as well (as for a built-in without raw arguments).
+		SkipSpaces(zLine, pos);
+		while (pos < zLine.size()) {
+			args.push_back(ParseMetaCommandArgument(zLine, pos));
+			SkipSpaces(zLine, pos);
+		}
 		try {
 			int catalog_rc = TryCatalogDotCommand(args);
 			if (catalog_rc >= 0) {
