@@ -42,9 +42,9 @@ DROP EXTENSION REPOSITORY core
 <REGEX>:Not implemented Error.*'core' is built in and cannot be dropped.*
 
 statement error
-DROP EXTENSION REPOSITORY IF EXISTS core_nightly
+DROP EXTENSION REPOSITORY IF EXISTS community
 ----
-<REGEX>:Not implemented Error.*'core_nightly' is built in and cannot be dropped.*
+<REGEX>:Not implemented Error.*'community' is built in and cannot be dropped.*
 
 # a repository with the same name cannot be created twice with another definition: the stored prefix is reported
 statement error

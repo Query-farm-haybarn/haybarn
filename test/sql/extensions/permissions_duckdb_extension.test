@@ -71,14 +71,14 @@ FROM read_blob('build/*/repository/*/*/parquet.duckdb_extension');
 statement error
 COPY (SELECT 42) TO '{TEMP_DIR}/name.DUCKDB_EXTENSION';
 ----
-reserved for DuckDB extensions
+reserved for Haybarn extensions
 
 statement error
 COPY (SELECT 42) TO '{TEMP_DIR}/name.Duckdb_Extension.Info' (FORMAT CSV);
 ----
-reserved for DuckDB extensions
+reserved for Haybarn extensions
 
 statement error
 COPY (SELECT 42) TO '{TEMP_DIR}/name.duckdb_extension.';
 ----
-reserved for DuckDB extensions
+reserved for Haybarn extensions

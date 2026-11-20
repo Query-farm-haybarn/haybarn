@@ -222,7 +222,7 @@ DROP EXTENSION REPOSITORY myrepo
 
 # The built-in names stay reserved, before anything is fetched.
 statement error
-CREATE EXTENSION REPOSITORY core_nightly
+CREATE EXTENSION REPOSITORY community
 ----
 <REGEX>:Invalid Input Error.*built-in repository name.*
 

@@ -23,7 +23,7 @@ TO '{TEST_DIR}/encrypted_gcm.db' (FORMAT BLOB);
 statement error
 ATTACH '{TEST_DIR}/encrypted_gcm.db' as enc (ENCRYPTION_KEY 'abcde', ENCRYPTION_CIPHER 'GCM');
 ----
-Invalid Configuration Error:  DuckDB currently has a read-only crypto module loaded
+Invalid Configuration Error:  Haybarn currently has a read-only crypto module loaded
 
 # It works again by setting READONLY
 statement ok
@@ -50,7 +50,7 @@ DETACH enc
 statement error
 ATTACH '{TEST_DIR}/test_write_only.db' as enc (ENCRYPTION_KEY 'abcde', ENCRYPTION_CIPHER 'GCM');
 ----
-Invalid Configuration Error:  DuckDB currently has a read-only crypto module loaded
+Invalid Configuration Error:  Haybarn currently has a read-only crypto module loaded
 
 statement ok
 SET force_mbedtls_unsafe = 'true'
