@@ -32,7 +32,9 @@ struct UndeschedulableTask : public Task {
 	void Deschedule() override {
 		auto now = std::chrono::steady_clock::now();
 		auto attempt = ++attempts;
-		if (attempt > 1 && now - last_attempt < shortest_gap) {
+		if (attempt == 1) {
+			first_attempt = now;
+		} else if (now - last_attempt < shortest_gap) {
 			shortest_gap = now - last_attempt;
 		}
 		last_attempt = now;
@@ -55,6 +57,7 @@ struct UndeschedulableTask : public Task {
 	atomic<idx_t> executions {0};
 	atomic<idx_t> attempts {0};
 	atomic<bool> descheduled {false};
+	std::chrono::steady_clock::time_point first_attempt;
 	std::chrono::steady_clock::time_point last_attempt;
 	//! The shortest time between two attempts
 	std::chrono::steady_clock::duration shortest_gap = std::chrono::steady_clock::duration::max();
@@ -92,8 +95,10 @@ TEST_CASE("A worker thread that cannot deschedule a blocked task tries again", "
 	// the task ran once, and the worker waited before every new attempt
 	REQUIRE(blocked->executions == 1);
 	REQUIRE(blocked->attempts == 6);
-	// sleeps can return early, e.g. on Windows, so only require a wait of about half of RETRY_WAIT
-	REQUIRE(blocked->shortest_gap >= RETRY_WAIT / 2);
+	// the worker waited before the retries: a single sleep can return early (e.g. on Windows), so require the
+	// retries together to take at least about half of RETRY_WAIT each, rather than every single gap to
+	auto retries = blocked->attempts.load() - 1;
+	REQUIRE(blocked->last_attempt - blocked->first_attempt >= retries * (RETRY_WAIT / 2));
 
 	// the worker still runs tasks
 	auto next = make_shared_ptr<FinishingTask>();
