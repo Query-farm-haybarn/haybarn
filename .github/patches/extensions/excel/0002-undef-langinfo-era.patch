@@ -1,0 +1,17 @@
+diff --git a/src/excel/numformat/include/nf_calendar.h b/src/excel/numformat/include/nf_calendar.h
+index e12044d..d773574 100644
+--- a/src/excel/numformat/include/nf_calendar.h
++++ b/src/excel/numformat/include/nf_calendar.h
+@@ -27,6 +27,12 @@
+ #include <algorithm>
+ #include "duckdb/common/vector.hpp"
+ 
++// Haybarn: libc++ 23 (emscripten 7.0.0) exposes <langinfo.h> through <locale>/<sstream>, whose ERA macro
++// collides with CalendarFieldIndex::ERA below. langinfo.h has an include guard, so it cannot come back.
++#ifdef ERA
++#undef ERA
++#endif
++
+ 
+ namespace duckdb_excel {
+ 
