@@ -17,14 +17,11 @@
 # with platform-pinned `os`/`cpu`/`libc` so npm only installs the one matching
 # the user's runtime.
 #
-# Auth model: classic npm automation token (org secret HAYBARN_NPM_TOKEN),
-# exposed as NODE_AUTH_TOKEN on the publish steps. The CLI workflow uses npm
-# Trusted Publishing (OIDC), but that's configured per *existing* package on
-# npmjs.com — the brand-new haybarn-unittest / @haybarn/unittest-* packages
-# don't exist yet, so there's no settings page to configure until first
-# publish. The token creates them. Provenance attestations are still attached
-# (--provenance + id-token: write). Once these packages exist, they can be
-# migrated to Trusted Publishing and the token dropped.
+# Auth model: npm Trusted Publishing (GitHub OIDC), as the CLI workflow. No token: the job's
+# id-token is the credential (npm >= 11.5, Node 24). Each package (haybarn-unittest and the six
+# @haybarn/unittest-* leaves) has a trusted publisher on npmjs.com naming this repository and this
+# workflow file. (The packages were first created with the HAYBARN_NPM_TOKEN org secret, which has
+# since expired: npm caps granular write tokens at 90 days.)
 name: Haybarn npm unittest publish
 
 on:
@@ -108,10 +105,8 @@ jobs:
             *) echo "::error::'$TAG' is not a 2.0-line release tag; this copy publishes only haybarn-v2.* releases"; exit 1 ;;
           esac
 
-      # Node 24 / npm 11. setup-node writes an .npmrc that reads the auth token
-      # from the NODE_AUTH_TOKEN env var, which we supply from the
-      # HAYBARN_NPM_TOKEN org secret on the publish steps below. (--provenance
-      # still needs a recent npm + id-token: write — both present.)
+      # Node 24 / npm 11: npm >= 11.5 exchanges the job's OIDC token for the publish (trusted
+      # publishing) and signs --provenance with the same id-token.
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
@@ -148,7 +143,6 @@ jobs:
 
       - name: Assemble + publish per-platform leaf packages
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.HAYBARN_NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: 'true'
           VERSION: ${{ steps.ver.outputs.version }}
           DIST_TAG: ${{ steps.ver.outputs.dist_tag }}
@@ -194,7 +188,6 @@ jobs:
 
       - name: Assemble + publish meta package
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.HAYBARN_NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: 'true'
           VERSION: ${{ steps.ver.outputs.version }}
           DIST_TAG: ${{ steps.ver.outputs.dist_tag }}
