@@ -102,6 +102,13 @@ enum class PagerMode { PAGER_AUTOMATIC, PAGER_ON, PAGER_OFF };
 enum class MetadataResult : uint8_t { SUCCESS = 0, FAIL = 1, EXIT = 2, PRINT_USAGE = 3 };
 enum class HighlightMode : uint32_t { AUTOMATIC, MIXED_MODE, DARK_MODE, LIGHT_MODE };
 
+// Deliberately not a std::exception: command error handlers must not consume an explicit exit.
+struct ShellExitException {
+	explicit ShellExitException(int exit_code) : exit_code(exit_code) {
+	}
+	int exit_code;
+};
+
 enum class ExecuteSQLSingleValueResult {
 	SUCCESS,
 	EXECUTION_ERROR,
@@ -132,6 +139,8 @@ struct MetadataCommand {
 	const char *description;
 	idx_t match_size;
 	const char *extra_description;
+	//! Pass the remainder of the line as one argument instead of splitting it into words
+	bool raw_arguments;
 };
 
 struct ShellColumnInfo {
@@ -350,7 +359,7 @@ public:
 	void ShowConfiguration();
 	void ClearInterrupt();
 
-	static void Exit(int exit_code);
+	[[noreturn]] static void Exit(int exit_code);
 	static idx_t RenderLength(const char *str, idx_t str_len);
 	static idx_t RenderLength(duckdb::string_t str);
 	static idx_t RenderLength(const string &str);
@@ -434,7 +443,7 @@ public:
 	int ShellLoadHistory(const char *path);
 	int ShellSaveHistory(const char *path);
 	int ShellSetHistoryMaxLength(idx_t max_length);
-	char *OneInputLine(FILE *in, char *zPrior, int isContinuation);
+	char *OneInputLine(FILE *in, char *&zPrior, int isContinuation);
 
 	int RunOneSqlLine(InputMode mode, char *zSql);
 	string GetDefaultDuckDBRC();
@@ -532,5 +541,7 @@ struct PagerState {
 	optional_ptr<ShellState> state;
 	uint32_t win_console_cp_before_pager = 0;
 };
+
+void IgnoreInterrupts();
 
 } // namespace duckdb_shell

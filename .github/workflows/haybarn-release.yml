@@ -42,7 +42,7 @@ env:
   # Haybarn is built from a specific upstream DuckDB tag. The version string the
   # binary reports stays the upstream version (e.g. v2.0.0) for storage and
   # extension-path compatibility; see the plan's branding decisions.
-  OVERRIDE_GIT_DESCRIBE: ${{ inputs.override_git_describe || 'v2.0.0' }}
+  OVERRIDE_GIT_DESCRIBE: ${{ inputs.override_git_describe || 'v2.0.1' }}
   # Haybarn-specific version string that drives the startup banner + `-version`
   # flag (distinct from the upstream OVERRIDE_GIT_DESCRIBE above which dictates
   # storage compat). On tag push (`refs/tags/haybarn-v...`) GITHUB_REF_NAME is

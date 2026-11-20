@@ -99,7 +99,8 @@ static void NegatePercentileFractions(ClientContext &context, unique_ptr<Express
 	}
 
 	Value value = ExpressionExecutor::EvaluateScalar(context, *bound);
-	if (value.type().id() == LogicalTypeId::LIST) {
+	// a NULL list stays NULL, the quantile binder rejects it
+	if (value.type().id() == LogicalTypeId::LIST && !value.IsNull()) {
 		vector<Value> values;
 		for (const auto &element_val : ListValue::GetChildren(value)) {
 			values.push_back(NegatePercentileValue(element_val, desc));
@@ -287,6 +288,15 @@ BindResult BaseSelectBinder::BindAggregate(FunctionExpression &aggr, AggregateFu
 		}
 	}
 
+	// EXPORT_STATE exports the state of the underlying (non-distinct) aggregate: it does not carry the set of values
+	// seen so far, so combining exported states of a DISTINCT aggregate would count repeated values again
+	if (aggr.Distinct() && aggr.ExportState()) {
+		throw BinderException(aggr,
+		                      "EXPORT_STATE is not supported for DISTINCT aggregates: the exported state does not "
+		                      "retain the set of distinct values, so combining states would produce incorrect "
+		                      "results");
+	}
+
 	// Bind the function
 	FunctionBinder function_binder(binder);
 	auto aggregate =
@@ -301,7 +311,7 @@ BindResult BaseSelectBinder::BindAggregate(FunctionExpression &aggr, AggregateFu
 	// If the function cannot be used as an aggregate, but can be used as a window function, throw a specific error
 	// message
 	if (!aggregate->Function().CanAggregate() && aggregate->Function().CanWindow()) {
-		auto msg = StringUtil::Format("Function '%s' can only be used as a window function", func.name);
+		auto msg = StringUtil::Format("Function %s can only be used as a window function", func.name);
 		error = BinderException(msg);
 		error.AddQueryLocation(aggr);
 		error.Throw();

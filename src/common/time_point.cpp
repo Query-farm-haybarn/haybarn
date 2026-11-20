@@ -2,10 +2,9 @@
 
 namespace duckdb {
 
-//! steady_clock is meant to never go backwards, but it can: a virtual machine's clock can step back across vCPUs
-//! (duckdb#27790), and in the browser emscripten's pthread clock (performance.timeOrigin + performance.now()) can
-//! disagree between threads by the timer resolution (Safari). Callers cast elapsed times to unsigned, so a negative
-//! interval is reported as zero rather than letting one clock step fail the query with an internal error.
+//! steady_clock can step backwards in practice: on some virtual machines (#27790), and in WebAssembly builds with
+//! threads, where each thread derives the clock from its own time origin. Callers cast intervals to unsigned integers,
+//! so a negative interval is clamped to zero.
 static steady_clock::duration NonNegative(steady_clock::duration duration) {
 	return duration < steady_clock::duration::zero() ? steady_clock::duration::zero() : duration;
 }

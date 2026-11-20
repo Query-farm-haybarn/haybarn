@@ -261,6 +261,13 @@ struct ParquetIntervalOperator : public BaseParquetOperator {
 		}
 		TGT result;
 		ParquetIntervalUtils::Encode(input, result.bytes);
+		// the reader loads the days as a signed 32 bit integer
+		const auto days = Load<uint32_t>(result.bytes + sizeof(uint32_t));
+		if (days > UnsafeNumericCast<uint32_t>(NumericLimits<int32_t>::Maximum())) {
+			throw OutOfRangeException(
+			    "Cannot write the interval %s to Parquet, as its days plus the whole days of its time exceed %d",
+			    Interval::ToString(input), NumericLimits<int32_t>::Maximum());
+		}
 		return result;
 	}
 
@@ -287,7 +294,7 @@ struct ParquetIntervalOperator : public BaseParquetOperator {
 	template <class SRC, class TGT>
 	static optional<uint64_t> GetExtraBloomFilterHash(const SRC &source_value, const TGT &) {
 		// Preserve the Parquet plain-encoding hash and add the hash used by DuckDB comparisons.
-		return ParquetIntervalUtils::HashNormalized(source_value);
+		return ParquetIntervalUtils::TryHashNormalized(source_value);
 	}
 };
 

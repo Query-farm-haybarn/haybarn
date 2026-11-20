@@ -55,7 +55,7 @@ public:
 	                                                         DataPointer &data_pointer);
 	static unique_ptr<ColumnSegment> CreateTransientSegment(DatabaseInstance &db, const CompressionFunction &function,
 	                                                        const LogicalType &type, const idx_t segment_size,
-	                                                        BlockManager &block_manager);
+	                                                        BlockManager &block_manager, bool zero_initialize = false);
 
 public:
 	void InitializePrefetch(PrefetchState &prefetch_state, ColumnScanState &scan_state);
@@ -103,6 +103,8 @@ public:
 	//! Updates pointers to refer to the given block and offset. This is only used
 	//! when sharing a block among segments. This is invoked only AFTER the block is written.
 	void MarkAsPersistent(shared_ptr<BlockHandle> block, uint32_t offset_in_block);
+	//! Read the copy in the partial block from now on, so the segment's own buffer can be freed.
+	void UsePackedCopy(shared_ptr<BlockHandle> block, uint32_t offset_in_block);
 	void SetBlock(shared_ptr<BlockHandle> block, uint32_t offset);
 	//! Gets a data pointer from a persistent column segment
 	DataPointer GetDataPointer(idx_t row_start);

@@ -1442,6 +1442,7 @@ void LogicalType::Serialize(Serializer &serializer) const {
 
 LogicalType LogicalType::Deserialize(Deserializer &deserializer) {
 	auto id = deserializer.ReadProperty<LogicalTypeId>(100, "id");
+	deserializer.CheckAllowed(id);
 	auto type_info = deserializer.ReadPropertyWithDefault<unique_ptr<LogicalTypeInfo>>(101, "type_info");
 	if (id == LogicalTypeId::LEGACY_AGGREGATE_STATE) {
 		// convert legacy aggregate state to blob on deserialize
@@ -1905,6 +1906,13 @@ LogicalType ArrayType::ConvertToList(const LogicalType &type) {
 			child.second = ConvertToList(child.second);
 		}
 		return LogicalType::STRUCT(children);
+	}
+	case LogicalTypeId::TUPLE: {
+		auto children = StructType::GetChildTypes(type);
+		for (auto &child : children) {
+			child.second = ConvertToList(child.second);
+		}
+		return LogicalType::TUPLE(children);
 	}
 	case LogicalTypeId::MAP: {
 		auto key_type = ConvertToList(MapType::KeyType(type));

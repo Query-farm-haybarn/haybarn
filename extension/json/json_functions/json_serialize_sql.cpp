@@ -1,4 +1,5 @@
 #include "duckdb/execution/expression_executor.hpp"
+#include "duckdb/planner/expression/bound_function_expression.hpp"
 #include "duckdb/main/connection.hpp"
 #include "duckdb/main/database.hpp"
 #include "duckdb/parser/parsed_data/create_pragma_function_info.hpp"
@@ -7,6 +8,7 @@
 #include "json_functions.hpp"
 #include "json_serializer.hpp"
 #include "duckdb/parser/parsed_expression_iterator.hpp"
+#include "duckdb/parser/literal.hpp"
 
 namespace duckdb {
 
@@ -71,7 +73,7 @@ static unique_ptr<FunctionData> JsonSerializeBind(BindScalarFunctionInput &input
 			}
 			skip_if_default = BooleanValue::Get(input.GetConstant(i));
 		} else {
-			throw BinderException(StringUtil::Format("json_serialize_sql: Unknown argument '%s'", alias));
+			throw BinderException(StringUtil::Format("json_serialize_sql: Unknown argument %s", alias));
 		}
 	}
 	return make_uniq<JsonSerializeBindData>(skip_if_null, skip_if_empty, skip_if_default, format);
@@ -193,6 +195,10 @@ static vector<unique_ptr<SelectStatement>> DeserializeSelectStatement(string_t i
 		throw ParserException("Error parsing json: no statements");
 	}
 
+	DeserializationPolicy policy;
+	policy.Disallow(LogicalTypeId::POINTER);
+	policy.Disallow(LiteralKind::POINTER);
+
 	vector<unique_ptr<SelectStatement>> result;
 
 	idx_t idx;
@@ -200,6 +206,7 @@ static vector<unique_ptr<SelectStatement>> DeserializeSelectStatement(string_t i
 	yyjson_val *stmt_json;
 	yyjson_arr_foreach(statements, idx, max, stmt_json) {
 		JsonDeserializer deserializer(stmt_json, doc);
+		deserializer.SetPolicy(policy);
 		auto stmt = SelectStatement::Deserialize(deserializer);
 		if (!stmt->node) {
 			throw ParserException("Error parsing json: no select node found in json");
@@ -282,6 +289,10 @@ struct ExecuteSqlTableFunction {
 		shared_ptr<Relation> plan;
 		unique_ptr<QueryResult> result;
 		unique_ptr<Connection> con;
+
+		bool SupportStatementCache() const override {
+			return false;
+		}
 	};
 
 	static unique_ptr<FunctionData> Bind(ClientContext &context, TableFunctionBindInput &input,

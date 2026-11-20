@@ -9,6 +9,9 @@
 #include "duckdb/common/case_insensitive_map.hpp"
 #include "duckdb/main/client_context.hpp"
 
+#if !defined(_WIN32) && !defined(WIN32)
+#include <sys/wait.h>
+#endif
 #ifdef HAVE_LINENOISE
 #include "linenoise.h"
 #include "shortcuts.hpp"
@@ -203,7 +206,7 @@ MetadataResult ExitProcess(ShellState &state, const vector<string> &args) {
 	}
 	int rc = 0;
 	if (args.size() > 1 && (rc = (int)ShellState::StringToInt(args[1])) != 0) {
-		// exit immediately if a custom error code is provided
+		// Stop all input processing and return through main's cleanup.
 		ShellState::Exit(rc);
 	}
 	return MetadataResult::EXIT;
@@ -556,17 +559,20 @@ MetadataResult RunShellCommand(ShellState &state, const vector<string> &args) {
 		state.Print(PrintOutput::STDERR, ".sh/.system cannot be used in -safe mode\n");
 		return MetadataResult::FAIL;
 	}
-	int x;
 	if (args.size() < 2) {
 		return MetadataResult::PRINT_USAGE;
 	}
-	auto zCmd = StringUtil::Format(StringUtil::Contains(args[1], ' ') ? "%s" : "\"%s\"", args[1]);
-	for (idx_t i = 2; i < args.size(); i++) {
-		zCmd += StringUtil::Format(StringUtil::Contains(args[i], ' ') ? " %s" : " \"%s\"", args[i]);
+	// the command line is passed on verbatim - quoting, pipes and redirects are handled by the system shell
+	fflush(state.out);
+	fflush(stdout);
+	int status = system(args[1].c_str());
+#if !defined(_WIN32) && !defined(WIN32)
+	if (WIFEXITED(status)) {
+		status = WEXITSTATUS(status);
 	}
-	x = system(zCmd.c_str());
-	if (x) {
-		state.PrintF(PrintOutput::STDERR, "System command returns %d\n", x);
+#endif
+	if (status) {
+		state.PrintF(PrintOutput::STDERR, "System command returns %d\n", status);
 	}
 	return MetadataResult::SUCCESS;
 }
@@ -1073,7 +1079,7 @@ static const MetadataCommand metadata_commands[] = {
      "By default the schema is pretty-printed using the SQL formatter.\nOptions:\n\t--no-indent\tPrint the schema as "
      "it is stored, without formatting\n\t--no-format\tAlias for --no-indent\n\t--indent\tForce pretty-printing (the "
      "default)\n\t--format\tAlias for --indent"},
-    {"shell", 0, RunShellCommand, "CMD ARGS...", "Run CMD ARGS... in a system shell", 0, ""},
+    {"shell", 0, RunShellCommand, "CMD ARGS...", "Run CMD ARGS... in a system shell", 0, "", true},
     {"show", 1, ShowConfiguration, "", "Show the current values for various settings", 0, ""},
 #ifdef HAVE_LINENOISE
     {"singleline", 1, ToggleSingleLine, "", "Sets the render mode to single-line", 0, ""},
@@ -1081,7 +1087,7 @@ static const MetadataCommand metadata_commands[] = {
     {"sql", 1, SetSQLInputMode, "", "Return input processing to SQL mode (Ctrl-D also exits an active mode)", 0, ""},
     {"startup_text", 2, SetStartupText, "none|version|all",
      "Start-up text to display. Set this as the first line in .haybarnrc", 0, ""},
-    {"system", 0, RunShellCommand, "CMD ARGS...", "Run CMD ARGS... in a system shell", 0, ""},
+    {"system", 0, RunShellCommand, "CMD ARGS...", "Run CMD ARGS... in a system shell", 0, "", true},
     {"tables", 0, ShowTables, "?TABLE?", "List names of tables matching LIKE pattern TABLE", 2, ""},
     {"thousand_sep", 0, SetThousandSep, "SEP",
      "Sets the thousand separator used when rendering numbers. Only for duckbox mode.", 4, ""},

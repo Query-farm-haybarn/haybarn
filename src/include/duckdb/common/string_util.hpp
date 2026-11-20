@@ -169,6 +169,10 @@ public:
 		return result;
 	}
 
+	//! Returns the authority, including any userinfo and port.
+	//! Empty if there is no scheme:// prefix or authority. Does not validate or decode URI components.
+	DUCKDB_API static string GetURIAuthority(const string &str);
+
 	//! Encode special URL characters in a string
 	DUCKDB_API static string URLEncode(const string &str, bool encode_slash = true);
 	DUCKDB_API static idx_t URLEncodeSize(const char *input, idx_t input_size, bool encode_slash = true);
@@ -185,6 +189,8 @@ public:
 	DUCKDB_API static idx_t ToUnsigned(const string &str);
 	DUCKDB_API static int64_t ToSigned(const string &str);
 	DUCKDB_API static double ToDouble(const string &str);
+	//! Format a double like printf "%f", independent of the C++ standard library
+	DUCKDB_API static string ToString(double value);
 
 	template <class T>
 	static string ToString(const vector<T> &input, const string &separator) {

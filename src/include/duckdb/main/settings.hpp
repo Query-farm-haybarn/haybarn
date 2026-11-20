@@ -189,14 +189,16 @@ struct AllowExtensionRepositoriesSetting {
 	using RETURN_TYPE = string;
 	static constexpr const char *Name = "allow_extension_repositories";
 	static constexpr const char *Description =
-	    "Whether custom trusted extension repositories are 'allowed', 'forbidden' (which also distrusts existing "
-	    "repositories) or 'undecided' (the default: blocks adding new repositories, but keeps trusting existing ones). "
-	    "While the database is running the setting can only move from 'undecided' to 'allowed' or 'forbidden', or from "
-	    "'allowed' to 'forbidden'.";
+	    "Which custom trusted extension repositories can be added, and which are trusted: 'hosts' (the default: a "
+	    "repository named by its host can be added with CREATE EXTENSION REPOSITORY <host>, adding one by prefix needs "
+	    "'allowed', existing repositories stay trusted), 'allowed' (repositories can be added by host or by prefix), "
+	    "'hosts_only' (only repositories resolved from their host can be added, and only those are trusted) or "
+	    "'forbidden' (nothing can be added, and existing repositories are distrusted). While the database is running "
+	    "the setting can only be tightened: 'hosts' -> 'allowed' -> 'hosts_only' -> 'forbidden'.";
 	static constexpr const char *InputType = "VARCHAR";
 	static constexpr bool IsDebug = false;
 	static constexpr bool IsDeprecated = false;
-	static constexpr const char *DefaultValue = "undecided";
+	static constexpr const char *DefaultValue = "hosts";
 	static constexpr SettingScopeTarget Scope = SettingScopeTarget::GLOBAL_ONLY;
 	static constexpr idx_t SettingIndex = NEXT_SETTING_INDEX();
 	static void OnSet(SettingCallbackInfo &info, Value &input);
@@ -685,6 +687,19 @@ struct DebugEvictionQueueSleepMicroSecondsSetting {
 	static constexpr idx_t SettingIndex = NEXT_SETTING_INDEX();
 };
 
+struct DebugFileDescriptorLimitSetting {
+	using RETURN_TYPE = idx_t;
+	static constexpr const char *Name = "debug_file_descriptor_limit";
+	static constexpr const char *Description = "Override the file descriptor limit that bounds how many files a scan "
+	                                           "opens ahead. 0 uses the limit of the process.";
+	static constexpr const char *InputType = "UBIGINT";
+	static constexpr bool IsDebug = true;
+	static constexpr bool IsDeprecated = false;
+	static constexpr const char *DefaultValue = "0";
+	static constexpr SettingScopeTarget Scope = SettingScopeTarget::LOCAL_DEFAULT;
+	static constexpr idx_t SettingIndex = NEXT_SETTING_INDEX();
+};
+
 struct ForceBitpackingModeSetting {
 	using RETURN_TYPE = BitpackingMode;
 	static constexpr const char *Name = "debug_force_bitpacking_mode";
@@ -744,6 +759,19 @@ struct DebugForceFetchRowSetting {
 	static constexpr bool IsDeprecated = false;
 	static constexpr const char *DefaultValue = "false";
 	static constexpr SettingScopeTarget Scope = SettingScopeTarget::LOCAL_DEFAULT;
+	static constexpr idx_t SettingIndex = NEXT_SETTING_INDEX();
+};
+
+struct DebugForceFlushAppendFailureSetting {
+	using RETURN_TYPE = bool;
+	static constexpr const char *Name = "debug_force_flush_append_failure";
+	static constexpr const char *Description = "Force the commit-time flush of transaction-local storage to fail after "
+	                                           "appending to the table. Can be used for testing commit error recovery.";
+	static constexpr const char *InputType = "BOOLEAN";
+	static constexpr bool IsDebug = true;
+	static constexpr bool IsDeprecated = false;
+	static constexpr const char *DefaultValue = "false";
+	static constexpr SettingScopeTarget Scope = SettingScopeTarget::GLOBAL_DEFAULT;
 	static constexpr idx_t SettingIndex = NEXT_SETTING_INDEX();
 };
 
@@ -1087,11 +1115,10 @@ struct DelimJoinAsCteSetting {
 	    "Rewrite delim joins to materialized CTEs during dependent join flattening.";
 	static constexpr const char *InputType = "BOOLEAN";
 	static constexpr bool IsDebug = false;
-	static constexpr bool IsDeprecated = false;
+	static constexpr bool IsDeprecated = true;
 	static constexpr const char *DefaultValue = "true";
 	static constexpr SettingScopeTarget Scope = SettingScopeTarget::LOCAL_DEFAULT;
 	static constexpr idx_t SettingIndex = NEXT_SETTING_INDEX();
-	static void OnSet(SettingCallbackInfo &info, Value &input);
 };
 
 struct DialectCompatibilityModeSetting {
@@ -1301,7 +1328,6 @@ struct EnableObjectCacheSetting {
 	static constexpr const char *DefaultValue = "false";
 	static constexpr SettingScopeTarget Scope = SettingScopeTarget::GLOBAL_DEFAULT;
 	static constexpr idx_t SettingIndex = NEXT_SETTING_INDEX();
-	static void OnSet(SettingCallbackInfo &info, Value &input);
 };
 
 struct EnableOptimisticWriteSetting {
@@ -1402,11 +1428,10 @@ struct ErrorOnDivisionByZeroSetting {
 	static constexpr const char *Description = "Throw an error instead of returning NULL when dividing by zero.";
 	static constexpr const char *InputType = "BOOLEAN";
 	static constexpr bool IsDebug = false;
-	static constexpr bool IsDeprecated = false;
+	static constexpr bool IsDeprecated = true;
 	static constexpr const char *DefaultValue = "true";
 	static constexpr SettingScopeTarget Scope = SettingScopeTarget::LOCAL_DEFAULT;
 	static constexpr idx_t SettingIndex = NEXT_SETTING_INDEX();
-	static void OnSet(SettingCallbackInfo &info, Value &input);
 };
 
 struct ErrorsAsJSONSetting {
@@ -1427,11 +1452,10 @@ struct ExperimentalMetadataReuseSetting {
 	static constexpr const char *Description = "EXPERIMENTAL: Re-use row group and table metadata when checkpointing.";
 	static constexpr const char *InputType = "BOOLEAN";
 	static constexpr bool IsDebug = false;
-	static constexpr bool IsDeprecated = false;
+	static constexpr bool IsDeprecated = true;
 	static constexpr const char *DefaultValue = "true";
 	static constexpr SettingScopeTarget Scope = SettingScopeTarget::GLOBAL_ONLY;
 	static constexpr idx_t SettingIndex = NEXT_SETTING_INDEX();
-	static void OnSet(SettingCallbackInfo &info, Value &input);
 };
 
 struct ExplainOutputSetting {
@@ -1470,7 +1494,6 @@ struct ExtensionDirectorySetting {
 	static constexpr const char *DefaultValue = "";
 	static constexpr SettingScopeTarget Scope = SettingScopeTarget::GLOBAL_ONLY;
 	static constexpr idx_t SettingIndex = NEXT_SETTING_INDEX();
-	static void OnSet(SettingCallbackInfo &info, Value &input);
 };
 
 struct ExtensionRepositoryDirectorySetting {
@@ -1596,11 +1619,10 @@ struct ForceColumnMetadataReuseSetting {
 	    "This breaks storage backward-compatibility with older DuckDB versions.";
 	static constexpr const char *InputType = "BOOLEAN";
 	static constexpr bool IsDebug = false;
-	static constexpr bool IsDeprecated = false;
+	static constexpr bool IsDeprecated = true;
 	static constexpr const char *DefaultValue = "false";
 	static constexpr SettingScopeTarget Scope = SettingScopeTarget::GLOBAL_ONLY;
 	static constexpr idx_t SettingIndex = NEXT_SETTING_INDEX();
-	static void OnSet(SettingCallbackInfo &info, Value &input);
 };
 
 struct ForceCompressionSetting {
@@ -1703,6 +1725,34 @@ struct HTTPProxyUsernameSetting {
 	static constexpr bool IsDeprecated = false;
 	static constexpr const char *DefaultValue = "";
 	static constexpr SettingScopeTarget Scope = SettingScopeTarget::GLOBAL_ONLY;
+	static constexpr idx_t SettingIndex = NEXT_SETTING_INDEX();
+};
+
+struct HTTPRetryQuotaThrottledSetting {
+	using RETURN_TYPE = bool;
+	static constexpr const char *Name = "http_retry_quota_throttled";
+	static constexpr const char *Description =
+	    "Whether the per-host retry quota can refuse the retry of a throttled request (HTTP 429 or 503). When false, a "
+	    "throttled retry is still charged to the quota but is not refused when the quota is empty.";
+	static constexpr const char *InputType = "BOOLEAN";
+	static constexpr bool IsDebug = false;
+	static constexpr bool IsDeprecated = false;
+	static constexpr const char *DefaultValue = "true";
+	static constexpr SettingScopeTarget Scope = SettingScopeTarget::LOCAL_DEFAULT;
+	static constexpr idx_t SettingIndex = NEXT_SETTING_INDEX();
+};
+
+struct HTTPRetryThrottledWaitMsSetting {
+	using RETURN_TYPE = idx_t;
+	static constexpr const char *Name = "http_retry_throttled_wait_ms";
+	static constexpr const char *Description =
+	    "Smallest base wait, in milliseconds, of the back-off between retries of a throttled request (HTTP 429 or "
+	    "503). Throttled retries back off from the larger of this and http_retry_wait_ms.";
+	static constexpr const char *InputType = "UBIGINT";
+	static constexpr bool IsDebug = false;
+	static constexpr bool IsDeprecated = false;
+	static constexpr const char *DefaultValue = "0";
+	static constexpr SettingScopeTarget Scope = SettingScopeTarget::LOCAL_DEFAULT;
 	static constexpr idx_t SettingIndex = NEXT_SETTING_INDEX();
 };
 
@@ -1837,11 +1887,10 @@ struct LegacyDisableNullTypeSetting {
 	                                           "the default behavior prior to DuckDB v2.0.";
 	static constexpr const char *InputType = "BOOLEAN";
 	static constexpr bool IsDebug = false;
-	static constexpr bool IsDeprecated = false;
+	static constexpr bool IsDeprecated = true;
 	static constexpr const char *DefaultValue = "false";
 	static constexpr SettingScopeTarget Scope = SettingScopeTarget::LOCAL_DEFAULT;
 	static constexpr idx_t SettingIndex = NEXT_SETTING_INDEX();
-	static void OnSet(SettingCallbackInfo &info, Value &input);
 };
 
 struct LegacyMetricsFormatSetting {
@@ -1855,7 +1904,6 @@ struct LegacyMetricsFormatSetting {
 	static constexpr const char *DefaultValue = "false";
 	static constexpr SettingScopeTarget Scope = SettingScopeTarget::LOCAL_DEFAULT;
 	static constexpr idx_t SettingIndex = NEXT_SETTING_INDEX();
-	static void OnSet(SettingCallbackInfo &info, Value &input);
 };
 
 struct LockConfigurationSetting {
@@ -1908,14 +1956,26 @@ struct LoggingMode {
 	static Value GetSetting(const ClientContext &context);
 };
 
-struct LoggingStorage {
+struct LoggingSink {
 	using RETURN_TYPE = string;
-	static constexpr const char *Name = "logging_storage";
+	static constexpr const char *Name = "logging_sink";
 	static constexpr const char *Description =
-	    "Set the logging storage, options are 'memory', 'stdout', 'file', '<custom>'.";
+	    "Set the logging sink, options are 'memory', 'stdout', 'file', '<custom>'.";
 	static constexpr const char *InputType = "VARCHAR";
 	static constexpr bool IsDebug = false;
 	static constexpr bool IsDeprecated = false;
+	static void SetGlobal(DatabaseInstance *db, DBConfig &config, const Value &parameter);
+	static void ResetGlobal(DatabaseInstance *db, DBConfig &config);
+	static Value GetSetting(const ClientContext &context);
+};
+
+struct LoggingStorage {
+	using RETURN_TYPE = string;
+	static constexpr const char *Name = "logging_storage";
+	static constexpr const char *Description = "Deprecated setting. Use logging_sink instead.";
+	static constexpr const char *InputType = "VARCHAR";
+	static constexpr bool IsDebug = false;
+	static constexpr bool IsDeprecated = true;
 	static void SetGlobal(DatabaseInstance *db, DBConfig &config, const Value &parameter);
 	static void ResetGlobal(DatabaseInstance *db, DBConfig &config);
 	static Value GetSetting(const ClientContext &context);
@@ -2035,7 +2095,6 @@ struct OldImplicitCastingSetting {
 	static constexpr const char *DefaultValue = "false";
 	static constexpr SettingScopeTarget Scope = SettingScopeTarget::GLOBAL_DEFAULT;
 	static constexpr idx_t SettingIndex = NEXT_SETTING_INDEX();
-	static void OnSet(SettingCallbackInfo &info, Value &input);
 };
 
 struct OperatorMemoryLimitSetting {
@@ -2218,7 +2277,6 @@ struct ProduceArrowStringViewSetting {
 	static constexpr const char *DefaultValue = "false";
 	static constexpr SettingScopeTarget Scope = SettingScopeTarget::GLOBAL_DEFAULT;
 	static constexpr idx_t SettingIndex = NEXT_SETTING_INDEX();
-	static void OnSet(SettingCallbackInfo &info, Value &input);
 };
 
 struct ProfilingCoverageSetting {
@@ -2321,7 +2379,7 @@ struct RegexMatchOperatorSemanticsSetting {
 	    "Configures whether regex match operators use partial or full string matching.";
 	static constexpr const char *InputType = "VARCHAR";
 	static constexpr bool IsDebug = false;
-	static constexpr bool IsDeprecated = false;
+	static constexpr bool IsDeprecated = true;
 	static constexpr const char *DefaultValue = "partial";
 	static constexpr SettingScopeTarget Scope = SettingScopeTarget::LOCAL_DEFAULT;
 	static constexpr idx_t SettingIndex = NEXT_SETTING_INDEX();
@@ -2458,7 +2516,7 @@ struct TableFunctionIdentifierConversionSetting {
 	                                           "identifiers to strings in table function arguments.";
 	static constexpr const char *InputType = "VARCHAR";
 	static constexpr bool IsDebug = false;
-	static constexpr bool IsDeprecated = false;
+	static constexpr bool IsDeprecated = true;
 	static constexpr const char *DefaultValue = "DEFAULT";
 	static constexpr SettingScopeTarget Scope = SettingScopeTarget::LOCAL_DEFAULT;
 	static constexpr idx_t SettingIndex = NEXT_SETTING_INDEX();

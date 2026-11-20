@@ -42,6 +42,10 @@ unique_ptr<ColumnSegment> ColumnSegment::CreatePersistentSegment(DatabaseInstanc
 
 	auto &type = statistics.GetType();
 	auto function = config.GetCompressionFunction(compression_type, type.InternalType());
+	if (block_id == INVALID_BLOCK && !function.get().supports_null_block) {
+		throw DataCorruptionException("Persistent %s segment is missing its data block",
+		                              CompressionTypeToString(compression_type));
+	}
 	if (block_id != INVALID_BLOCK) {
 		block = block_manager.RegisterBlock(block_id);
 	}
@@ -55,11 +59,16 @@ unique_ptr<ColumnSegment> ColumnSegment::CreatePersistentSegment(DatabaseInstanc
 unique_ptr<ColumnSegment> ColumnSegment::CreateTransientSegment(DatabaseInstance &db,
                                                                 const CompressionFunction &function,
                                                                 const LogicalType &type, const idx_t segment_size,
-                                                                BlockManager &block_manager) {
+                                                                BlockManager &block_manager, bool zero_initialize) {
 	// Allocate a buffer for the uncompressed segment.
 	auto &buffer_manager = BufferManager::GetBufferManager(db);
 	D_ASSERT(&buffer_manager == &block_manager.buffer_manager);
 	auto block = buffer_manager.RegisterTransientMemory(segment_size, block_manager);
+	// we want to zero initialize segments that end up on disk
+	if (zero_initialize) {
+		auto handle = buffer_manager.Pin(block);
+		memset(handle.GetDataMutable(), 0, segment_size);
+	}
 
 	return make_uniq<ColumnSegment>(db, std::move(block), ColumnSegmentType::TRANSIENT, 0U, function,
 	                                BaseStatistics::CreateEmpty(type), INVALID_BLOCK, 0U, segment_size);
@@ -283,6 +292,12 @@ void ColumnSegment::MarkAsPersistent(shared_ptr<BlockHandle> block_p, uint32_t o
 	D_ASSERT(segment_type == ColumnSegmentType::TRANSIENT);
 	block_id = block_p->BlockId();
 	SetBlock(std::move(block_p), offset_p);
+}
+
+void ColumnSegment::UsePackedCopy(shared_ptr<BlockHandle> block_p, uint32_t offset_p) {
+	D_ASSERT(segment_type == ColumnSegmentType::TRANSIENT);
+	offset = offset_p;
+	block = std::move(block_p);
 }
 
 void ColumnSegment::SetBlock(shared_ptr<BlockHandle> block_p, uint32_t offset_p) {

@@ -175,14 +175,19 @@ void Binder::SearchSchema(CreateInfo &info) {
 		// no catalog and no schema given: use the search path default for both
 		auto &default_entry = search_path->GetDefault();
 		catalog = default_entry.GetCatalog();
-		schema_path.push_back(default_entry.GetSchema());
+		schema_path = default_entry.GetSchemaPath();
 	} else if (schema_path.empty()) {
 		// a catalog was given but no schema: use the catalog's default schema
-		auto default_schema = search_path->GetDefaultSchema(context, catalog);
-		if (!default_schema) {
-			throw BinderException("Catalog \"%s\" has no default schema - specify a schema explicitly", catalog);
+		auto entries = search_path->GetEntriesForCatalog(catalog);
+		if (catalog != TEMP_CATALOG && !entries.empty()) {
+			schema_path = entries[0].GetSchemaPath();
+		} else {
+			auto default_schema = search_path->GetDefaultSchema(context, catalog);
+			if (!default_schema) {
+				throw BinderException("Catalog %s has no default schema - specify a schema explicitly", catalog);
+			}
+			schema_path.push_back(*default_schema);
 		}
-		schema_path.push_back(*default_schema);
 	} else if (IsInvalidCatalog(catalog)) {
 		// a schema was given but no catalog: resolve the catalog that holds it
 		catalog = search_path->ResolveCatalog(schema_path[0]);
@@ -263,12 +268,19 @@ QualifiedName Binder::BindTableName(CatalogEntryRetriever &retriever, const Qual
 		EntryLookupInfo schema_lookup(CatalogType::SCHEMA_ENTRY, QualifiedName(schema_path[0]));
 		auto schema = Catalog::GetSchema(retriever, schema_lookup, OnEntryNotFound::RETURN_NULL);
 		if (schema) {
-			catalog = schema->ParentCatalog().GetName();
+			catalog = schema->ParentCatalog().IsTemporaryCatalog()
+			              ? retriever.GetSearchPath().ResolveCatalog(schema_path[0])
+			              : schema->ParentCatalog().GetName();
 		} else {
 			catalog = DatabaseManager::GetDefaultDatabase(retriever.GetContext());
 		}
 	}
-	return QualifiedName::FromCatalogSchema(std::move(catalog), std::move(schema_path), resolved.Name());
+	auto result = QualifiedName::FromCatalogSchema(std::move(catalog), std::move(schema_path), resolved.Name());
+	auto catalog_entry = Catalog::GetCatalogEntry(retriever, result.Catalog());
+	if (catalog_entry) {
+		catalog_entry->CheckNestedSchemaSupport(result, CatalogType::TABLE_ENTRY);
+	}
+	return result;
 }
 
 QualifiedName Binder::BindTableName(const QualifiedName &name) {
@@ -294,6 +306,7 @@ void Binder::BindCreateSchema(CreateSchemaInfo &info) {
 	info.SetQualifiedName(ResolveCatalog(context, info.GetQualifiedName()));
 
 	auto &resolved_catalog = Catalog::GetCatalog(context, info.SchemaCatalog());
+	resolved_catalog.CheckNestedSchemaSupport(info.GetQualifiedName(), CatalogType::SCHEMA_ENTRY);
 	auto supports_create_schema = resolved_catalog.SupportsCreateSchema(info);
 	if (supports_create_schema.HasError()) {
 		supports_create_schema.Throw();
@@ -337,7 +350,7 @@ void Binder::SetCatalogLookupCallback(catalog_entry_callback_t callback) {
 }
 
 void Binder::BindView(ClientContext &context, const SelectStatement &stmt, const Identifier &catalog_name,
-                      const Identifier &schema_name, optional_ptr<LogicalDependencyList> dependencies,
+                      const vector<Identifier> &schema_path, optional_ptr<LogicalDependencyList> dependencies,
                       const vector<Identifier> &aliases, vector<LogicalType> &result_types,
                       vector<Identifier> &result_names) {
 	auto view_binder = Binder::CreateBinder(context);
@@ -354,7 +367,7 @@ void Binder::BindView(ClientContext &context, const SelectStatement &stmt, const
 	}
 	view_binder->SetCanContainNulls(true);
 
-	auto view_search_path = view_binder->GetSearchPath(catalog, schema_name, true);
+	auto view_search_path = view_binder->GetSearchPath(catalog, schema_path, true);
 	view_binder->entry_retriever.SetSearchPath(std::move(view_search_path));
 
 	auto copy = stmt.Copy();
@@ -396,8 +409,8 @@ void Binder::BindCreateViewInfo(CreateViewInfo &base) {
 	if (Settings::Get<EnableViewDependenciesSetting>(context)) {
 		dependencies = base.dependencies;
 	}
-	BindView(context, *base.query, base.GetQualifiedName().Catalog(), base.GetQualifiedName().Schema(), dependencies,
-	         base.aliases, base.types, base.names);
+	BindView(context, *base.query, base.GetQualifiedName().Catalog(), base.GetQualifiedName().SchemaPath(),
+	         dependencies, base.aliases, base.types, base.names);
 }
 
 SchemaCatalogEntry &Binder::BindCreateFunctionInfo(CreateInfo &info) {
@@ -493,7 +506,7 @@ SchemaCatalogEntry &Binder::BindCreateFunctionInfo(CreateInfo &info) {
 			auto default_expr = param_expr->Copy();
 			auto bound_default = binder.Bind(default_expr);
 			if (!bound_default->IsFoldable()) {
-				auto msg = StringUtil::Format("Default value '%s' for parameter '%s' is not a constant expression.",
+				auto msg = StringUtil::Format("Default value '%s' for parameter %s is not a constant expression.",
 				                              param_expr->ToString(), param_name);
 				throw BinderException(msg);
 			}
@@ -526,7 +539,7 @@ SchemaCatalogEntry &Binder::BindCreateFunctionInfo(CreateInfo &info) {
 				}
 				if (CastFunctionSet::ImplicitCastCost(context, val_type, type) < 0) {
 					auto msg = StringUtil::Format(
-					    "Default value '%s' for parameter '%s' cannot be implicitly cast to '%s'.",
+					    "Default value '%s' for parameter %s cannot be implicitly cast to '%s'.",
 					    function->default_parameters[param_name]->ToString(), param_name, type.ToString());
 					throw BinderException(msg + " Please add an explicit type cast.");
 				}
@@ -710,7 +723,7 @@ SchemaCatalogEntry &Binder::BindCreateTriggerInfo(CreateTriggerInfo &create_trig
 	if (create_trigger_info.event_type == TriggerEventType::UPDATE_EVENT && !create_trigger_info.columns.empty()) {
 		for (const auto &col_name : create_trigger_info.columns) {
 			if (!table.ColumnExists(col_name)) {
-				throw BinderException("Column \"%s\" does not exist in table \"%s\"", col_name, table.name);
+				throw BinderException("Column %s does not exist in table %s", col_name, table.name);
 			}
 		}
 	}
@@ -775,7 +788,7 @@ SchemaCatalogEntry &Binder::BindCreateTriggerInfo(CreateTriggerInfo &create_trig
 			if (entry.internal) {
 				return;
 			}
-			throw BinderException("Trigger \"%s\" cannot reference \"%s\" from a different catalog (\"%s\")",
+			throw BinderException("Trigger %s cannot reference %s from a different catalog (%s)",
 			                      create_trigger_info.GetTriggerName(), entry.name, entry.ParentCatalog().GetName());
 		}
 		DependencyDependentFlags flags;
@@ -824,7 +837,7 @@ SchemaCatalogEntry &Binder::BindCreateTriggerInfo(CreateTriggerInfo &create_trig
 		}
 		if (BoundBodyContainsTrigger(*bound_body.plan)) {
 			throw NotImplementedException(
-			    "FOR EACH ROW trigger \"%s\" on table \"%s\" writes to a table that has its own FOR EACH ROW "
+			    "FOR EACH ROW trigger %s on table %s writes to a table that has its own FOR EACH ROW "
 			    "trigger (cascading row triggers are not yet supported)",
 			    create_trigger_info.GetTriggerName(), table.name);
 		}

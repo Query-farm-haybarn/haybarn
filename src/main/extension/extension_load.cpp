@@ -13,11 +13,8 @@
 #include "duckdb/main/extension_manager.hpp"
 #include "duckdb/main/extension_repository_manager.hpp"
 #include "duckdb/main/settings.hpp"
+#include "duckdb/parallel/task_executor.hpp"
 #include "mbedtls_wrapper.hpp"
-
-#ifndef DUCKDB_NO_THREADS
-#include <thread>
-#endif // DUCKDB_NO_THREADS
 
 namespace duckdb {
 
@@ -317,24 +314,46 @@ static void ComputeSHA256FileSegment(FileHandle *handle, const idx_t start, cons
 	*res = state.Finalize();
 }
 
+//! Hashes one segment of an extension that is being checked for a valid signature
 template <typename T, typename F>
-static void ComputeHashesOnSegments(F ComputeHashFun, T handle, const vector<idx_t> &splits,
-                                    vector<string> &hash_chunks) {
-#ifndef DUCKDB_NO_THREADS
-	vector<std::thread> threads;
-	threads.reserve(hash_chunks.size());
-	for (idx_t i = 0; i < hash_chunks.size(); i++) {
-		threads.emplace_back(ComputeHashFun, handle, splits[i], splits[i + 1], &hash_chunks[i]);
+class ExtensionHashTask : public BaseExecutorTask {
+public:
+	ExtensionHashTask(TaskExecutor &executor, F compute_hash_fun_p, T handle_p, idx_t start_p, idx_t end_p,
+	                  string &hash_p)
+	    : BaseExecutorTask(executor), compute_hash_fun(compute_hash_fun_p), handle(handle_p), start(start_p),
+	      end(end_p), hash(hash_p) {
 	}
 
-	for (auto &thread : threads) {
-		thread.join();
+public:
+	void ExecuteTask() override {
+		compute_hash_fun(handle, start, end, &hash);
 	}
-#else
+
+	string TaskType() const override {
+		return "ExtensionHashTask";
+	}
+
+private:
+	F compute_hash_fun;
+	T handle;
+	const idx_t start;
+	const idx_t end;
+	string &hash;
+};
+
+template <typename T, typename F>
+static void ComputeHashesOnSegments(DatabaseInstance &db, F compute_hash_fun, T handle, const vector<idx_t> &splits,
+                                    vector<string> &hash_chunks) {
+	// the segments are hashed by the worker threads of the scheduler and by this thread, which waits for all of them
+	TaskExecutor executor(TaskScheduler::GetScheduler(db));
+	vector<unique_ptr<BaseExecutorTask>> tasks;
+	tasks.reserve(hash_chunks.size());
 	for (idx_t i = 0; i < hash_chunks.size(); i++) {
-		ComputeHashFun(handle, splits[i], splits[i + 1], &hash_chunks[i]);
+		tasks.push_back(make_uniq<ExtensionHashTask<T, F>>(executor, compute_hash_fun, handle, splits[i], splits[i + 1],
+		                                                   hash_chunks[i]));
 	}
-#endif // DUCKDB_NO_THREADS
+	executor.ScheduleTasks(std::move(tasks));
+	executor.WorkOnTasks();
 }
 
 static string FilterZeroAtEnd(string s) {
@@ -431,7 +450,7 @@ bool ExtensionHelper::CheckExtensionSignature(DatabaseInstance &db, FileHandle &
 	vector<idx_t> splits;
 	InitializeAncillaryData(hash_chunks, splits, signature_offset);
 
-	ComputeHashesOnSegments(ComputeSHA256FileSegment, &handle, splits, hash_chunks);
+	ComputeHashesOnSegments(db, ComputeSHA256FileSegment, &handle, splits, hash_chunks);
 
 	const string resulting_hash = ComputeFinalHash(hash_chunks);
 
@@ -449,7 +468,7 @@ bool ExtensionHelper::CheckExtensionBufferSignature(DatabaseInstance &db, const 
 	vector<idx_t> splits;
 	InitializeAncillaryData(hash_chunks, splits, buffer_length);
 
-	ComputeHashesOnSegments(ComputeSHA256Buffer, buffer, splits, hash_chunks);
+	ComputeHashesOnSegments(db, ComputeSHA256Buffer, buffer, splits, hash_chunks);
 
 	const string resulting_hash = ComputeFinalHash(hash_chunks);
 
@@ -478,6 +497,28 @@ bool ExtensionHelper::CheckExtensionBufferSignature(DatabaseInstance &db, const 
 	return CheckExtensionBufferSignature(db, buffer, signature_offset, signature, repository_type, repository_name,
 	                                     signature_key_fingerprint);
 }
+
+#ifndef WASM_LOADABLE_EXTENSIONS
+// The trusted user-provided repositories for which is_installed holds. This only feeds an error message, so a
+// repository file that cannot be read is skipped rather than reported
+static vector<string> FindUserRepositoryInstalls(DatabaseInstance &db, FileSystem &fs,
+                                                 const std::function<bool(const string &)> &is_installed) {
+	vector<string> result;
+	if (!ExtensionRepositoryManager::TrustsExistingRepositories(db)) {
+		return result;
+	}
+	try {
+		for (auto &repository : ExtensionRepositoryManager::GetRepositories(db, fs)) {
+			if (is_installed(repository.name)) {
+				result.push_back(repository.name);
+			}
+		}
+	} catch (std::exception &) {
+		result.clear();
+	}
+	return result;
+}
+#endif
 
 bool ExtensionHelper::TryInitialLoad(DatabaseInstance &db, FileSystem &fs, const string &extension,
                                      const string &repository_name, bool core_only, ExtensionInitResult &result,
@@ -516,6 +557,9 @@ bool ExtensionHelper::TryInitialLoad(DatabaseInstance &db, FileSystem &fs, const
 		}
 	}
 
+	// the user-provided repositories that have the extension installed, when a bare load cannot find it
+	vector<string> installed_in_repositories;
+
 	// shorthand case
 	if (!ExtensionHelper::IsFullPath(extension)) {
 		direct_load = false;
@@ -545,7 +589,8 @@ bool ExtensionHelper::TryInitialLoad(DatabaseInstance &db, FileSystem &fs, const
 #else
 
 		// Local function to process local path
-		auto ComputeLocalExtensionPath = [&](const string &base_path, const string &extension_name) -> string {
+		auto ComputeLocalExtensionPath = [&](const string &base_path, const string &extension_name,
+		                                     const string &user_repository) -> string {
 			// convert random separators to platform-canonic
 			string local_path = fs.ConvertSeparators(base_path);
 			// expand ~ in extension directory
@@ -554,8 +599,8 @@ bool ExtensionHelper::TryInitialLoad(DatabaseInstance &db, FileSystem &fs, const
 			for (auto &path_ele : path_components) {
 				local_path = fs.JoinPath(local_path, path_ele);
 			}
-			if (expect_user_repo) {
-				local_path = fs.JoinPath(fs.JoinPath(local_path, "repositories"), repository_name);
+			if (!user_repository.empty()) {
+				local_path = fs.JoinPath(fs.JoinPath(local_path, "repositories"), user_repository);
 			}
 			return fs.JoinPath(local_path, extension_name + ".duckdb_extension");
 		};
@@ -567,11 +612,9 @@ bool ExtensionHelper::TryInitialLoad(DatabaseInstance &db, FileSystem &fs, const
 			search_directories.push_back(custom_extension_directory);
 		}
 
-		if (!db.config.options.extension_directories.empty()) {
-			// Add all configured extension directories
-			for (const auto &dir : db.config.options.extension_directories) {
-				search_directories.push_back(dir);
-			}
+		// Add all configured extension directories
+		for (auto &dir : db.config.GetExtensionDirectories()) {
+			search_directories.push_back(std::move(dir));
 		}
 
 		// Add default extension directory if no custom directories configured
@@ -582,9 +625,10 @@ bool ExtensionHelper::TryInitialLoad(DatabaseInstance &db, FileSystem &fs, const
 		}
 
 		// Try each directory in sequence until extension is found
+		const string user_repository = expect_user_repo ? repository_name : string();
 		bool found = false;
 		for (const auto &directory : search_directories) {
-			filename = ComputeLocalExtensionPath(directory, extension_name);
+			filename = ComputeLocalExtensionPath(directory, extension_name, user_repository);
 			if (fs.FileExists(filename)) {
 				found = true;
 				break;
@@ -596,13 +640,24 @@ bool ExtensionHelper::TryInitialLoad(DatabaseInstance &db, FileSystem &fs, const
 		// (no network, no cache write; independent of autoinstall_known_extensions).
 		// Signature verification below still gates the load.
 		if (!found) {
-			string npm_path = TryDiscoverNpmExtension(db, fs, extension);
+			// npm packages carry builds of the default repositories, not of a user-provided one
+			string npm_path = user_repository.empty() ? TryDiscoverNpmExtension(db, fs, extension) : string();
 			if (!npm_path.empty()) {
 				filename = npm_path;
 				direct_load = true;
 			} else if (!search_directories.empty()) {
 				// use the first directory for error reporting
-				filename = ComputeLocalExtensionPath(search_directories[0], extension_name);
+				filename = ComputeLocalExtensionPath(search_directories[0], extension_name, user_repository);
+				if (repository_name.empty()) {
+					installed_in_repositories = FindUserRepositoryInstalls(db, fs, [&](const string &repository) {
+						for (const auto &directory : search_directories) {
+							if (fs.FileExists(ComputeLocalExtensionPath(directory, extension_name, repository))) {
+								return true;
+							}
+						}
+						return false;
+					});
+				}
 			}
 		}
 #endif
@@ -618,8 +673,12 @@ bool ExtensionHelper::TryInitialLoad(DatabaseInstance &db, FileSystem &fs, const
 	}
 	if (!fs.FileExists(filename)) {
 		string message;
-		bool exact_match = ExtensionHelper::CreateSuggestions(extension, message);
-		if (exact_match) {
+		if (!installed_in_repositories.empty()) {
+			message = StringUtil::Format("Note: extension '%s' exists in one or more user-provided repositories.\n"
+			                             "Consider `LOAD %s FROM <repo_name>`",
+			                             extension, extension);
+			message += StringUtil::CandidatesMessage(installed_in_repositories, "Candidate repositories");
+		} else if (ExtensionHelper::CreateSuggestions(extension, message)) {
 			message += "\nInstall it first using \"INSTALL " + extension + "\".";
 		}
 		error = StringUtil::Format("Extension \"%s\" not found.\n%s", filename, message);
@@ -822,6 +881,7 @@ void ExtensionHelper::LoadExternalExtensionInternal(DatabaseInstance &db, FileSy
                                                     const string &repository_name, bool core_only,
                                                     ExtensionActiveLoad &info, optional_ptr<ClientContext> context) {
 	auto extension_init_result = InitialLoad(db, fs, extension, repository_name, core_only);
+	auto loaded_path = fs.CanonicalizePath(extension_init_result.filename);
 
 	// C++ ABI
 	if (extension_init_result.abi_type == ExtensionABIType::CPP) {
@@ -845,7 +905,7 @@ void ExtensionHelper::LoadExternalExtensionInternal(DatabaseInstance &db, FileSy
 
 		D_ASSERT(extension_init_result.install_info);
 
-		info.FinishLoad(*extension_init_result.install_info);
+		info.FinishLoad(*extension_init_result.install_info, loaded_path);
 		return;
 	}
 
@@ -869,7 +929,7 @@ void ExtensionHelper::LoadExternalExtensionInternal(DatabaseInstance &db, FileSy
 
 		D_ASSERT(extension_init_result.install_info);
 
-		info.FinishLoad(*extension_init_result.install_info);
+		info.FinishLoad(*extension_init_result.install_info, loaded_path);
 		return;
 	}
 
@@ -908,7 +968,7 @@ void ExtensionHelper::LoadExternalExtensionInternal(DatabaseInstance &db, FileSy
 
 		D_ASSERT(extension_init_result.install_info);
 
-		info.FinishLoad(*extension_init_result.install_info);
+		info.FinishLoad(*extension_init_result.install_info, loaded_path);
 		return;
 	}
 

@@ -171,6 +171,9 @@ static bool RequiresCatalogAndSchemaNamePrefix(const Identifier &catalog_name, c
 }
 
 string FunctionParameter::ToString() const {
+	if (!named) {
+		return type.ToString();
+	}
 	if (kind == FunctionParameterKind::VAR_POSITIONAL) {
 		return StringUtil::Format("*%s %s", SQLIdentifier(name), type.ToString());
 	}
@@ -215,12 +218,17 @@ string FunctionSignature::ToString() const {
 	vector<string> params;
 	params.reserve(parameters.size());
 	// A keyword-only parameter that no "*args" precedes closes the positional parameters by itself, which Python
-	// spells as a bare "*" in that position; a "/" likewise closes the positional-only parameters
+	// spells as a bare "*" in that position; a "/" likewise closes the positional-only parameters. It says that the
+	// names before it cannot be used, so it is left out when none of them is shown (see FunctionParameter::Unnamed)
 	const auto positional_only_count = GetPositionalOnlyParameterCount();
+	bool close_positional_only = false;
+	for (idx_t i = 0; i < positional_only_count; i++) {
+		close_positional_only = close_positional_only || parameters[i].IsNamed();
+	}
 	auto needs_separator = !GetArgs();
 	for (idx_t i = 0; i < parameters.size(); i++) {
 		auto &param = parameters[i];
-		if (i == positional_only_count && positional_only_count > 0) {
+		if (i == positional_only_count && close_positional_only) {
 			params.push_back("/");
 		}
 		if (needs_separator && param.GetKind() == FunctionParameterKind::KEYWORD_ONLY) {
@@ -229,7 +237,7 @@ string FunctionSignature::ToString() const {
 		}
 		params.push_back(param.ToString());
 	}
-	if (positional_only_count > 0 && positional_only_count == parameters.size()) {
+	if (close_positional_only && positional_only_count == parameters.size()) {
 		params.push_back("/");
 	}
 	auto head = StringUtil::Format("(%s)", StringUtil::Join(params, ", "));
@@ -326,7 +334,7 @@ void FunctionSignature::Verify() const {
 			found_default_value = true;
 		} else if (found_default_value) {
 			throw InvalidInputException(
-			    "Parameters with default values must be at the end of the parameter list. Parameter '%s' does not "
+			    "Parameters with default values must be at the end of the parameter list. Parameter %s does not "
 			    "have a default value but follows a parameter with a default value.",
 			    param.GetName());
 		}
@@ -387,7 +395,7 @@ void FunctionSignature::Verify() const {
 		// a named argument binds to a parameter of its name first, so an option of the same name is never reached
 		for (auto &param : parameters) {
 			if (param.AcceptsName() && typed_kwargs->Find(param.GetName())) {
-				throw InvalidInputException("Option '%s' has the same name as a parameter", param.GetName());
+				throw InvalidInputException("Option %s has the same name as a parameter", param.GetName());
 			}
 		}
 	}
@@ -647,7 +655,7 @@ Value BindFunctionInput::GetConstant(idx_t arg_idx, bool accept_null) const {
 	}
 	auto value = ExpressionExecutor::EvaluateScalar(context, expr);
 	if (!accept_null && value.IsNull()) {
-		throw BinderException(expr, "%s in function '%s' must not be NULL", argument_name, function.GetName());
+		throw BinderException(expr, "%s in function %s must not be NULL", argument_name, function.GetName());
 	}
 	return value;
 }
@@ -671,7 +679,11 @@ optional<Value> BindFunctionInput::TryGetConstant(idx_t arg_idx) const {
 	if (!expr.IsFoldable()) {
 		return {};
 	}
-	return ExpressionExecutor::EvaluateScalar(context, expr);
+	Value result;
+	if (!ExpressionExecutor::TryEvaluateScalar(context, expr, result)) {
+		return {};
+	}
+	return result;
 }
 
 optional<Value> BindFunctionInput::TryGetConstant(const Identifier &name) const {
@@ -684,7 +696,7 @@ optional<Value> BindFunctionInput::TryGetConstant(const Identifier &name) const 
 
 optional_idx BindFunctionInput::GetArgumentIndex(const Identifier &name) const {
 	if (!argument_names) {
-		throw InternalException("Function '%s' was bound without argument names, cannot look up argument '%s' by name",
+		throw InternalException("Function %s was bound without argument names, cannot look up argument %s by name",
 		                        function.GetName(), name);
 	}
 	// The binder resolves every argument to a slot and reports its name: the signature parameter name for standard

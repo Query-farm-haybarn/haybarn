@@ -448,6 +448,8 @@ enum class PipelineBroadcastExchangeScanMode : uint8_t;
 
 enum class PipelineInputMode : uint8_t;
 
+enum class PipelineScheduleGraph : uint8_t;
+
 enum class PipelineScheduleMode : uint8_t;
 
 enum class PipelineScheduleStageType : uint8_t;
@@ -507,8 +509,6 @@ enum class ResultModifierType : uint8_t;
 enum class ResultOrdering : uint8_t;
 
 enum class RowGroupAppendMode : uint8_t;
-
-enum class RowIdHandling : uint8_t;
 
 enum class SampleMethod : uint8_t;
 
@@ -619,6 +619,8 @@ enum class TransactionInvalidationPolicy : uint8_t;
 enum class TransactionModifierType : uint8_t;
 
 enum class TransactionType : uint8_t;
+
+enum class TransformChildKind : uint8_t;
 
 enum class TriggerEventType : uint8_t;
 
@@ -1296,6 +1298,9 @@ template<>
 const char* EnumUtil::ToChars<PipelineInputMode>(PipelineInputMode value);
 
 template<>
+const char* EnumUtil::ToChars<PipelineScheduleGraph>(PipelineScheduleGraph value);
+
+template<>
 const char* EnumUtil::ToChars<PipelineScheduleMode>(PipelineScheduleMode value);
 
 template<>
@@ -1384,9 +1389,6 @@ const char* EnumUtil::ToChars<ResultOrdering>(ResultOrdering value);
 
 template<>
 const char* EnumUtil::ToChars<RowGroupAppendMode>(RowGroupAppendMode value);
-
-template<>
-const char* EnumUtil::ToChars<RowIdHandling>(RowIdHandling value);
 
 template<>
 const char* EnumUtil::ToChars<SampleMethod>(SampleMethod value);
@@ -1552,6 +1554,9 @@ const char* EnumUtil::ToChars<TransactionModifierType>(TransactionModifierType v
 
 template<>
 const char* EnumUtil::ToChars<TransactionType>(TransactionType value);
+
+template<>
+const char* EnumUtil::ToChars<TransformChildKind>(TransformChildKind value);
 
 template<>
 const char* EnumUtil::ToChars<TriggerEventType>(TriggerEventType value);
@@ -2254,6 +2259,9 @@ template<>
 PipelineInputMode EnumUtil::FromString<PipelineInputMode>(const char *value);
 
 template<>
+PipelineScheduleGraph EnumUtil::FromString<PipelineScheduleGraph>(const char *value);
+
+template<>
 PipelineScheduleMode EnumUtil::FromString<PipelineScheduleMode>(const char *value);
 
 template<>
@@ -2342,9 +2350,6 @@ ResultOrdering EnumUtil::FromString<ResultOrdering>(const char *value);
 
 template<>
 RowGroupAppendMode EnumUtil::FromString<RowGroupAppendMode>(const char *value);
-
-template<>
-RowIdHandling EnumUtil::FromString<RowIdHandling>(const char *value);
 
 template<>
 SampleMethod EnumUtil::FromString<SampleMethod>(const char *value);
@@ -2510,6 +2515,9 @@ TransactionModifierType EnumUtil::FromString<TransactionModifierType>(const char
 
 template<>
 TransactionType EnumUtil::FromString<TransactionType>(const char *value);
+
+template<>
+TransformChildKind EnumUtil::FromString<TransformChildKind>(const char *value);
 
 template<>
 TriggerEventType EnumUtil::FromString<TriggerEventType>(const char *value);

@@ -4,6 +4,12 @@
   "skip_compiled": "true",
   "skip_tests": [
     {
+      "reason": "The plan of the query is rewritten, so it no longer shows whether the metadata cache answers it.",
+      "paths": [
+        "test/sql/copy/parquet/parquet_glob_cache_list.test"
+      ]
+    },
+    {
       "reason": "Explain/profiling output is different due to verification",
       "paths": [
         "test/optimizer/aggregate_reuse.test",
@@ -13,6 +19,8 @@
         "test/optimizer/eager_aggregate_execution.test",
         "test/optimizer/eager_aggregate_execution_parquet.test",
         "test/optimizer/partial_aggregate_precomputation.test",
+        "test/optimizer/partial_aggregate_pushdown_serialized_plan.test",
+        "test/optimizer/partial_aggregate_pushdown_throwing_argument.test",
         "test/optimizer/partition_stats_exactness.test",
         "test/optimizer/statistics/statistics_count_not_null_join_pruning.test",
         "test/optimizer/statistics/statistics_count_not_null_pruning.test",
@@ -21,12 +29,14 @@
         "test/sql/copy/parquet/parquet_encryption.test",
         "test/sql/copy/parquet/parquet_glob_cache.test",
         "test/sql/copy/parquet/parquet_expression_filter_pruning.test",
+        "test/sql/copy/parquet/parquet_nan_setting.test",
         "test/sql/copy/parquet/parquet_stats.test",
         "test/sql/copy/parquet/read_single_parquet_file.test",
         "test/sql/optimizer/aggregate_stats_propagation.test",
         "test/sql/optimizer/sum_aggregate_stats_propagation.test",
         "test/sql/optimizer/expression/test_common_aggregate.test",
         "test/sql/pragma/profiling/test_custom_profiling_row_group_metrics_local_storage.test",
+        "test/sql/subquery/scalar/test_correlated_aggregate_correlation_key_plan.test",
         "test/sql/sql_export/scope_reuse_plan.test",
         "test/sql/sql_export/composition_q1_plan.test",
         "test/sql/sql_export/composition_plan.test",
@@ -40,7 +50,9 @@
       "reason": "The exported aggregate states change the number of aggregates the PIVOT binder expects",
       "paths": [
         "test/sql/pivot/pivot_identical_aggregates_names.test",
-        "test/sql/pivot/pivot_value_collisions.test"
+        "test/sql/pivot/pivot_value_collisions.test",
+        "test/sql/pivot/pivot_aggregate_filter.test",
+        "test/sql/pivot/pivot_value_group_name_clash.test"
       ]
     },
     {
@@ -79,11 +91,13 @@
         "test/sql/aggregate/aggregates/test_ordered_aggregate_inner_error.test",
         "test/sql/aggregate/aggregates/test_ordered_aggregates.test",
         "test/sql/aggregate/aggregates/test_reservoir_quantile_decimal.test",
+        "test/sql/aggregate/aggregates/test_reservoir_quantile_sampling.test",
         "test/sql/function/list/aggregates/histogram_decimal.test",
         "test/sql/pivot/pivot_operator_expression.test",
         "test/sql/prepared/prepared_statistics_optimization.test",
         "test/sql/types/struct/struct_equality_bug.test",
         "test/sql/types/timestamp/test_infinite_time.test",
+        "test/sql/types/variant/variant_cast_type_null.test",
         "test/sql/variant/variant_comparator.test",
         "test/sql/window/test_window_agg_stats_propagation.test",
         "test/sql/sql_export/call_values.test"

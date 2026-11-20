@@ -13,6 +13,7 @@
 #include "utf8proc_wrapper.hpp"
 #include "duckdb/common/types/string_type.hpp"
 #include "duckdb/common/operator/cast_operators.hpp"
+#include "duckdb/common/operator/multiply.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -108,6 +109,10 @@ int64_t StringUtil::ToSigned(const string &str) {
 
 double StringUtil::ToDouble(const string &str) {
 	return std::stod(str);
+}
+
+string StringUtil::ToString(double value) {
+	return StringUtil::Format("%f", value);
 }
 
 void StringUtil::LTrim(string &str) {
@@ -406,6 +411,21 @@ string StringUtil::TryParseFormattedBytes(const string &arg, idx_t &result) {
 		return StringUtil::Format("Unknown unit for memory: '%s' (expected: KB, MB, GB, TB for 1000^i units or KiB, "
 		                          "MiB, GiB, TiB for 1024^i units)",
 		                          unit);
+	}
+
+	// integer values are multiplied exactly - going through a double loses precision above 2^53
+	bool is_integer = !number.empty() && number.find_first_not_of("0123456789") == string::npos;
+	if (is_integer) {
+		uint64_t integer_limit;
+		if (!TryCast::Operation<string_t, uint64_t>(string_t(number), integer_limit)) {
+			return "Memory value out of range: value is too large";
+		}
+		uint64_t integer_bytes;
+		if (!TryMultiplyOperator::Operation(integer_limit, static_cast<uint64_t>(multiplier), integer_bytes)) {
+			return "Memory value out of range: value is too large";
+		}
+		result = integer_bytes;
+		return string();
 	}
 
 	// Make sure the result is not greater than `idx_t` max value
@@ -802,7 +822,7 @@ static string JSONValueToString(const string &json, JSONValue value) {
 		return to_string(value.GetSignedInteger());
 	case JSONValueType::DOUBLE:
 	case JSONValueType::RAW:
-		return to_string(value.GetDouble());
+		return StringUtil::ToString(value.GetDouble());
 	case JSONValueType::JSON_NULL:
 		return "null";
 	case JSONValueType::OBJECT:
@@ -947,6 +967,17 @@ string StringUtil::ReplaceFileName(const string &file_path, const string &file_n
 		return file_name;
 	}
 	return file_path.substr(0, pos + 1) + file_name;
+}
+
+string StringUtil::GetURIAuthority(const string &str) {
+	auto scheme_end = str.find("://");
+	bool has_uri_scheme = scheme_end != string::npos && scheme_end > 0 && str.find_first_of("/\\") == scheme_end + 1;
+	if (!has_uri_scheme) {
+		return {};
+	}
+	auto authority_start = scheme_end + 3;
+	auto authority_end = str.find_first_of("/\\?#", authority_start);
+	return str.substr(authority_start, authority_end == string::npos ? string::npos : authority_end - authority_start);
 }
 
 struct URLEncodeLength {

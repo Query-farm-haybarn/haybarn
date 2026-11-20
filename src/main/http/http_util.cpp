@@ -39,6 +39,13 @@ void HTTPParams::SetTransportReuseDomain(idx_t transport_reuse_domain_p) {
 	transport_reuse_domain = transport_reuse_domain_p;
 }
 
+void HTTPParams::RequireServerCertificateVerification() {
+	override_verify_ssl = true;
+	verify_ssl = true;
+	// the domain captured at initialization described the unforced parameters; a provider recaptures a cleared one
+	transport_reuse_domain = 0;
+}
+
 HTTPHeaders::HTTPHeaders(DatabaseInstance &db) {
 	headers.insert({"User-Agent", StringUtil::Format("%s %s", db.config.UserAgent(), DuckDB::SourceID())});
 }
@@ -633,6 +640,8 @@ void HTTPParams::Initialize(optional_ptr<FileOpener> opener) {
 		}
 		http_proxy_username = Settings::Get<HTTPProxyUsernameSetting>(*db);
 		http_proxy_password = Settings::Get<HTTPProxyPasswordSetting>(*db);
+		retry_quota_throttled = Settings::Get<HTTPRetryQuotaThrottledSetting>(*db);
+		retry_throttled_wait_ms = Settings::Get<HTTPRetryThrottledWaitMsSetting>(*db);
 	}
 
 	auto client_context = FileOpener::TryGetClientContext(opener);
@@ -640,19 +649,22 @@ void HTTPParams::Initialize(optional_ptr<FileOpener> opener) {
 		logger = client_context->logger;
 		interrupt_context = client_context->shared_from_this();
 	}
+	if (client_context) {
+		// A session's own value wins over the database's
+		retry_quota_throttled = Settings::Get<HTTPRetryQuotaThrottledSetting>(*client_context);
+		retry_throttled_wait_ms = Settings::Get<HTTPRetryThrottledWaitMsSetting>(*client_context);
+	}
 }
 
 unique_ptr<HTTPParams> HTTPUtil::InitializeParameters(DatabaseInstance &db, const string &url) {
 	DatabaseFileOpener opener(db);
-	FileOpenerInfo info;
-	info.file_path = url;
+	FileOpenerInfo info(url);
 	return InitializeParameters(&opener, &info);
 }
 
 unique_ptr<HTTPParams> HTTPUtil::InitializeParameters(ClientContext &context, const string &url) {
 	ClientContextFileOpener opener(context);
-	FileOpenerInfo info;
-	info.file_path = url;
+	FileOpenerInfo info(url);
 	return InitializeParameters(&opener, &info);
 }
 

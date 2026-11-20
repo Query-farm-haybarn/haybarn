@@ -1066,8 +1066,10 @@ void ColumnDataCollection::Append(ColumnDataAppendState &state, DataChunk &input
 			for (idx_t vector_idx = 0; vector_idx < types.size(); vector_idx++) {
 				ColumnDataMetaData meta_data(copy_functions[vector_idx], segment, state, chunk_data,
 				                             chunk_data.vector_data[vector_idx]);
+				const auto allocated_before = segment.total_allocated;
 				copy_functions[vector_idx].function(meta_data, state.vector_data[vector_idx], input.data[vector_idx],
 				                                    offset, append_amount);
+				chunk_data.allocation_sizes[vector_idx] += segment.total_allocated - allocated_before;
 			}
 			chunk_data.count += append_amount;
 		}
@@ -1281,6 +1283,47 @@ bool ColumnDataCollection::Seek(idx_t seek_idx, ColumnDataScanState &state, Data
 	segment.ReadChunk(chunk_index, state.current_chunk_state, result, state.column_ids);
 	result.Verify(state.db);
 	return true;
+}
+
+void ColumnDataCollection::SeekScan(ColumnDataScanState &state, const ColumnDataChunkPosition &position) const {
+	D_ASSERT(position.segment_index < segments.size());
+	D_ASSERT(position.chunk_index < segments[position.segment_index]->ChunkCount());
+	state.segment_index = position.segment_index;
+	state.chunk_index = position.chunk_index;
+	state.current_row_index = position.row_offset;
+	state.next_row_index = position.row_offset;
+	state.current_chunk_state.handles.clear();
+}
+
+ColumnDataChunkCursor::ColumnDataChunkCursor(const ColumnDataCollection &collection_p) : collection(collection_p) {
+}
+
+bool ColumnDataChunkCursor::Next() {
+	auto &segments = collection.GetSegments();
+	if (!started) {
+		started = true;
+	} else if (position.segment_index < segments.size()) {
+		position.row_offset += Count();
+		position.chunk_index++;
+	}
+	while (position.segment_index < segments.size() &&
+	       position.chunk_index >= segments[position.segment_index]->ChunkCount()) {
+		position.segment_index++;
+		position.chunk_index = 0;
+	}
+	return position.segment_index < segments.size();
+}
+
+idx_t ColumnDataChunkCursor::Count() const {
+	return collection.GetSegments()[position.segment_index]->chunk_data[position.chunk_index].count;
+}
+
+idx_t ColumnDataChunkCursor::AllocationSize() const {
+	return collection.GetSegments()[position.segment_index]->GetChunkAllocationSize(position.chunk_index);
+}
+
+idx_t ColumnDataChunkCursor::AllocationSize(const vector<column_t> &column_ids) const {
+	return collection.GetSegments()[position.segment_index]->GetChunkAllocationSize(position.chunk_index, column_ids);
 }
 
 ColumnDataRowCollection ColumnDataCollection::GetRows() const {

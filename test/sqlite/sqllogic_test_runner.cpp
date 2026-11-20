@@ -6,6 +6,7 @@
 #include "duckdb/common/json_document.hpp"
 #include "duckdb/common/virtual_file_system.hpp"
 #include "duckdb/common/types/uuid.hpp"
+#include "duckdb/main/extension/extension_loader.hpp"
 #include "duckdb/main/extension_entries.hpp"
 #include "duckdb/main/extension_helper.hpp"
 #include "duckdb/main/settings.hpp"
@@ -147,6 +148,8 @@ void SQLLogicTestRunner::EmitBegin(const string &test_name) {
 	JSONWriter writer;
 	auto obj = writer.CreateObject();
 	obj.AddString("event", "begin");
+	// Version 2 distinguishes the test body from initialization and cleanup.
+	obj.Add("version", writer.CreateUnsignedInteger(2));
 	obj.AddString("name", test_name);
 	// Lets a consumer verify which invocation emitted this rather than inferring it from which
 	// subprocess it launched: under --temp-dir-root the prefix is what the driver passed in.
@@ -155,15 +158,40 @@ void SQLLogicTestRunner::EmitBegin(const string &test_name) {
 	SQLLogicTestLogger::EmitTestEvent(writer.ToString());
 }
 
-void SQLLogicTestRunner::EmitEnd(const string &test_name, const string &status, const string &data) {
+void SQLLogicTestRunner::EmitExecutionComplete(const string &test_name, const string &status, const string &data) {
+	if (execution_complete_emitted) {
+		return;
+	}
+	execution_complete_emitted = true;
+	EmitStatusEvent("execution-complete", test_name, status, data);
+}
+
+void SQLLogicTestRunner::EmitError(const string &test_name, const string &data) {
 	if (!EmitTestEventsEnabled()) {
 		return;
 	}
-	// One terminal per test: status in {ok, error, skip-requirement}, the statement tallies, and
-	// optional free-form data (skip reason / error text — multi-line safe via JSON escaping).
+	// Worker threads must report errors before joining, without reading the runner's mutable statistics.
 	JSONWriter writer;
 	auto obj = writer.CreateObject();
-	obj.AddString("event", "end");
+	obj.AddString("event", "error");
+	obj.AddString("name", test_name);
+	obj.AddString("data", data);
+	writer.SetRoot(obj);
+	SQLLogicTestLogger::EmitTestEvent(writer.ToString());
+}
+
+void SQLLogicTestRunner::EmitEnd(const string &test_name, const string &status, const string &data) {
+	EmitStatusEvent("end", test_name, status, data);
+}
+
+void SQLLogicTestRunner::EmitStatusEvent(const string &event, const string &test_name, const string &status,
+                                         const string &data) {
+	if (!EmitTestEventsEnabled()) {
+		return;
+	}
+	JSONWriter writer;
+	auto obj = writer.CreateObject();
+	obj.AddString("event", event);
 	obj.AddString("name", test_name);
 	obj.AddString("status", status);
 	obj.Add("passes", writer.CreateUnsignedInteger(test_stat_passes.load()));
@@ -288,13 +316,13 @@ NewDatabaseConnection SQLLogicTestRunner::CreateDatabase(const string &db_path, 
 		SQLLogicTestLogger::LoadDatabaseFail(file_name, db_path, err.Message());
 		TEST_FAIL("");
 	}
-	result.con = ConnectToDatabase(*result.db);
-	// load any previously loaded extensions again
+	// load any previously loaded extensions again, before a connection snapshots the search path
 	if (load_extensions) {
 		for (auto &extension : extensions) {
 			SQLLogicTestRunner::LoadExtension(*result.db, extension);
 		}
 	}
+	result.con = ConnectToDatabase(*result.db);
 	return result;
 }
 
@@ -688,6 +716,11 @@ RequireResult SQLLogicTestRunner::CheckRequire(SQLLogicParser &parser, const vec
 		if (result == ExtensionLoadResult::LOADED_EXTENSION) {
 			// add the extension to the list of loaded extensions
 			extensions.insert(param);
+			// Loading the extension didn't put the extension schema (if present) on the search path yet
+			ExtensionLoader::RefreshSearchPath(*con->context);
+			for (auto &entry : named_connection_map) {
+				ExtensionLoader::RefreshSearchPath(*entry.second->context);
+			}
 		} else if (result == ExtensionLoadResult::EXTENSION_UNKNOWN) {
 			parser.Fail("unknown extension type: %s", params[0]);
 		} else if (result == ExtensionLoadResult::NOT_LOADED) {
@@ -791,6 +824,8 @@ void SQLLogicTestRunner::ConfigureDefaultInMemoryTemporaryDirectory(DuckDB &data
 	}
 	auto normalized_script = StringUtil::Replace(file_name, "\\", "/");
 	auto temp_directory_name = StringUtil::Replace(normalized_script, "/", "_");
+	// an absolute Windows path has a drive colon, which a directory name cannot contain
+	temp_directory_name = StringUtil::Replace(temp_directory_name, ":", "_");
 	auto temp_directory = TestJoinPath(TestDirectoryPath(), "sqllogic_temp_" + temp_directory_name);
 	db_config.SetOption(database.instance.get(), *DBConfig::GetOptionByName("temp_directory"), temp_directory);
 }
@@ -852,8 +887,10 @@ void SQLLogicTestRunner::ExecuteInternal(SQLLogicParser &parser, const string &s
 		ExecuteScript(init_parser, script);
 	}
 
+	EmitStatusEvent("execution-begin", script, "", "");
 	ExecuteScript(parser, script);
 
+	EmitExecutionComplete(script, test_skipped_requirement ? "skip-requirement" : "ok", test_skip_reason);
 	auto cleanup_sqllogic = test_config.GetCleanupSqllogic();
 	if (!cleanup_sqllogic.empty()) {
 		SQLLogicParser cleanup_parser;
@@ -1148,6 +1185,19 @@ void SQLLogicTestRunner::ExecuteScript(SQLLogicParser &parser, const string &scr
 					var_value = val.ToString();
 				}
 				environment_variables[var_name] = var_value;
+			} else if (token.parameters[0] == "query_timeout") {
+				if (token.parameters.size() != 2) {
+					parser.Fail("set query_timeout requires a single value (seconds, 0 disables)");
+				}
+				auto timeout = Value(token.parameters[1]).DefaultTryCastAs(LogicalType::DOUBLE);
+				static constexpr double MAXIMUM_QUERY_TIMEOUT = 3600;
+				// The explicit range check also rejects NaN and infinity, which the double cast accepts but
+				// which cannot be represented as a condition-variable deadline.
+				if (!timeout || !(timeout->GetValue<double>() >= 0) ||
+				    timeout->GetValue<double>() > MAXIMUM_QUERY_TIMEOUT) {
+					parser.Fail("set query_timeout requires a number of seconds between 0 and 3600 (0 disables)");
+				}
+				query_timeout = timeout->GetValue<double>();
 			} else {
 				parser.Fail("unrecognized set parameter: %s", token.parameters[0]);
 			}

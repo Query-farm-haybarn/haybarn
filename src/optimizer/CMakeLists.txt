@@ -27,6 +27,7 @@ add_library_unity(
   cte_filter_pusher.cpp
   cte_join_filter_collector.cpp
   cte_join_filter_pusher.cpp
+  cte_runtime_filter_pushdown.cpp
   cte_inlining.cpp
   deliminator.cpp
   multi_stage_aggregate_rewriter.cpp
@@ -62,6 +63,7 @@ add_library_unity(
   sampling_pushdown.cpp
   type_pushdown.cpp
   scalar_fn_pushdown.cpp
+  self_join_aggregate.cpp
   projection_pullup.cpp
   projection_placement.cpp
   remote_pushdown_optimizer.cpp)

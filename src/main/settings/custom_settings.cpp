@@ -58,6 +58,7 @@ namespace duckdb {
 constexpr const char *LoggingMode::Name;
 constexpr const char *LoggingLevel::Name;
 constexpr const char *EnableLogging::Name;
+constexpr const char *LoggingSink::Name;
 constexpr const char *LoggingStorage::Name;
 constexpr const char *EnabledLogTypes::Name;
 constexpr const char *DisabledLogTypes::Name;
@@ -81,7 +82,7 @@ static idx_t ParseMemoryLimitOrPercentage(const string &input, BASE &&get_base) 
 		return DBConfig::ParseMemoryLimitOrMaximum(input);
 	}
 	double percentage;
-	if (!TryDoubleCast(input.c_str(), input.size() - 1, percentage, false) || percentage < 0 || percentage > 100) {
+	if (!TryDoubleCast(input.c_str(), input.size() - 1, percentage, false) || !(percentage >= 0 && percentage <= 100)) {
 		throw InvalidInputException("Unable to parse valid percentage (input: %s)", input);
 	}
 	auto result = percentage * static_cast<double>(get_base()) / 100.0;
@@ -190,12 +191,14 @@ void AllowCommunityExtensionsSetting::OnSet(SettingCallbackInfo &info, Value &in
 // Allow Extension Repositories
 //===----------------------------------------------------------------------===//
 // Ordering of the access levels, independent of the enum's numeric values: while the database is running the setting
-// can only move to a lower level ('undecided' -> 'allowed' -> 'forbidden')
+// can only move to a lower level ('hosts' -> 'allowed' -> 'hosts_only' -> 'forbidden')
 static int ExtensionRepositoryAccessLevel(ExtensionRepositoryAccess access) {
 	switch (access) {
-	case ExtensionRepositoryAccess::UNDECIDED:
-		return 2;
+	case ExtensionRepositoryAccess::HOSTS:
+		return 3;
 	case ExtensionRepositoryAccess::ALLOWED:
+		return 2;
+	case ExtensionRepositoryAccess::HOSTS_ONLY:
 		return 1;
 	default: // FORBIDDEN
 		return 0;
@@ -212,13 +215,13 @@ void AllowExtensionRepositoriesSetting::OnSet(SettingCallbackInfo &info, Value &
 		// the value is set before the database is running (startup) - any value is allowed
 		return;
 	}
-	// while the database is running the setting can only move down: the 'undecided' default can be decided either way,
-	// 'allowed' can still be forbidden, but a decision cannot be reverted. This makes 'forbidden' a one-way ratchet
-	// within a session
+	// while the database is running the setting can only move down: the 'hosts' default can be opened up to 'allowed'
+	// or tightened, 'allowed' can still be tightened, but no step can be reverted. This makes 'forbidden' a one-way
+	// ratchet within a session
 	auto current_access = ExtensionRepositoryManager::GetAccess(*info.db);
 	if (ExtensionRepositoryAccessLevel(new_access) > ExtensionRepositoryAccessLevel(current_access)) {
-		throw InvalidInputException("allow_extension_repositories can only be changed from 'undecided' to 'allowed' or "
-		                            "'forbidden', or from 'allowed' to 'forbidden', while the database is running");
+		throw InvalidInputException("allow_extension_repositories can only be tightened while the database is running: "
+		                            "'hosts' -> 'allowed' -> 'hosts_only' -> 'forbidden'");
 	}
 }
 
@@ -312,7 +315,7 @@ void AllowedConfigsSetting::ResetGlobal(DatabaseInstance *db, DBConfig &config) 
 Value AllowedConfigsSetting::GetSetting(const ClientContext &context) {
 	auto &config = DBConfig::GetConfig(context);
 	vector<Value> configs;
-	for (auto &cfg : config.options.allowed_configs) {
+	for (auto &cfg : config.GetAllowedConfigs()) {
 		configs.emplace_back(cfg);
 	}
 	return Value::LIST(LogicalType::VARCHAR, std::move(configs));
@@ -331,18 +334,18 @@ void AllowedDirectoriesSetting::SetGlobal(DatabaseInstance *db, DBConfig &config
 	if (!config.file_system) {
 		throw InvalidInputException("Cannot change/set allowed_directories before the database is started");
 	}
-	config.options.allowed_directories.clear();
-	auto &list = ListValue::GetChildren(input);
-	for (auto &val : list) {
-		config.AddAllowedDirectory(val.GetValue<string>());
+	vector<string> directories;
+	for (auto &val : ListValue::GetChildren(input)) {
+		directories.push_back(val.GetValue<string>());
 	}
+	config.SetAllowedDirectories(directories);
 }
 
 void AllowedDirectoriesSetting::ResetGlobal(DatabaseInstance *db, DBConfig &config) {
 	if (!Settings::Get<EnableExternalAccessSetting>(config)) {
 		throw InvalidInputException("Cannot change allowed_directories when enable_external_access is disabled");
 	}
-	config.options.allowed_directories = DBConfigOptions().allowed_directories;
+	config.ResetAllowedDirectories();
 }
 
 Value AllowedDirectoriesSetting::GetSetting(const ClientContext &context) {
@@ -368,18 +371,18 @@ void AllowedPathsSetting::SetGlobal(DatabaseInstance *db, DBConfig &config, cons
 		throw InvalidInputException("Cannot change/set allowed_paths before the database is started");
 	}
 
-	config.options.allowed_paths.clear();
-	auto &list = ListValue::GetChildren(input);
-	for (auto &val : list) {
-		config.AddAllowedPath(val.GetValue<string>());
+	vector<string> paths;
+	for (auto &val : ListValue::GetChildren(input)) {
+		paths.push_back(val.GetValue<string>());
 	}
+	config.SetAllowedPaths(paths);
 }
 
 void AllowedPathsSetting::ResetGlobal(DatabaseInstance *db, DBConfig &config) {
 	if (!Settings::Get<EnableExternalAccessSetting>(config)) {
 		throw InvalidInputException("Cannot change allowed_paths when enable_external_access is disabled");
 	}
-	config.options.allowed_paths = DBConfigOptions().allowed_paths;
+	config.ResetAllowedPaths();
 }
 
 Value AllowedPathsSetting::GetSetting(const ClientContext &context) {
@@ -592,6 +595,9 @@ void DisabledFilesystemsSetting::SetGlobal(DatabaseInstance *db_p, DBConfig &con
 	auto &db = GetDB<DisabledFilesystemsSetting>(db_p);
 	auto &fs = FileSystem::GetFileSystem(db);
 	auto list = StringUtil::Split(input.ToString(), ",");
+	for (auto &entry : list) {
+		StringUtil::Trim(entry);
+	}
 	fs.SetDisabledFileSystems(list);
 }
 
@@ -830,7 +836,7 @@ void ForceVariantShredding::ResetGlobal(DatabaseInstance *db, DBConfig &config) 
 
 Value ForceVariantShredding::GetSetting(const ClientContext &context) {
 	auto &config = DBConfig::GetConfig(context);
-	return Value(config.options.force_variant_shredding.ToString());
+	return Value(config.GetForceVariantShredding().ToString());
 }
 
 //===----------------------------------------------------------------------===//
@@ -894,19 +900,36 @@ void LoggingLevel::ResetGlobal(DatabaseInstance *db_p, DBConfig &config) {
 }
 
 //===----------------------------------------------------------------------===//
-// Logging Storage
+// Logging Sink
 //===----------------------------------------------------------------------===//
-Value LoggingStorage::GetSetting(const ClientContext &context) {
+Value LoggingSink::GetSetting(const ClientContext &context) {
 	return context.db->GetLogManager().GetConfig().storage;
 }
+void LoggingSink::SetGlobal(DatabaseInstance *db_p, DBConfig &config, const Value &parameter) {
+	auto &db = GetDB<LoggingSink>(db_p);
+	db.GetLogManager().SetLogSink(db, parameter.GetValue<string>());
+}
+
+void LoggingSink::ResetGlobal(DatabaseInstance *db_p, DBConfig &config) {
+	auto &db = GetDB<LoggingSink>(db_p);
+	db.GetLogManager().SetLogSink(db, LogConfig::DEFAULT_LOG_STORAGE);
+}
+
+//===----------------------------------------------------------------------===//
+// Logging Storage (deprecated, use logging_sink)
+//===----------------------------------------------------------------------===//
+Value LoggingStorage::GetSetting(const ClientContext &context) {
+	return LoggingSink::GetSetting(context);
+}
+
 void LoggingStorage::SetGlobal(DatabaseInstance *db_p, DBConfig &config, const Value &parameter) {
 	auto &db = GetDB<LoggingStorage>(db_p);
-	db.GetLogManager().SetLogStorage(db, parameter.GetValue<string>());
+	DUCKDB_LOG_WARNING(db, "the logging_storage setting is deprecated: use logging_sink instead");
+	LoggingSink::SetGlobal(db_p, config, parameter);
 }
 
 void LoggingStorage::ResetGlobal(DatabaseInstance *db_p, DBConfig &config) {
-	auto &db = GetDB<LoggingStorage>(db_p);
-	db.GetLogManager().SetLogStorage(db, LogConfig::DEFAULT_LOG_STORAGE);
+	LoggingSink::ResetGlobal(db_p, config);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1167,7 +1190,7 @@ void IndexScanPercentageSetting::OnSet(SettingCallbackInfo &, Value &input) {
 		throw InvalidInputException("%s setting cannot be NULL", IndexScanPercentageSetting::Name);
 	}
 	auto index_scan_percentage = input.GetValue<double>();
-	if (index_scan_percentage < 0 || index_scan_percentage > 1.0) {
+	if (!(index_scan_percentage >= 0 && index_scan_percentage <= 1.0)) {
 		throw InvalidInputException("the index scan percentage must be within [0, 1]");
 	}
 }
@@ -1511,7 +1534,11 @@ void ProgressBarTimeSetting::SetLocal(ClientContext &context, const Value &input
 	}
 	auto &config = ClientConfig::GetConfig(context);
 	ProgressBar::SystemOverrideCheck(config);
-	config.wait_time = input.GetValue<int32_t>();
+	auto wait_time = input.GetValue<int32_t>();
+	if (wait_time < 0) {
+		throw InvalidInputException("%s setting cannot be negative", ProgressBarTimeSetting::Name);
+	}
+	config.wait_time = wait_time;
 	config.enable_progress_bar = true;
 }
 
@@ -1555,7 +1582,7 @@ void SchemaSetting::ResetLocal(ClientContext &context) {
 
 Value SchemaSetting::GetSetting(const ClientContext &context) {
 	auto &client_data = ClientData::Get(context);
-	return client_data.catalog_search_path->GetDefault().GetSchema();
+	return Value(client_data.catalog_search_path->GetDefault().GetSchemaName());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1833,11 +1860,18 @@ void WarningsAsErrorsSetting::OnSet(SettingCallbackInfo &info, Value &input) {
 	if (input.IsNull()) {
 		throw InvalidInputException("%s setting cannot be NULL", WarningsAsErrorsSetting::Name);
 	}
+	if (!input.GetValue<bool>()) {
+		return;
+	}
+	if (!info.context) {
+		throw InvalidInputException(
+		    "Cannot set 'warnings_as_errors=true' in the startup config; no logger is available yet. To "
+		    "solve, run: 'SET enable_logging=true;' and 'SET warnings_as_errors=true;' after startup");
+	}
 	auto &log_manager = LogManager::Get(*info.context);
-	if (input == Value(true) && !log_manager.GetConfig().enabled) {
-		throw Exception(
-		    ExceptionType::SETTINGS,
-		    "Can not set 'warnings_as_errors=true'; no logger is available. To solve, run: 'SET enable_logging=true;'");
+	if (!log_manager.GetConfig().enabled) {
+		throw InvalidInputException(
+		    "Cannot set 'warnings_as_errors=true'; no logger is available. To solve, run: 'SET enable_logging=true;'");
 	}
 }
 
@@ -2015,66 +2049,11 @@ Value ActiveGrammarExtensionsSetting::GetSetting(const ClientContext &context) {
 //===----------------------------------------------------------------------===//
 // Deprecated Settings
 //===----------------------------------------------------------------------===//
-//! Settings below are still honored, but are scheduled for removal. Setting one emits a deprecation warning;
-//! resetting it back to its default does not.
-static void WarnDeprecatedSetting(SettingCallbackInfo &info, const char *name) {
-	if (info.is_reset) {
-		return;
-	}
-	auto message = StringUtil::Format("The '%s' setting is deprecated and will be removed in a future release.", name);
-	if (info.context) {
-		DUCKDB_LOG_WARNING(*info.context, message);
-	} else if (info.db) {
-		DUCKDB_LOG_WARNING(*info.db, message);
-	}
-}
-
-void DelimJoinAsCteSetting::OnSet(SettingCallbackInfo &info, Value &) {
-	WarnDeprecatedSetting(info, DelimJoinAsCteSetting::Name);
-}
-
-void EnableObjectCacheSetting::OnSet(SettingCallbackInfo &info, Value &) {
-	WarnDeprecatedSetting(info, EnableObjectCacheSetting::Name);
-}
-
-void ErrorOnDivisionByZeroSetting::OnSet(SettingCallbackInfo &info, Value &) {
-	WarnDeprecatedSetting(info, ErrorOnDivisionByZeroSetting::Name);
-}
-
-void ExperimentalMetadataReuseSetting::OnSet(SettingCallbackInfo &info, Value &) {
-	WarnDeprecatedSetting(info, ExperimentalMetadataReuseSetting::Name);
-}
-
-void ForceColumnMetadataReuseSetting::OnSet(SettingCallbackInfo &info, Value &) {
-	WarnDeprecatedSetting(info, ForceColumnMetadataReuseSetting::Name);
-}
-
-void LegacyDisableNullTypeSetting::OnSet(SettingCallbackInfo &info, Value &) {
-	WarnDeprecatedSetting(info, LegacyDisableNullTypeSetting::Name);
-}
-
-void LegacyMetricsFormatSetting::OnSet(SettingCallbackInfo &info, Value &) {
-	WarnDeprecatedSetting(info, LegacyMetricsFormatSetting::Name);
-}
-
-void ProduceArrowStringViewSetting::OnSet(SettingCallbackInfo &info, Value &) {
-	WarnDeprecatedSetting(info, ProduceArrowStringViewSetting::Name);
-}
-
-void ExtensionDirectorySetting::OnSet(SettingCallbackInfo &info, Value &) {
-	WarnDeprecatedSetting(info, ExtensionDirectorySetting::Name);
-}
-
-void OldImplicitCastingSetting::OnSet(SettingCallbackInfo &info, Value &) {
-	WarnDeprecatedSetting(info, OldImplicitCastingSetting::Name);
-}
-
 void RegexMatchOperatorSemanticsSetting::OnSet(SettingCallbackInfo &info, Value &input) {
 	if (input.IsNull()) {
 		throw InvalidInputException("regex_match_operator_semantics setting cannot be NULL");
 	}
 	EnumUtil::FromString<RegexMatchOperatorSemantics>(StringValue::Get(input));
-	WarnDeprecatedSetting(info, RegexMatchOperatorSemanticsSetting::Name);
 }
 
 void TableFunctionIdentifierConversionSetting::OnSet(SettingCallbackInfo &info, Value &input) {
@@ -2082,6 +2061,5 @@ void TableFunctionIdentifierConversionSetting::OnSet(SettingCallbackInfo &info, 
 		throw InvalidInputException("table_function_identifier_conversion setting cannot be NULL");
 	}
 	EnumUtil::FromString<TableFunctionIdentifierConversion>(StringValue::Get(input));
-	WarnDeprecatedSetting(info, TableFunctionIdentifierConversionSetting::Name);
 }
 } // namespace duckdb

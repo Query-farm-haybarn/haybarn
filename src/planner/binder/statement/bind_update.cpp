@@ -31,7 +31,7 @@ void Binder::BindUpdateSet(TableIndex proj_index, unique_ptr<LogicalOperator> &r
 
 	if (prioritize_table_when_binding) {
 		binder_with_search_path =
-		    CreateBinderWithSearchPath(table.ParentCatalog().GetName(), table.ParentSchema().name);
+		    CreateBinderWithSearchPath(table.ParentCatalog().GetName(), table.ParentSchema().GetSchemaPath());
 		expr_binder_ptr = binder_with_search_path.get();
 	}
 
@@ -202,14 +202,10 @@ BoundStatement Binder::BindNode(UpdateQueryNode &node) {
 		update->return_chunk = true;
 	}
 	update->capture_old_rows = capture_old_rows;
-	// UPDATE ... FROM can match a target row via multiple source rows, so deduplicate keeping the first match;
-	// a plain UPDATE cannot produce duplicate row-ids, so it keeps the lock-free path.
-	update->row_id_handling = node.from_table ? RowIdHandling::KEEP_FIRST : RowIdHandling::ASSUME_UNIQUE;
 	// bind the default values
 	auto &catalog_name = table.ParentCatalog().GetName();
-	auto &schema_name = table.ParentSchema().name;
 	BindDefaultValues(table.GetColumns(), update->bound_defaults, catalog_name.GetIdentifierName(),
-	                  schema_name.GetIdentifierName());
+	                  table.ParentSchema().GetSchemaPath());
 	update->bound_constraints = BindConstraints(table);
 
 	// project any additional columns required for the condition/expressions

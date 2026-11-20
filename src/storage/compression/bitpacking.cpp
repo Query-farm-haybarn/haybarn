@@ -307,6 +307,16 @@ public:
 			return true;
 		}
 
+		// values in compression_buffer are not overwritten when they are invalid, so set them to minimum such that they
+		// are packed as 0 instead.
+		if (has_invalid && has_valid) {
+			for (idx_t i = 0; i < compression_buffer_idx; i++) {
+				if (!compression_buffer_validity[i]) {
+					compression_buffer[i] = minimum;
+				}
+			}
+		}
+
 		CalculateFORStats();
 		CalculateDeltaStats();
 
@@ -593,7 +603,7 @@ public:
 
 		// Asserting things are still sane here
 		if (!CanStore(0, 0)) {
-			throw InternalException("Error in bitpacking size calculation");
+			InternalException::Throw("Error in bitpacking size calculation");
 		}
 
 		if (unaligned_offset != metadata_offset) {
@@ -734,7 +744,7 @@ public:
 			D_ASSERT(!AtEnd());
 			D_ASSERT(width > 0);
 			if (!payload) {
-				throw InternalException("Bitpacking algorithm group has no payload");
+				InternalException::Throw("Bitpacking algorithm group has no payload");
 			}
 			auto algorithm_group_index = offset / BitpackingPrimitives::BITPACKING_ALGORITHM_GROUP_SIZE;
 			D_ASSERT(algorithm_group_index < algorithm_group_count);
@@ -1241,6 +1251,7 @@ CompressionFunction GetBitpackingFunction(PhysicalType data_type) {
 	    BitpackingCompress<T, WRITE_STATISTICS>, BitpackingFinalizeCompress<T, WRITE_STATISTICS>, BitpackingInitScan<T>,
 	    BitpackingScan<T>, BitpackingScanPartial<T>, BitpackingFetchRow<T>, BitpackingSkip<T>);
 	bitpacking.get_segment_info = BitpackingGetSegmentInfo<T>;
+	bitpacking.zero_initialize_segments = false;
 	return bitpacking;
 }
 

@@ -49,7 +49,9 @@ void DictionaryDecoder::InitializeDictionary(idx_t new_dictionary_size, optional
 	}
 
 	// now read the non-NULL values from Parquet
-	reader.Plain(reader.block, nullptr, dictionary_size, 0, dictionary_data);
+	if (dictionary_size > 0) {
+		reader.Plain(reader.block, nullptr, dictionary_size, 0, dictionary_data);
+	}
 
 	// immediately filter the dictionary, if applicable
 	if (filter && CanFilter(*filter, *filter_state)) {
@@ -123,6 +125,7 @@ idx_t DictionaryDecoder::Read(uint8_t *defines, idx_t read_count, Vector &result
 		}
 	} else if (valid_count > 0) {
 		// for the valid entries - decode the offsets
+		offset_buffer.reset();
 		offset_buffer.resize(reader.reader.allocator, sizeof(uint32_t) * valid_count);
 		dict_decoder->GetBatch<uint32_t>(offset_buffer.ptr, NumericCast<uint32_t>(valid_count));
 		ConvertDictToSelVec(reinterpret_cast<uint32_t *>(offset_buffer.ptr), valid_sel, valid_count);

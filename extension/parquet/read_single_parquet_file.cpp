@@ -114,14 +114,14 @@ static unique_ptr<FunctionData> ReadSingleParquetFileBind(ClientContext &context
 	result->file = TableFunctionFileBindInput::GetFile(input);
 
 	// the named parameters of this function are those of the multi-file parquet reader
-	ParquetMultiFileInfo interface;
+	ParquetMultiFileInfo file_info;
 	MultiFileOptions file_options;
 	if (file_input.multi_file_options) {
 		file_options = *file_input.multi_file_options;
 	}
 	ParquetFileReaderOptions options(context);
 	for (auto &kv : input.named_parameters) {
-		interface.ParseOption(context, kv.first, kv.second, file_options, options);
+		file_info.ParseOption(context, kv.first, kv.second, file_options, options);
 	}
 	result->options = std::move(options.options);
 
@@ -224,6 +224,7 @@ static unique_ptr<GlobalTableFunctionState> ReadSingleParquetFileInitGlobal(Clie
 		reader.column_ids.push_back(MultiFileLocalColumnId(local_id));
 		column_indexes.push_back(column_index.RemapRootIndex(local_id));
 		reader.columns.emplace_back(virtual_entry->second.name.GetIdentifierName(), virtual_entry->second.type);
+		reader.column_name_index.Build(reader.columns);
 		reader.AddVirtualColumn(virtual_id);
 	}
 	reader.column_indexes = std::move(column_indexes);
@@ -281,7 +282,7 @@ static void LoadClaimedRowGroup(ClientContext &context, ReadSingleParquetFileGlo
                                 ReadSingleParquetFileLocalState &lstate) {
 	auto io_result = gstate.reader->ScheduleIO(context, gstate.state, lstate.state);
 	if (io_result.GetResultType() == AsyncResultType::BLOCKED) {
-		io_result.ExecuteTasksSynchronously();
+		io_result.ExecuteTasksSynchronously(context);
 	}
 }
 
@@ -357,7 +358,7 @@ static void ReadSingleParquetFileFunction(ClientContext &context, TableFunctionI
 		case AsyncResultType::BLOCKED:
 			// the reader needs data that is not in memory yet - run the I/O it scheduled and resume. It left
 			// partial data in the chunk that the resumed scan completes, so the chunk is not reset
-			scan_result.ExecuteTasksSynchronously();
+			scan_result.ExecuteTasksSynchronously(context);
 			continue;
 		case AsyncResultType::HAVE_MORE_OUTPUT:
 			if (output.size() == 0) {
@@ -437,9 +438,10 @@ static void ReadSingleParquetFileGetMetrics(TableFunctionGetMetricsInput &input)
 		return;
 	}
 	auto &gstate = input.global_state->Cast<ReadSingleParquetFileGlobalState>();
-	// the row groups scanned are drained, so each is reported once; the number to scan is the size of this file,
-	// which our caller reports as-is
+	// the row groups and bytes scanned are drained, so each is reported once; the number to scan is the size of this
+	// file, which our caller reports as-is
 	input.operator_metrics.row_groups_scanned += gstate.state.row_groups_scanned_unreported.exchange(0);
+	input.operator_metrics.bytes_scanned += gstate.state.bytes_scanned_unreported.exchange(0);
 	input.operator_metrics.total_row_groups_to_scan += gstate.state.total_row_groups_to_scan.load();
 }
 
@@ -570,6 +572,7 @@ TableFunctionMultiFileSettings ParquetScanFunction::GetMultiFileSettings() {
 	settings.get_file_columns = ReadSingleParquetFileColumns;
 	// the order the filters are best applied in is learned while reading, and carries over to the next file
 	settings.reuses_local_state = true;
+	settings.reports_bytes_scanned = true;
 	return settings;
 }
 

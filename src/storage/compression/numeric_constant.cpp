@@ -188,7 +188,7 @@ void ConstantFillFunction(ColumnSegment &segment, Vector &result, idx_t start_id
 	const auto &nstats = segment.GetStats();
 
 	if (!NumericStats::HasMin(nstats)) {
-		throw DataCorruptionException("Constant segment is missing its constant value");
+		DataCorruptionException::Throw("Constant segment is missing its constant value");
 	}
 	auto data = FlatVector::GetDataMutable<T>(result);
 	auto constant_value = NumericStats::GetMin<T>(nstats);
@@ -318,19 +318,23 @@ void ConstantFilterValidity(ColumnSegment &segment, ColumnScanState &state, idx_
 //===--------------------------------------------------------------------===//
 CompressionFunction ConstantGetFunctionValidity(PhysicalType data_type) {
 	D_ASSERT(data_type == PhysicalType::BIT);
-	return CompressionFunction(CompressionType::COMPRESSION_CONSTANT, data_type, nullptr, nullptr, nullptr, nullptr,
+	CompressionFunction result(CompressionType::COMPRESSION_CONSTANT, data_type, nullptr, nullptr, nullptr, nullptr,
 	                           nullptr, nullptr, ConstantInitScan, ConstantScanFunctionValidity,
 	                           ConstantScanPartialValidity, ConstantFetchRowValidity, UncompressedFunctions::EmptySkip,
 	                           nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
 	                           ConstantSelectValidity, ConstantFilterValidity);
+	result.supports_null_block = true;
+	return result;
 }
 
 template <class T>
 CompressionFunction ConstantGetFunction(PhysicalType data_type) {
-	return CompressionFunction(CompressionType::COMPRESSION_CONSTANT, data_type, nullptr, nullptr, nullptr, nullptr,
+	CompressionFunction result(CompressionType::COMPRESSION_CONSTANT, data_type, nullptr, nullptr, nullptr, nullptr,
 	                           nullptr, nullptr, ConstantInitScan, ConstantScanFunction<T>, ConstantScanPartial<T>,
 	                           ConstantFetchRow<T>, UncompressedFunctions::EmptySkip, nullptr, nullptr, nullptr,
 	                           nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, ConstantSelect<T>);
+	result.supports_null_block = true;
+	return result;
 }
 
 CompressionFunction ConstantFun::GetFunction(PhysicalType data_type) {

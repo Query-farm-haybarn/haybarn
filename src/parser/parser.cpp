@@ -56,7 +56,8 @@ static bool ReplaceUnicodeSpaces(const string &query, string &new_query, vector<
 	idx_t prev = 0;
 	for (auto &usp : unicode_spaces) {
 		new_query += query.substr(prev, usp.pos - prev);
-		new_query += " ";
+		// Keep byte offsets aligned with the original query for diagnostics.
+		new_query.append(usp.bytes, ' ');
 		prev = usp.pos + usp.bytes;
 	}
 	new_query += query.substr(prev, query.size() - prev);
@@ -75,12 +76,12 @@ static bool IsValidDollarQuotedStringTagSubsequentChar(const unsigned char &c) {
 
 //! Throw a ParserException if `query` contains invalid UTF-8, so the tokenizer never reads past
 //! bad bytes (a bad-byte query can otherwise recurse the tokenizer — see ossfuzz clusterfuzz-test-24).
-static void ValidateUTF8Query(const string &query) {
+static UnicodeType ValidateUTF8Query(const string &query) {
 	UnicodeInvalidReason reason = UnicodeInvalidReason::INVALID_UNICODE;
 	size_t invalid_pos = 0;
 	auto unicode_type = Utf8Proc::Analyze(query.c_str(), query.size(), &reason, &invalid_pos);
 	if (unicode_type != UnicodeType::INVALID) {
-		return;
+		return unicode_type;
 	}
 	const char *reason_str =
 	    reason == UnicodeInvalidReason::BYTE_MISMATCH ? "byte sequence mismatch" : "invalid unicode";
@@ -239,7 +240,9 @@ void Parser::ThrowParserOverrideError(ParserOverrideResult &result) {
 
 string Parser::NormalizeSQLString(const string &query) {
 	// Validate before strip: StripUnicodeSpaces walks multi-byte sequences and assumes valid UTF-8.
-	ValidateUTF8Query(query);
+	if (ValidateUTF8Query(query) == UnicodeType::ASCII) {
+		return query;
+	}
 	string normalized;
 	if (StripUnicodeSpaces(query, normalized)) {
 		return normalized;
@@ -281,33 +284,34 @@ void Parser::ParseQuery(const string &query_p) {
 	// PEG parser: tokenize, then peel one TopLevelStatement at a time. On per-statement PEG
 	// failure, hand the rest of the query to parse_function extensions; the extension reports
 	// how many bytes it consumed and we advance the token cursor past them.
-	auto owned_tokens = make_uniq<vector<MatcherToken>>();
-	ParserTokenizerBehavior behavior(query, *owned_tokens);
+	ParserTokenizerBehavior behavior(query);
 	auto &tokenizer = GetGrammar().GetTokenizer();
 	tokenizer.TokenizeInput(behavior);
-	TokenIterator token_iterator(std::move(owned_tokens));
+	TokenIterator token_iterator(behavior);
+	// A statement's text starts where the previous one ended, so comments and whitespace before its
+	// first token belong to it; the last statement runs to the end of the input.
+	idx_t stmt_start = 0;
 	while (token_iterator.Current()) {
+		unique_ptr<SQLStatement> stmt;
 		try {
-			auto stmt = ParseTopLevelStatement(token_iterator);
-			if (stmt) {
-				statements.push_back(std::move(stmt));
-			}
+			stmt = ParseTopLevelStatement(token_iterator);
 		} catch (ParserException &e) {
-			auto ext_stmt = TryParseExtensionStatement(token_iterator, query);
-			if (!ext_stmt) {
+			stmt = TryParseExtensionStatement(token_iterator, query);
+			if (!stmt) {
 				throw;
 			}
-			statements.push_back(std::move(ext_stmt));
 		}
+		auto stmt_end = token_iterator.ConsumedEndOffset();
+		if (stmt) {
+			stmt->stmt_location = QueryLocation(stmt_start, stmt_end - stmt_start);
+			statements.push_back(std::move(stmt));
+		}
+		stmt_start = stmt_end;
 	}
 
 	if (!statements.empty()) {
-		for (idx_t i = 0; i + 1 < statements.size(); i++) {
-			auto start = statements[i]->stmt_location.offset;
-			statements[i]->stmt_location = QueryLocation(start, statements[i + 1]->stmt_location.offset - start);
-		}
-		statements.back()->stmt_location = QueryLocation(statements.back()->stmt_location.offset,
-		                                                 query.size() - statements.back()->stmt_location.offset);
+		auto &last_location = statements.back()->stmt_location;
+		last_location = QueryLocation(last_location.offset, query.size() - last_location.offset);
 		for (auto &statement : statements) {
 			statement->query = query.substr(statement->stmt_location.offset, statement->stmt_location.length);
 			statement->stmt_location = QueryLocation(0, statement->query.size());
@@ -372,10 +376,10 @@ unique_ptr<SQLStatement> Parser::ParseTopLevelStatement(TokenIterator &token_ite
 
 vector<SimplifiedToken> Parser::Tokenize(const string &query) {
 	auto &keyword_helper = DuckDBKeywordHelper::Instance();
-	vector<MatcherToken> tokens;
-	HighlightTokenizerBehavior behavior(query, tokens);
+	HighlightTokenizerBehavior behavior(query);
 	Tokenizer tokenizer(keyword_helper);
 	tokenizer.TokenizeInput(behavior);
+	auto &tokens = behavior.tokens;
 
 	vector<SimplifiedToken> result;
 	result.reserve(tokens.size());
@@ -388,6 +392,11 @@ vector<SimplifiedToken> Parser::Tokenize(const string &query) {
 		switch (token.type) {
 		case TokenType::KEYWORD:
 			simplified.type = SimplifiedTokenType::SIMPLIFIED_TOKEN_KEYWORD;
+			break;
+		case TokenType::IDENTIFIER:
+			simplified.type = keyword_helper.IsGrammarWord(token.text)
+			                      ? SimplifiedTokenType::SIMPLIFIED_TOKEN_KEYWORD
+			                      : SimplifiedTokenType::SIMPLIFIED_TOKEN_IDENTIFIER;
 			break;
 		case TokenType::STRING_LITERAL:
 			simplified.type = SimplifiedTokenType::SIMPLIFIED_TOKEN_STRING_CONSTANT;

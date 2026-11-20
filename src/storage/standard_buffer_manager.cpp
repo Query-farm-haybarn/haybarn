@@ -7,6 +7,7 @@
 #include "duckdb/common/set.hpp"
 #include "duckdb/main/attached_database.hpp"
 #include "duckdb/main/database.hpp"
+#include "duckdb/main/query_profiler.hpp"
 #include "duckdb/storage/buffer/buffer_pool.hpp"
 #include "duckdb/storage/in_memory_block_manager.hpp"
 #include "duckdb/storage/temporary_file_manager.hpp"
@@ -76,6 +77,11 @@ StandardBufferManager::StandardBufferManager(DatabaseInstance &db, string tmp)
 	temp_block_manager =
 	    make_uniq<InMemoryBlockManager>(*this, DEFAULT_BLOCK_ALLOC_SIZE, DEFAULT_BLOCK_HEADER_STORAGE_SIZE);
 	temporary_directory.path = std::move(tmp);
+	// 'max_temp_directory_size' set before the database was created is only stored in the config
+	auto &config = DBConfig::GetConfig(db);
+	if (config.options.maximum_swap_space != DConstants::INVALID_INDEX) {
+		temporary_directory.maximum_swap_space = config.options.maximum_swap_space;
+	}
 	for (idx_t i = 0; i < MEMORY_TAG_COUNT; i++) {
 		evicted_data_per_tag[i] = 0;
 	}
@@ -539,6 +545,9 @@ void StandardBufferManager::WriteTemporaryBuffer(QueryContext context, MemoryTag
 	if (buffer.AllocSize() == GetBlockAllocSize()) {
 		idx_t eviction_size = temporary_directory.handle->GetTempFile().WriteTemporaryBuffer(context, block_id, buffer);
 		evicted_data_per_tag[uint8_t(tag)] += eviction_size;
+		if (context.GetClientContext()) {
+			QueryProfiler::Get(*context.GetClientContext()).TrackBytesSpilled(eviction_size);
+		}
 		return;
 	}
 
@@ -585,6 +594,9 @@ void StandardBufferManager::WriteTemporaryBuffer(QueryContext context, MemoryTag
 		throw;
 	}
 	evicted_data_per_tag[uint8_t(tag)] += buffer.AllocSize();
+	if (context.GetClientContext()) {
+		QueryProfiler::Get(*context.GetClientContext()).TrackBytesSpilled(buffer.AllocSize() + header_size);
+	}
 }
 
 unique_ptr<FileBuffer> StandardBufferManager::ReadTemporaryBuffer(QueryContext context, MemoryTag tag,

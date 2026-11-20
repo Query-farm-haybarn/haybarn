@@ -212,7 +212,8 @@ BindResult ExpressionBinder::TryBindLambdaOrJson(FunctionExpression &function, i
 
 	auto setting = Settings::Get<LambdaSyntaxSetting>(context);
 	bool invalid_syntax = setting != LambdaSyntax::ENABLE_SINGLE_ARROW && syntax_type == LambdaSyntaxType::SINGLE_ARROW;
-	bool warn_deprecated_syntax = setting == LambdaSyntax::DEFAULT && syntax_type == LambdaSyntaxType::SINGLE_ARROW;
+	// only arrow lambdas reach this point
+	bool warn_deprecated_syntax = setting == LambdaSyntax::DEFAULT;
 	const string msg = "Deprecated lambda arrow (->) detected. Please transition to the new lambda syntax, "
 	                   "i.e.., lambda x, i: x + i, before DuckDB's next release.\n"
 	                   "Use SET lambda_syntax='ENABLE_SINGLE_ARROW' to revert to the deprecated behavior.\n"
@@ -261,12 +262,12 @@ BindResult ExpressionBinder::TryBindLambdaOrJson(FunctionExpression &function, i
 CatalogEntry &ExpressionBinder::BindFunction(FunctionExpression &function) {
 	QueryErrorContext error_context(function.GetQueryLocation());
 
-	ColumnQualifier qualifier(binder);
+	ColumnQualifier qualifier(binder, lambda_bindings);
 	auto func = qualifier.QualifyFunction(function);
 	if (!func) {
+		auto bound_name = Binder::BindTableName(binder.EntryRetriever(), function.GetQualifiedName());
 		// function was not found - check if we this is a table function (to throw a more helpful error message)
-		EntryLookupInfo table_function_lookup(CatalogType::TABLE_FUNCTION_ENTRY, function.GetQualifiedName(),
-		                                      error_context);
+		EntryLookupInfo table_function_lookup(CatalogType::TABLE_FUNCTION_ENTRY, bound_name, error_context);
 		auto table_func = GetCatalogEntry(table_function_lookup, OnEntryNotFound::RETURN_NULL);
 		if (table_func) {
 			throw BinderException(function,
@@ -275,7 +276,7 @@ CatalogEntry &ExpressionBinder::BindFunction(FunctionExpression &function) {
 			                      function.FunctionName());
 		}
 		// not a table function - rebind to throw an error
-		EntryLookupInfo function_lookup(CatalogType::SCALAR_FUNCTION_ENTRY, function.GetQualifiedName(), error_context);
+		EntryLookupInfo function_lookup(CatalogType::SCALAR_FUNCTION_ENTRY, bound_name, error_context);
 		func = GetCatalogEntry(function_lookup, OnEntryNotFound::THROW_EXCEPTION);
 	}
 	return *func;
@@ -308,7 +309,10 @@ BindResult ExpressionBinder::BindExpression(FunctionExpression &function, idx_t 
 		return BindFunction(function, func.Cast<ScalarFunctionCatalogEntry>(), depth);
 	}
 	case CatalogType::MACRO_ENTRY:
-		// macro function
+		// macro function - a prepared statement must be re-bound when the macro changes
+		if (!func.ParentCatalog().IsSystemCatalog()) {
+			binder.GetStatementProperties().RegisterDBRead(func.ParentCatalog(), context);
+		}
 		return BindMacro(function, func.Cast<ScalarMacroCatalogEntry>(), depth, expr_ptr);
 	case CatalogType::AGGREGATE_FUNCTION_ENTRY: {
 		// an aggregate belongs to the innermost query level in which one of its arguments resolves a
@@ -353,6 +357,19 @@ BindResult ExpressionBinder::BindAggregateInEnclosingScope(FunctionExpression &a
 }
 
 BindResult ExpressionBinder::BindFunction(FunctionExpression &function, ScalarFunctionCatalogEntry &func, idx_t depth) {
+	// a bound subquery cannot be copied, so keep the parsed arguments to bind them again for the named fallback
+	vector<FunctionArgument> named_fallback;
+	if (function.IsLegacyFunctionCall()) {
+		for (auto &arg : function.GetArguments()) {
+			if (!arg.GetName().empty()) {
+				for (auto &fallback_arg : function.GetArguments()) {
+					named_fallback.push_back(fallback_arg.Copy());
+				}
+				break;
+			}
+		}
+	}
+
 	// bind the children of the function expression
 	ErrorData error;
 
@@ -396,6 +413,25 @@ BindResult ExpressionBinder::BindFunction(FunctionExpression &function, ScalarFu
 
 	FunctionBinder function_binder(binder);
 	auto result = function_binder.BindScalarFunction(func, std::move(arguments), error, function.IsOperator(), &binder);
+	if (!result && !named_fallback.empty()) {
+		// a legacy call that does not bind positionally may use names the function declares (e.g. **kwargs)
+		ErrorData named_error;
+		vector<pair<Identifier, unique_ptr<Expression>>> named_arguments;
+		for (auto &arg : named_fallback) {
+			auto bound_arg = BindChild(arg.GetExpressionMutable(), depth, named_error);
+			if (named_error.HasError()) {
+				break;
+			}
+			if (!arg.GetName().empty()) {
+				bound_arg->SetAlias(arg.GetName());
+			}
+			named_arguments.emplace_back(arg.GetName(), std::move(bound_arg));
+		}
+		if (!named_error.HasError()) {
+			result = function_binder.BindScalarFunction(func, std::move(named_arguments), named_error,
+			                                            function.IsOperator(), &binder);
+		}
+	}
 	if (!result) {
 		error.AddQueryLocation(function);
 		error.Throw();

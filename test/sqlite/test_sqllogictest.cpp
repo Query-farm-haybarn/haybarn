@@ -5,6 +5,7 @@
 #include "sqllogic_test_runner.hpp"
 #include "test_helpers.hpp"
 #include "test_config.hpp"
+#include "test_reporter.hpp"
 
 #include <functional>
 #include <iostream>
@@ -141,8 +142,17 @@ static void RunSQLLogicTest(const string &name, optional_ptr<std::istream> input
 		// Catch's own assertion-failure control exception (not std::exception): the test aborted
 		// mid-run. Catch carries no message; emit the locator stashed at the throw site (file:line —
 		// the full diff is in the captured output), then rethrow so Catch still records the verdict.
+		runner.EmitExecutionComplete(name, "error", runner.test_failure_locator);
 		runner.EmitEnd(name, "error", runner.test_failure_locator);
 		throw;
+	}
+
+	if (error.HasError()) {
+		runner.EmitExecutionComplete(name, "error", error.Message());
+	} else if (runner.test_skipped_requirement) {
+		runner.EmitExecutionComplete(name, "skip-requirement", runner.test_skip_reason);
+	} else {
+		runner.EmitExecutionComplete(name, "ok", "");
 	}
 
 	if (!input && AUTO_SWITCH_TEST_DIR) {
@@ -167,7 +177,7 @@ static void RunSQLLogicTest(const string &name, optional_ptr<std::istream> input
 			// here first so a cleanup failure still yields one — preserving the one-begin/one-end
 			// invariant that --emit-test-events consumers rely on.
 			runner.EmitEnd(name, "error", cleanup_failure);
-			FAIL(cleanup_failure);
+			TEST_FAIL_LINE(name, 0, cleanup_failure);
 		}
 	}
 
@@ -188,7 +198,7 @@ static void RunSQLLogicTest(const string &name, optional_ptr<std::istream> input
 		runner.EmitEnd(name, "ok", "");
 	}
 	if (error.HasError()) {
-		FAIL(error.Message());
+		TEST_FAIL_LINE(name, 0, error.Message());
 	}
 }
 

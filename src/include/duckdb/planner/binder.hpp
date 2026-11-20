@@ -196,6 +196,8 @@ struct GlobalBinderState {
 	vector<unique_ptr<UsingColumnSet>> using_column_sets;
 	//! The set of parameter expressions bound by this binder
 	optional_ptr<BoundParameterMap> parameters;
+	//! The parameters declared by the statement text, as found by the parser
+	identifier_map_t<idx_t> statement_parameters;
 	//! Tables whose triggers have already been expanded in this query (recursion detection)
 	reference_set_t<TableCatalogEntry> trigger_expanded_tables;
 	//! Generated base-UPDATE nodes that must capture the pre-update (OLD) row image (the capture request),
@@ -283,7 +285,7 @@ public:
 	void SetCatalogLookupCallback(catalog_entry_callback_t callback);
 	void BindCreateViewInfo(CreateViewInfo &base);
 	static void BindView(ClientContext &context, const SelectStatement &stmt, const Identifier &catalog_name,
-	                     const Identifier &schema_name, optional_ptr<LogicalDependencyList> dependencies,
+	                     const vector<Identifier> &schema_path, optional_ptr<LogicalDependencyList> dependencies,
 	                     const vector<Identifier> &aliases, vector<LogicalType> &result_types,
 	                     vector<Identifier> &result_names);
 
@@ -393,6 +395,9 @@ public:
 	}
 	optional_ptr<BoundParameterMap> GetParameters();
 	void SetParameters(BoundParameterMap &parameters);
+	void SetStatementParameters(const identifier_map_t<idx_t> &statement_parameters);
+	//! Whether the statement text declares a parameter with this identifier
+	bool StatementHasParameter(const Identifier &identifier) const;
 	//! Returns a ColumnRefExpression after it was resolved (i.e. past the STAR expression/USING clauses)
 	static optional_ptr<ParsedExpression> GetResolvedColumnExpression(ParsedExpression &root_expr);
 
@@ -401,6 +406,9 @@ public:
 	void SetAlwaysRequireRebind();
 	void SetInsideSubquery();
 	bool IsInsideSubquery() const;
+	//! Set while binding the key expressions of an index
+	void SetBindingIndexKey(bool binding_index_key);
+	bool IsBindingIndexKey() const;
 
 	StatementProperties &GetStatementProperties();
 	static void ReplaceStarExpression(unique_ptr<ParsedExpression> &expr, unique_ptr<ParsedExpression> &replacement);
@@ -410,10 +418,11 @@ public:
 	unique_ptr<LogicalOperator> UnionOperators(vector<unique_ptr<LogicalOperator>> nodes, idx_t column_count = 1,
 	                                           TableIndex table_index = TableIndex());
 
+	void SetSearchPath(Catalog &catalog, const vector<Identifier> &schema_path);
 	void SetSearchPath(Catalog &catalog, const Identifier &schema);
 
 	void BindDefaultValue(const ColumnDefinition &column, vector<unique_ptr<Expression>> &bound_defaults,
-	                      const string &catalog = "", const string &schema = "");
+	                      const string &catalog = "", const vector<Identifier> &schema_path = {});
 	unique_ptr<ParsedExpression> GetSQLValueFunction(const Identifier &column_name);
 	Identifier GetExpressionName(const ParsedExpression &expr);
 
@@ -432,6 +441,8 @@ private:
 	bool legacy_can_contain_nulls = false;
 	//! Whether this binder is inside a subquery boundary
 	bool inside_subquery = false;
+	//! Whether the key expressions of an index are being bound
+	bool binding_index_key = false;
 	//! The set of bound views
 	reference_set_t<ViewCatalogEntry> bound_views;
 	//! The table macros that are being expanded by this binder
@@ -452,7 +463,7 @@ private:
 	void BindGeneratedColumns(BoundCreateTableInfo &info);
 	//! Bind the default values of the columns of a table
 	void BindDefaultValues(const ColumnList &columns, vector<unique_ptr<Expression>> &bound_defaults,
-	                       const string &catalog = "", const string &schema = "");
+	                       const string &catalog = "", const vector<Identifier> &schema_path = {});
 	//! Bind a limit value (LIMIT or OFFSET)
 	BoundLimitNode BindLimitValue(OrderBinder &order_binder, unique_ptr<ParsedExpression> limit_val,
 	                              LimitValueType value_type, bool is_offset);
@@ -665,7 +676,7 @@ private:
 	Identifier BindCatalog(const Identifier &catalog_name);
 	SchemaCatalogEntry &BindCreateSchema(CreateInfo &info);
 
-	vector<CatalogSearchEntry> GetSearchPath(Catalog &catalog, const Identifier &schema_name,
+	vector<CatalogSearchEntry> GetSearchPath(Catalog &catalog, const vector<Identifier> &schema_path,
 	                                         bool default_schema_precedence = false);
 
 	BoundStatement BindSelectNode(SelectNode &statement, BoundStatement from_table);
@@ -709,7 +720,8 @@ private:
 	BoundCTEData PrepareCTE(const Identifier &ctename, CommonTableExpressionInfo &statement);
 	BoundStatement FinishCTE(BoundCTEData &bound_cte, BoundStatement child_data);
 
-	shared_ptr<Binder> CreateBinderWithSearchPath(const Identifier &catalog_name, const Identifier &schema_name);
+	shared_ptr<Binder> CreateBinderWithSearchPath(const Identifier &catalog_name,
+	                                              const vector<Identifier> &schema_path);
 
 	bool DebugAggregateStateExportVerify(BoundSelectNode &statement, unique_ptr<LogicalOperator> &root);
 

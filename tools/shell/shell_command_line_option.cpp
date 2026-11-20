@@ -106,8 +106,7 @@ MetadataResult LaunchUI(ShellState &state, const vector<string> &args) {
 	// run the UI command
 	auto rc = state.RunInitialCommand((char *)state.ui_command.c_str(), true);
 	if (rc != 0) {
-		ShellState::Exit(rc);
-		return MetadataResult::EXIT;
+		return MetadataResult::FAIL;
 	}
 	return MetadataResult::SUCCESS;
 }
@@ -157,13 +156,11 @@ bool ShellState::ExpandCommandParameters(const string &command, string &result) 
 static MetadataResult RunConfiguredCommand(ShellState &state, const string &command) {
 	string expanded_command;
 	if (!state.ExpandCommandParameters(command, expanded_command)) {
-		ShellState::Exit(1);
-		return MetadataResult::EXIT;
+		return MetadataResult::FAIL;
 	}
 	auto rc = state.RunInitialCommand(expanded_command.c_str(), true);
 	if (rc != 0) {
-		ShellState::Exit(rc);
-		return MetadataResult::EXIT;
+		return MetadataResult::FAIL;
 	}
 	return MetadataResult::SUCCESS;
 }
@@ -204,7 +201,6 @@ MetadataResult MarkClientMode(ShellState &state, const vector<string> &args) {
 	string type, secret;
 	if (!ParseConnectionTarget(state, "connect", args[1], type, secret)) {
 		ShellState::Exit(1);
-		return MetadataResult::EXIT;
 	}
 	state.command_parameters["type"] = type;
 	if (!secret.empty()) {
@@ -220,14 +216,12 @@ MetadataResult SetServeTarget(ShellState &state, const vector<string> &args) {
 	string type, secret;
 	if (!ParseConnectionTarget(state, "serve", args[1], type, secret)) {
 		ShellState::Exit(1);
-		return MetadataResult::EXIT;
 	}
 	if (!StringUtil::CIEquals(type, SERVE_TYPE)) {
 		state.PrintF(PrintOutput::STDERR,
 		             "%s: Error: cannot serve a database of type '%s' - only '%s' is supported by '-serve'\n",
 		             state.program_name, type.c_str(), SERVE_TYPE);
 		ShellState::Exit(1);
-		return MetadataResult::EXIT;
 	}
 	if (!secret.empty()) {
 		state.command_parameters["serve_secret"] = StringUtil::Format(", secret='%s'", QuoteSecretName(secret));
@@ -270,8 +264,7 @@ MetadataResult ProcessFile(ShellState &state, const vector<string> &args) {
 	state.readStdin = false;
 	auto &file = args[1];
 	if (!state.ProcessFile(file)) {
-		ShellState::Exit(1);
-		return MetadataResult::EXIT;
+		return MetadataResult::FAIL;
 	}
 	return MetadataResult::SUCCESS;
 }
@@ -299,8 +292,7 @@ MetadataResult RunCommand(ShellState &state, const vector<string> &args) {
 	auto &cmd = args[1];
 	auto rc = state.RunInitialCommand(cmd.c_str(), bail);
 	if (rc != 0) {
-		ShellState::Exit(rc);
-		return MetadataResult::EXIT;
+		return MetadataResult::FAIL;
 	}
 	return MetadataResult::SUCCESS;
 }
@@ -309,8 +301,7 @@ MetadataResult RunManual(ShellState &state, const vector<string> &args) {
 	// show the manual page and exit; unlike -c we keep interactive detection so the output stays colored
 	state.readStdin = false;
 	if (state.DisplayManual(args) == MetadataResult::FAIL) {
-		ShellState::Exit(1);
-		return MetadataResult::EXIT;
+		return MetadataResult::FAIL;
 	}
 	return MetadataResult::SUCCESS;
 }

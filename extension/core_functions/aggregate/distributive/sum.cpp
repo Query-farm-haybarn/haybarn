@@ -217,7 +217,7 @@ struct KahanSumOperation : public BaseSumOperation<KahanSumSetOperation, KahanAd
 		if (!state.is_set) {
 			finalize_data.ReturnNull();
 		} else {
-			target = state.value;
+			target = KahanFinalize(state.value, state.err);
 		}
 	}
 };
@@ -481,7 +481,7 @@ AggregateFunction GetDecimalSumAggregate(PhysicalType type) {
 unique_ptr<FunctionData> BindDecimalSum(BindAggregateFunctionInput &input) {
 	auto &function = input.GetBoundFunction();
 	auto &arguments = input.GetArguments();
-	auto decimal_type = arguments[0]->GetReturnType();
+	auto decimal_type = BindDecimalArgument(input.GetClientContext(), arguments[0], "sum");
 	function.ReplaceImplementation(GetDecimalSumAggregate(decimal_type.InternalType()));
 	function.SetName("sum");
 	function.GetArguments()[0] = decimal_type;

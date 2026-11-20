@@ -124,7 +124,18 @@ BoundStatement Binder::BindNode(RecursiveCTENode &statement) {
 
 			// Bind the children of the aggregate function
 			for (auto &child : func_expr.GetArgumentsMutable()) {
+				// the aggregates are evaluated on the rows of the CTE, where nothing plans a subquery, so it is
+				// rejected before binding, and once more after it for one that a macro expands to
+				auto child_location = child.GetExpression().GetQueryLocation();
+				if (child.GetExpression().HasSubquery()) {
+					throw BinderException(child_location,
+					                      "Subqueries are not yet supported for aggregates in USING KEY");
+				}
 				auto bound_child = expression_binder.Bind(child.GetExpressionMutable());
+				if (bound_child->HasSubquery()) {
+					throw BinderException(child_location,
+					                      "Subqueries are not yet supported for aggregates in USING KEY");
+				}
 				aggregation_input_types.push_back(bound_child->GetReturnType());
 				bound_children.push_back(std::move(bound_child));
 			}
@@ -136,7 +147,7 @@ BoundStatement Binder::BindNode(RecursiveCTENode &statement) {
 				auto names_iter = find(result.names.begin(), result.names.end(), func_expr.GetAlias());
 				if (names_iter == result.names.end()) {
 					throw BinderException(expr->GetQueryLocation(),
-					                      "Could not find column with name '%s' to bind aggregate to.",
+					                      "Could not find column with name %s to bind aggregate to.",
 					                      func_expr.GetAlias());
 				}
 				aggregate_idx = ProjectionIndex(NumericCast<idx_t>(std::distance(result.names.begin(), names_iter)));
@@ -164,14 +175,14 @@ BoundStatement Binder::BindNode(RecursiveCTENode &statement) {
 
 			if (payload_references.find(aggregate_idx) != payload_references.end()) {
 				throw BinderException(func_expr.GetQueryLocation(),
-				                      "Column '%s' referenced multiple times in USING KEY clause.\n"
+				                      "Column %s referenced multiple times in USING KEY clause.\n"
 				                      "Try using an alias for one of the aggregates.",
 				                      result.names[aggregate_idx]);
 			}
 
 			if (key_references.find(aggregate_idx) != key_references.end()) {
 				throw BinderException(func_expr.GetQueryLocation(),
-				                      "Column '%s' cannot be used as both key and aggregate in USING KEY clause.\n"
+				                      "Column %s cannot be used as both key and aggregate in USING KEY clause.\n"
 				                      "Try using an alias for the aggregation.",
 				                      result.names[aggregate_idx]);
 			}

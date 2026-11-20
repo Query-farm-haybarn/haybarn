@@ -206,6 +206,16 @@ struct ICUFromNaiveTimestamp : public ICUDateFunc {
 		return timestamp_tz_ns_t(result);
 	}
 
+	static inline timestamp_tz_t Operation(Calendar *calendar, date_t naive) {
+		if (DUCKDB_UNLIKELY(naive == date_t::infinity())) {
+			return timestamp_tz_t::infinity();
+		}
+		if (DUCKDB_UNLIKELY(naive == date_t::ninfinity())) {
+			return timestamp_tz_t::ninfinity();
+		}
+		return Operation(calendar, Timestamp::FromDatetime(naive, dtime_t(0)));
+	}
+
 	template <class SRC, class DST>
 	static bool CastFromNaive(Vector &source, Vector &result, idx_t count, CastParameters &parameters) {
 		auto &cast_data = parameters.cast_data->Cast<CastData>();
@@ -236,7 +246,7 @@ struct ICUFromNaiveTimestamp : public ICUDateFunc {
 
 	template <typename SRC>
 	static BoundCastInfo BindCastFromNaiveType(BindCastInput &input, const LogicalType &target) {
-		auto cast_data = make_uniq<CastData>(make_uniq<BindData>(*input.context));
+		auto cast_data = BindCastData(input);
 		switch (target.id()) {
 		case LogicalTypeId::TIMESTAMP_TZ:
 			return BoundCastInfo(CastFromNaive<SRC, timestamp_tz_t>, std::move(cast_data));
@@ -404,7 +414,7 @@ struct ICUToNaiveTimestamp : public ICUDateFunc {
 			                      LogicalTypeIdToString(target.id()));
 		}
 
-		auto cast_data = make_uniq<CastData>(make_uniq<BindData>(*input.context));
+		auto cast_data = BindCastData(input);
 
 		switch (source.id()) {
 		case LogicalTypeId::TIMESTAMP_TZ:
@@ -422,6 +432,8 @@ struct ICUToNaiveTimestamp : public ICUDateFunc {
 			}
 		case LogicalTypeId::TIMESTAMP_TZ_NS:
 			switch (target.id()) {
+			case LogicalType::TIMESTAMP:
+				return BoundCastInfo(CastToNaive<timestamp_tz_ns_t, timestamp_t>, std::move(cast_data));
 			case LogicalType::TIMESTAMP_NS:
 				return BoundCastInfo(CastToNaive<timestamp_tz_ns_t, timestamp_ns_t>, std::move(cast_data));
 			default:
@@ -446,6 +458,7 @@ struct ICUToNaiveTimestamp : public ICUDateFunc {
 		AddCast(casts, LogicalType::TIMESTAMP_TZ, LogicalType::TIMESTAMP_NS);
 		AddCast(casts, LogicalType::TIMESTAMP_TZ, LogicalType::TIMESTAMP_S);
 
+		AddCast(casts, LogicalType::TIMESTAMP_TZ_NS, LogicalType::TIMESTAMP);
 		AddCast(casts, LogicalType::TIMESTAMP_TZ_NS, LogicalType::TIMESTAMP_NS);
 	}
 };
@@ -499,6 +512,8 @@ struct ICULocalTimestampFunc : public ICUDateFunc {
 	static void AddFunction(const Identifier &name, ExtensionLoader &loader) {
 		ScalarFunctionSet set {name};
 		set.AddFunction(ScalarFunction({}, LogicalType::TIMESTAMP, Execute, BindNow));
+		// the bind reads the start of the transaction
+		set.SetStability(FunctionStability::CONSISTENT_WITHIN_QUERY);
 		loader.RegisterFunction(set);
 	}
 };
@@ -515,6 +530,8 @@ struct ICULocalTimeFunc : public ICUDateFunc {
 	static void AddFunction(const Identifier &name, ExtensionLoader &loader) {
 		ScalarFunctionSet set {name};
 		set.AddFunction(ScalarFunction({}, LogicalType::TIME, Execute, ICULocalTimestampFunc::BindNow));
+		// the bind reads the start of the transaction
+		set.SetStability(FunctionStability::CONSISTENT_WITHIN_QUERY);
 		loader.RegisterFunction(set);
 	}
 };
@@ -533,6 +550,9 @@ dtime_tz_t ICUToTimeTZ::Operation(Calendar *calendar, dtime_tz_t timetz) {
 bool ICUToTimeTZ::ToTimeTZ(Calendar *calendar, timestamp_tz_t instant, dtime_tz_t &result,
                            optional_ptr<string> error_message) {
 	if (!instant.IsFinite()) {
+		if (error_message) {
+			*error_message = "Can't get TIME of infinite TIMESTAMP";
+		}
 		return false;
 	}
 
@@ -587,7 +607,7 @@ BoundCastInfo ICUToTimeTZ::BindCastToTimeTZ(BindCastInput &input, const LogicalT
 		throw InternalException("Missing context for TIMESTAMPTZ to TIMETZ cast.");
 	}
 
-	auto cast_data = make_uniq<CastData>(make_uniq<BindData>(*input.context));
+	auto cast_data = BindCastData(input);
 
 	return BoundCastInfo(CastToTimeTZ, std::move(cast_data));
 }
@@ -622,7 +642,7 @@ BoundCastInfo ICUToTimeTZ::BindCastFromTime(BindCastInput &input, const LogicalT
 		throw InternalException("Missing context for TIME to TIMETZ cast.");
 	}
 
-	auto cast_data = make_uniq<CastData>(make_uniq<BindData>(*input.context));
+	auto cast_data = BindCastData(input);
 
 	return BoundCastInfo(CastFromTime, std::move(cast_data));
 }
@@ -696,8 +716,14 @@ struct ICUTimeZoneFunc : public ICUDateFunc {
 		    .AddParameter("timestamp", LogicalType::TIMESTAMP_TZ_NS);
 		set.AddFunction(timetzns_fun);
 
+		ScalarFunction date_fun({}, LogicalType::TIMESTAMP_TZ, Execute<ICUFromNaiveTimestamp, date_t, timestamp_tz_t>,
+		                        Bind);
+		date_fun.GetSignature().AddParameter("timezone", LogicalType::VARCHAR).AddParameter("date", LogicalType::DATE);
+		set.AddFunction(date_fun);
+
 		set.ApplyToFunctions([](ScalarFunction &func) {
 			func.SetFallible();
+			func.SetStability(FunctionStability::CONSISTENT_WITHIN_QUERY);
 			func.SetInitStateCallback(InitCalendarCache);
 		});
 		loader.RegisterFunction(set);

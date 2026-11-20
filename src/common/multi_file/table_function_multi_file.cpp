@@ -25,10 +25,12 @@ public:
 	//! counted more, so that a reader can be released without losing what it counted.
 	//! "scanned" is handed over and cleared on every report - the profiler sums what each thread reports, so a
 	//! scanned row group must be handed over exactly once. "total" is the size of the scan, which every thread
-	//! reports identically and the profiler does not sum, so it is never cleared
+	//! reports identically and the profiler does not sum, so it is never cleared. "bytes scanned" is handed over
+	//! like "scanned"
 	mutex metrics_lock;
 	idx_t collected_scanned = 0;
 	idx_t collected_total = 0;
+	idx_t collected_bytes_scanned = 0;
 };
 
 class TableFunctionMultiFileLocalState : public LocalTableFunctionState {
@@ -43,6 +45,8 @@ public:
 	shared_ptr<BaseFileReader> reader;
 	//! The local state of the wrapped function
 	unique_ptr<LocalTableFunctionState> local_state;
+	//! Whether what the first scan of the current batch counted has been collected
+	bool batch_metrics_collected = true;
 };
 
 //===--------------------------------------------------------------------===//
@@ -106,6 +110,7 @@ void TableFunctionFileReader::BindFunction(ClientContext &context, const TableFu
 	names.clear();
 	types.clear();
 	bind_data = function.bind(context, bind_input, types, names);
+	name_index.Build(names);
 	// a function can describe what it bound in more detail than its names and types - e.g. with the field ids of its
 	// columns, and options that describe the file, which are exposed as the metadata of the reader of the file
 	optional<BindInfo> bind_info;
@@ -133,6 +138,7 @@ void TableFunctionFileReader::BindFunction(ClientContext &context, const TableFu
 	} else {
 		columns = MultiFileColumnDefinition::ColumnsFromNamesAndTypes(names, types);
 	}
+	column_name_index.Build(columns);
 	metadata.clear();
 	if (bind_info) {
 		// the options are kept unordered - sort them, so the same file always has the same metadata
@@ -159,18 +165,18 @@ unique_ptr<BaseStatistics> TableFunctionUnionData::GetStatistics(ClientContext &
 	if (!statistics || !bind_data) {
 		return nullptr;
 	}
-	for (idx_t col_idx = 0; col_idx < names.size(); col_idx++) {
-		if (Identifier(names[col_idx]) == name) {
-			return statistics(context, bind_data.get(), col_idx);
-		}
+	auto col_idx = FindColumn(name);
+	if (!col_idx.IsValid()) {
+		return nullptr;
 	}
-	return nullptr;
+	return statistics(context, bind_data.get(), col_idx.GetIndex());
 }
 
 shared_ptr<BaseUnionData> TableFunctionFileReader::GetUnionData(idx_t file_idx) {
 	auto result = make_shared_ptr<TableFunctionUnionData>(file);
 	result->names = IdentifiersToStrings(names);
 	result->types = types;
+	result->column_name_index.Build(result->names);
 	result->cardinality = cardinality;
 	result->bind_data = bind_data;
 	result->statistics = function.statistics;
@@ -185,12 +191,12 @@ unique_ptr<BaseStatistics> TableFunctionFileReader::GetStatistics(ClientContext 
 	if (!function.statistics || !bind_data) {
 		return nullptr;
 	}
-	for (idx_t col_idx = 0; col_idx < names.size(); col_idx++) {
-		if (names[col_idx] == name) {
-			return function.statistics(context, bind_data.get(), col_idx);
-		}
+	auto col_idx = name_index.Find(name);
+	if (!col_idx.IsValid()) {
+		return nullptr;
 	}
-	return nullptr;
+	D_ASSERT(names[col_idx.GetIndex()] == name);
+	return function.statistics(context, bind_data.get(), col_idx.GetIndex());
 }
 
 unique_ptr<BaseStatistics> TableFunctionFileReader::GetVirtualColumnStatistics(ClientContext &context,
@@ -223,6 +229,7 @@ void TableFunctionFileReader::CollectMetrics(ClientContext &context, GlobalTable
 	TableFunctionGetMetricsInput input(context, bind_data.get(), nullptr, global_state.get(), file_metrics);
 	function.get_metrics(input);
 	gstate.collected_scanned += file_metrics.row_groups_scanned;
+	gstate.collected_bytes_scanned += file_metrics.bytes_scanned;
 	// the function reports the size of its file as a whole - only add what it has grown by since we last asked
 	gstate.collected_total += file_metrics.total_row_groups_to_scan - collected_file_total;
 	collected_file_total = file_metrics.total_row_groups_to_scan;
@@ -313,6 +320,7 @@ bool TableFunctionFileReader::TryInitializeScan(ClientContext &context, GlobalTa
 	SetScanState(gstate);
 	InitializeFunctionState(context);
 	auto &lstate = lstate_p.Cast<TableFunctionMultiFileLocalState>();
+	lstate.batch_metrics_collected = false;
 	if (!function.init_local) {
 		// the wrapped function has no local state - it can only be scanned by a single thread
 		bool expected = false;
@@ -361,7 +369,7 @@ AsyncResult TableFunctionFileReader::ScheduleIO(ClientContext &context, GlobalTa
 	return result;
 }
 
-AsyncResult TableFunctionFileReader::Scan(ClientContext &context, GlobalTableFunctionState &,
+AsyncResult TableFunctionFileReader::Scan(ClientContext &context, GlobalTableFunctionState &gstate,
                                           LocalTableFunctionState &lstate_p, DataChunk &chunk) {
 	auto &lstate = lstate_p.Cast<TableFunctionMultiFileLocalState>();
 	TableFunctionInput input(bind_data.get(), lstate.local_state.get(), global_state.get());
@@ -369,6 +377,13 @@ AsyncResult TableFunctionFileReader::Scan(ClientContext &context, GlobalTableFun
 	input.async_result = AsyncResultType::IMPLICIT;
 	input.results_execution_mode = AsyncResultsExecutionMode::SYNCHRONOUS;
 	function.function(context, input, chunk);
+	if (!lstate.batch_metrics_collected || chunk.size() == 0) {
+		// the file may already have been finished while this batch was scanned, so what the scan counted is collected
+		// here - once the first scan of the batch has run (Parquet counts a row group then), and again when the batch
+		// ends (a function that counts as it reads, like CSV, counts until then)
+		CollectMetrics(context, gstate);
+		lstate.batch_metrics_collected = true;
+	}
 	if (chunk.size() == 0 && !settings.claim_batch) {
 		// an empty chunk signals the end of the scan for this thread - when the function scans in batches it only
 		// signals the end of the current batch, and the next batch is claimed by TryInitializeScan
@@ -578,10 +593,21 @@ void TableFunctionMultiFileWrapper::GetVirtualColumns(ClientContext &context, Mu
 	}
 }
 
+void TableFunctionMultiFileWrapper::ReadFilesForStatistics(ClientContext &context, MultiFileBindData &bind_data) {
+	auto &data = bind_data.bind_data->Cast<TableFunctionMultiFileData>();
+	bind_data.multi_file_reader->ReadFilesForStatistics(context, *bind_data.file_list, bind_data, data.options,
+	                                                    bind_data.file_options);
+}
+
 void TableFunctionMultiFileWrapper::FinalizeBindData(MultiFileBindData &multi_file_data) {
+	auto &data = multi_file_data.bind_data->Cast<TableFunctionMultiFileData>();
+	if (multi_file_data.initial_reader) {
+		// the cardinality estimate comes from the first file - keep it, as a filter pushdown can prune that file's
+		// reader before the optimizer asks for the estimate
+		data.cardinality = multi_file_data.initial_reader->Cast<TableFunctionFileReader>().GetCardinality();
+	}
 	if (!multi_file_data.file_options.schema.empty()) {
 		// the schema was given up front, so BindReader never ran to find out whether the scan reads several files
-		auto &data = multi_file_data.bind_data->Cast<TableFunctionMultiFileData>();
 		data.options.multi_file_scan = multi_file_data.file_list->GetExpandResult() == FileExpandResult::MULTIPLE_FILES;
 		return;
 	}
@@ -591,17 +617,13 @@ void TableFunctionMultiFileWrapper::FinalizeBindData(MultiFileBindData &multi_fi
 		// function combined itself can be used to read every file
 		return;
 	}
-	auto &data = multi_file_data.bind_data->Cast<TableFunctionMultiFileData>();
 	data.options.expected_names = std::move(combined_names);
 	data.options.expected_types = std::move(combined_types);
 	data.options.schema_bind_data = std::move(combined_bind_data);
 	// the readers that were opened to combine the schemas were bound before the combined schema was known - release
 	// them so that every file is bound against the combined schema instead
 	multi_file_data.union_readers.clear();
-	if (multi_file_data.initial_reader) {
-		data.cardinality = multi_file_data.initial_reader->Cast<TableFunctionFileReader>().GetCardinality();
-		multi_file_data.initial_reader = nullptr;
-	}
+	multi_file_data.initial_reader = nullptr;
 }
 
 //! Drop the per-file bind data of a scan whose schema the function combined itself - every file is re-bound against
@@ -702,18 +724,44 @@ shared_ptr<BaseFileReader> TableFunctionMultiFileWrapper::CreateReader(ClientCon
 	return std::move(result);
 }
 
+//! The bytes a row is taken to have when a scan's row count is estimated from the sizes of its files alone: the
+//! floor the parquet reader puts under the ratio it measures in an opened file. A deliberate overestimate of the rows,
+//! the same for every format this wrapper serves - a read_csv or read_json row is typically much wider - since
+//! estimating too many rows is safer than estimating none.
+static constexpr idx_t MIN_ESTIMATED_BYTES_PER_ROW = 10;
+
+//! The row count the caller gives for the whole scan, read_parquet's explicit_cardinality (0 means not given). Looked
+//! up by name, by convention: read_parquet is the only wrapped function that declares it
+static optional_idx ExplicitCardinality(const TableFunctionMultiFileData &data) {
+	auto entry = data.options.named_parameters.find(Identifier("explicit_cardinality"));
+	if (entry == data.options.named_parameters.end() || entry->second.IsNull()) {
+		return optional_idx();
+	}
+	auto cardinality = entry->second.DefaultCastAs(LogicalType::UBIGINT).GetValue<uint64_t>();
+	if (cardinality == 0) {
+		return optional_idx();
+	}
+	return optional_idx(cardinality);
+}
+
 unique_ptr<NodeStatistics> TableFunctionMultiFileWrapper::GetCardinality(ClientContext &context,
                                                                          const MultiFileBindData &bind_data,
                                                                          idx_t file_count) {
 	auto &data = bind_data.bind_data->Cast<TableFunctionMultiFileData>();
-	auto cardinality = data.cardinality;
-	if (bind_data.initial_reader) {
-		cardinality = bind_data.initial_reader->Cast<TableFunctionFileReader>().GetCardinality();
+	auto explicit_cardinality = ExplicitCardinality(data);
+	if (explicit_cardinality.IsValid()) {
+		return make_uniq<NodeStatistics>(explicit_cardinality.GetIndex());
 	}
-	if (!cardinality.IsValid()) {
-		return nullptr;
+	if (data.cardinality.IsValid()) {
+		return make_uniq<NodeStatistics>(data.cardinality.GetIndex() * file_count);
 	}
-	return make_uniq<NodeStatistics>(cardinality.GetIndex() * file_count);
+	// no file was opened at bind (e.g. because the schema was given): estimate from the sizes of the files, when
+	// the file list carries them (a local glob, or a list of {filename, file_size} structs)
+	auto rows_per_file = bind_data.file_list->EstimateRowsPerFile(MIN_ESTIMATED_BYTES_PER_ROW);
+	if (rows_per_file.IsValid()) {
+		return make_uniq<NodeStatistics>(rows_per_file.GetIndex() * file_count);
+	}
+	return nullptr;
 }
 
 //===--------------------------------------------------------------------===//
@@ -782,10 +830,19 @@ static void TableFunctionMultiFileGetMetrics(TableFunctionGetMetricsInput &input
 			reader_data->reader->Cast<TableFunctionFileReader>().CollectMetrics(input.context, scan_state);
 		}
 	}
+	if (input.local_state) {
+		// a batch this thread stopped short, e.g. at a LIMIT, can have counted more for a file that is already finished
+		auto &local = input.local_state->Cast<MultiFileLocalState>();
+		if (local.job && local.job->reader) {
+			local.job->reader->Cast<TableFunctionFileReader>().CollectMetrics(input.context, scan_state);
+		}
+	}
 	lock_guard<mutex> metrics_guard(scan_state.metrics_lock);
 	// the row groups scanned are handed over once - the profiler sums what every thread reports
 	input.operator_metrics.row_groups_scanned += scan_state.collected_scanned;
 	scan_state.collected_scanned = 0;
+	input.operator_metrics.bytes_scanned += scan_state.collected_bytes_scanned;
+	scan_state.collected_bytes_scanned = 0;
 	// the size of the scan is reported as-is - it is not summed across the threads that report it
 	input.operator_metrics.total_row_groups_to_scan = scan_state.collected_total;
 }

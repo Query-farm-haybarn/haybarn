@@ -58,10 +58,10 @@
     },
     {
         "name": "allow_extension_repositories",
-        "description": "Whether custom trusted extension repositories are 'allowed', 'forbidden' (which also distrusts existing repositories) or 'undecided' (the default: blocks adding new repositories, but keeps trusting existing ones). While the database is running the setting can only move from 'undecided' to 'allowed' or 'forbidden', or from 'allowed' to 'forbidden'.",
+        "description": "Which custom trusted extension repositories can be added, and which are trusted: 'hosts' (the default: a repository named by its host can be added with CREATE EXTENSION REPOSITORY <host>, adding one by prefix needs 'allowed', existing repositories stay trusted), 'allowed' (repositories can be added by host or by prefix), 'hosts_only' (only repositories resolved from their host can be added, and only those are trusted) or 'forbidden' (nothing can be added, and existing repositories are distrusted). While the database is running the setting can only be tightened: 'hosts' -> 'allowed' -> 'hosts_only' -> 'forbidden'.",
         "type": "VARCHAR",
         "scope": "global",
-        "default_value": "undecided",
+        "default_value": "hosts",
         "on_callbacks": [
             "set"
         ]
@@ -372,6 +372,14 @@
         "is_debug": true
     },
     {
+        "name": "debug_file_descriptor_limit",
+        "description": "Override the file descriptor limit that bounds how many files a scan opens ahead. 0 uses the limit of the process.",
+        "type": "UBIGINT",
+        "default_scope": "local",
+        "default_value": "0",
+        "is_debug": true
+    },
+    {
         "name": "debug_force_bitpacking_mode",
         "description": "Forces a specific bitpacking mode.",
         "type": "ENUM<BitpackingMode>",
@@ -412,6 +420,14 @@
         "description": "Force per-row fetching during scans.",
         "type": "BOOLEAN",
         "default_scope": "local",
+        "default_value": "false",
+        "is_debug": true
+    },
+    {
+        "name": "debug_force_flush_append_failure",
+        "description": "Force the commit-time flush of transaction-local storage to fail after appending to the table. Can be used for testing commit error recovery.",
+        "type": "BOOLEAN",
+        "default_scope": "global",
         "default_value": "false",
         "is_debug": true
     },
@@ -649,9 +665,7 @@
         "type": "BOOLEAN",
         "default_scope": "local",
         "default_value": "true",
-        "on_callbacks": [
-            "set"
-        ]
+        "is_deprecated": true
     },
     {
         "name": "dialect_compatibility_mode",
@@ -781,9 +795,6 @@
         "type": "BOOLEAN",
         "default_scope": "global",
         "default_value": "false",
-        "on_callbacks": [
-            "set"
-        ],
         "is_deprecated": true
     },
     {
@@ -845,9 +856,7 @@
         "type": "BOOLEAN",
         "default_scope": "local",
         "default_value": "true",
-        "on_callbacks": [
-            "set"
-        ]
+        "is_deprecated": true
     },
     {
         "name": "errors_as_json",
@@ -863,9 +872,7 @@
         "type": "BOOLEAN",
         "scope": "global",
         "default_value": "true",
-        "on_callbacks": [
-            "set"
-        ]
+        "is_deprecated": true
     },
     {
         "name": "explain_output",
@@ -887,10 +894,7 @@
         "type": "VARCHAR",
         "scope": "global",
         "default_value": "",
-        "is_deprecated": true,
-        "on_callbacks": [
-            "set"
-        ]
+        "is_deprecated": true
     },
     {
         "name": "extension_repository_directory",
@@ -978,9 +982,7 @@
         "type": "BOOLEAN",
         "scope": "global",
         "default_value": "false",
-        "on_callbacks": [
-            "set"
-        ]
+        "is_deprecated": true
     },
     {
         "name": "force_compression",
@@ -1051,6 +1053,22 @@
         "scope": "global",
         "default_value": "",
         "struct": "HTTPProxyUsernameSetting"
+    },
+    {
+        "name": "http_retry_quota_throttled",
+        "description": "Whether the per-host retry quota can refuse the retry of a throttled request (HTTP 429 or 503). When false, a throttled retry is still charged to the quota but is not refused when the quota is empty.",
+        "type": "BOOLEAN",
+        "default_scope": "local",
+        "default_value": "true",
+        "struct": "HTTPRetryQuotaThrottledSetting"
+    },
+    {
+        "name": "http_retry_throttled_wait_ms",
+        "description": "Smallest base wait, in milliseconds, of the back-off between retries of a throttled request (HTTP 429 or 503). Throttled retries back off from the larger of this and http_retry_wait_ms.",
+        "type": "UBIGINT",
+        "default_scope": "local",
+        "default_value": "0",
+        "struct": "HTTPRetryThrottledWaitMsSetting"
     },
     {
         "name": "ieee_floating_point_ops",
@@ -1128,9 +1146,7 @@
         "type": "BOOLEAN",
         "default_scope": "local",
         "default_value": "false",
-        "on_callbacks": [
-            "set"
-        ]
+        "is_deprecated": true
     },
     {
         "name": "legacy_metrics_format",
@@ -1138,9 +1154,6 @@
         "type": "BOOLEAN",
         "default_scope": "local",
         "default_value": "false",
-        "on_callbacks": [
-            "set"
-        ],
         "is_deprecated": true
     },
     {
@@ -1177,12 +1190,21 @@
         "custom_implementation": true
     },
     {
+        "name": "logging_sink",
+        "description": "Set the logging sink, options are 'memory', 'stdout', 'file', '<custom>'.",
+        "type": "VARCHAR",
+        "scope": "global",
+        "struct": "LoggingSink",
+        "custom_implementation": true
+    },
+    {
         "name": "logging_storage",
-        "description": "Set the logging storage, options are 'memory', 'stdout', 'file', '<custom>'.",
+        "description": "Deprecated setting. Use logging_sink instead.",
         "type": "VARCHAR",
         "scope": "global",
         "struct": "LoggingStorage",
-        "custom_implementation": true
+        "custom_implementation": true,
+        "is_deprecated": true
     },
     {
         "name": "max_execution_time",
@@ -1252,10 +1274,7 @@
         "type": "BOOLEAN",
         "default_scope": "global",
         "default_value": "false",
-        "is_deprecated": true,
-        "on_callbacks": [
-            "set"
-        ]
+        "is_deprecated": true
     },
     {
         "name": "operator_memory_limit",
@@ -1363,10 +1382,7 @@
         "type": "BOOLEAN",
         "default_scope": "global",
         "default_value": "false",
-        "is_deprecated": true,
-        "on_callbacks": [
-            "set"
-        ]
+        "is_deprecated": true
     },
     {
         "name": "profiling_coverage",
@@ -1432,7 +1448,8 @@
         "default_value": "partial",
         "custom_implementation": [
             "set"
-        ]
+        ],
+        "is_deprecated": true
     },
     {
         "name": "scalar_subquery_error_on_multiple_rows",
@@ -1512,7 +1529,8 @@
         "default_value": "DEFAULT",
         "custom_implementation": [
             "set"
-        ]
+        ],
+        "is_deprecated": true
     },
     {
         "name": "temp_directory",

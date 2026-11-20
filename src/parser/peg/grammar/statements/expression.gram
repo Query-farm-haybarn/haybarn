@@ -151,11 +151,8 @@ SingleExpression <-
     DefaultExpression
 
 # LEVEL 1 (Lowest)
-Expression <- LambdaArrowExpression
+Expression <- LogicalOrExpression
 ColumnDefaultExpr <- ColDefOrExpr
-# LEVEL 1.5
-LambdaArrowExpression <- LogicalOrExpression SingleArrowPair*
-SingleArrowPair <- '->' LogicalOrExpression
 LogicalOrExpression <- LogicalAndExpression LogicalOrExpressionTail*
 LogicalOrExpressionTail <- 'OR' LogicalAndExpression
 ColDefOrExpr <- ColDefAndExpr ColDefOrExpressionTail*
@@ -239,10 +236,19 @@ InSelectStatement <- Parens(SelectStatementInternal)
 BetweenClause <- 'BETWEEN' Asymmetric? OtherOperatorExpression 'AND' OtherOperatorExpression
 Asymmetric <- 'ASYMMETRIC'
 # LEVEL 8
-OtherOperatorExpression <- InfixOtherOperatorExpression / CustomPrefixExpression
+OtherOperatorExpression <- InfixOtherOperatorExpression
 InfixOtherOperatorExpression <- BitwiseExpression OtherOperatorTail*
-CustomPrefixExpression <- OperatorLiteral OtherOperatorExpression
-OtherOperatorTail <- OtherOperator BitwiseExpression
+OtherOperatorTail <- AnyAllSubqueryTail / OtherOperatorExpressionTail / SingleArrowTail
+AnyAllSubqueryTail <- AnyAllParsedOperator SubqueryReference
+OtherOperatorExpressionTail <- OtherOperator BitwiseExpression
+# '->' is the lambda arrow or the JSON extract operator. Its operand extends as far as possible (the lambda body),
+# unless another arrow follows directly: then the arrows chain to the left, like in PostgreSQL.
+SingleArrowTail <- '->' SingleArrowBody
+SingleArrowBody <- ArrowChainBody / ArrowFullBody
+ArrowChainBody <- BitwiseExpression ArrowChainTail+
+ArrowChainTail <- DoubleArrowTail / SingleArrowTail
+DoubleArrowTail <- '->>' BitwiseExpression
+ArrowFullBody <- LogicalOrExpression
 OtherOperator <-
     AnyAllParsedOperator / NamedOtherOperator
 AnyAllParsedOperator <- AnyAllOperator
@@ -279,11 +285,13 @@ CollateExpression <- AtTimeZoneExpression CollateExpressionTail*
 CollateExpressionTail <- CollateOperator AtTimeZoneExpression
 CollateOperator <- 'COLLATE'
 # LEVEL 14
-AtTimeZoneExpression <- PrefixExpression AtTimeZoneExpressionTail*
-AtTimeZoneExpressionTail <- AtTimeZoneOperator PrefixExpression
+AtTimeZoneExpression <- UnaryExpression AtTimeZoneExpressionTail*
+AtTimeZoneExpressionTail <- AtTimeZoneOperator UnaryExpression
 AtTimeZoneOperator <- 'AT' 'TIME' 'ZONE'
 # LEVEL 15
+UnaryExpression <- PrefixExpression / CustomPrefixExpression
 PrefixExpression <- PrefixOperator* BaseExpression
+CustomPrefixExpression <- OperatorLiteral TildeExpression
 PrefixOperator <- QualifiedOperator / MinusPrefixOperator / PlusPrefixOperator
 MinusPrefixOperator <- '-'
 PlusPrefixOperator <- '+'

@@ -9,6 +9,8 @@ add_library_unity(
   test_checked_integer.cpp
   test_checksum.cpp
   test_dictionary_hash_cache.cpp
+  test_expression_executor.cpp
+  test_vector_hash.cpp
   test_column_data_allocator.cpp
   test_file_buffer_handle_group.cpp
   test_file_system.cpp
@@ -49,6 +51,7 @@ add_library_unity(
   test_substring_oob.cpp
   test_swar.cpp
   test_aggregate_hll.cpp
+  test_jemalloc_tcache.cpp
   test_radix_ht_sink.cpp
   test_utf8_codepoint_oob.cpp
   test_temporary_memory_manager.cpp
@@ -57,6 +60,7 @@ add_library_unity(
   test_value_to_sql_string.cpp
   test_value_to_expression.cpp
   test_variant_size.cpp
+  test_vector_buffer_validity.cpp
   test_musl_stack_size.cpp)
 
 set(UNITTEST_OBJECT_FILES

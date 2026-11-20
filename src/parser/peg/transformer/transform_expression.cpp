@@ -575,25 +575,6 @@ PEGTransformerFactory::TransformColumnDefaultExpr(PEGTransformer &transformer,
 	return col_def_or_expr;
 }
 
-unique_ptr<ParsedExpression> PEGTransformerFactory::TransformLambdaArrowExpression(
-    PEGTransformer &transformer, unique_ptr<ParsedExpression> logical_or_expression,
-    optional<vector<unique_ptr<ParsedExpression>>> single_arrow_pair) {
-	auto expr = std::move(logical_or_expression);
-	if (!single_arrow_pair) {
-		return expr;
-	}
-	for (auto &right_expr : *single_arrow_pair) {
-		expr = make_uniq<LambdaExpression>(std::move(expr), std::move(right_expr));
-	}
-	return expr;
-}
-
-unique_ptr<ParsedExpression>
-PEGTransformerFactory::TransformSingleArrowPair(PEGTransformer &transformer,
-                                                unique_ptr<ParsedExpression> logical_or_expression) {
-	return logical_or_expression;
-}
-
 static unique_ptr<ParsedExpression> FoldConjunctionExpression(PEGTransformer &transformer,
                                                               unique_ptr<ParsedExpression> expression,
                                                               optional<vector<unique_ptr<ParsedExpression>>> tails,
@@ -1253,6 +1234,9 @@ PEGTransformerFactory::TransformLikeClause(PEGTransformer &transformer, const st
 		throw ParserException(
 		    "ESCAPE clause is not supported with case-insensitive regular expression match operators");
 	}
+	if (is_regex_operator && escape_clause) {
+		throw ParserException("ESCAPE clause is not supported with SIMILAR TO and regular expression match operators");
+	}
 	if (escape_clause) {
 		if (like_variation == "~~") {
 			like_variation = "like_escape";
@@ -1338,6 +1322,16 @@ static unique_ptr<ParsedExpression> TransformOperatorFunction(const string &oper
 	return std::move(result);
 }
 
+static unique_ptr<ParsedExpression> TransformArrowChainLink(unique_ptr<ParsedExpression> expr, ArrowChainLink link) {
+	if (!link.is_double_arrow) {
+		return make_uniq<LambdaExpression>(std::move(expr), std::move(link.expression));
+	}
+	vector<unique_ptr<ParsedExpression>> children;
+	children.push_back(std::move(expr));
+	children.push_back(std::move(link.expression));
+	return TransformOperatorFunction("->>", std::move(children));
+}
+
 unique_ptr<ParsedExpression>
 PEGTransformerFactory::TransformInfixOtherOperatorExpression(PEGTransformer &transformer,
                                                              unique_ptr<ParsedExpression> bitwise_expression,
@@ -1348,6 +1342,13 @@ PEGTransformerFactory::TransformInfixOtherOperatorExpression(PEGTransformer &tra
 	}
 	for (auto &other_operator_expr : *other_operator_tail) {
 		auto right_expr = std::move(other_operator_expr.expression);
+		if (other_operator_expr.is_arrow) {
+			expr = make_uniq<LambdaExpression>(std::move(expr), std::move(right_expr));
+			for (auto &link : other_operator_expr.arrow_chain) {
+				expr = TransformArrowChainLink(std::move(expr), std::move(link));
+			}
+			continue;
+		}
 		if (other_operator_expr.op.is_any_all) {
 			auto op_string = other_operator_expr.op.name;
 			auto is_any = other_operator_expr.op.is_any;
@@ -1356,7 +1357,7 @@ PEGTransformerFactory::TransformInfixOtherOperatorExpression(PEGTransformer &tra
 			auto expression_type = OperatorToExpressionType(op_string);
 
 			auto subquery_expr = make_uniq<SubqueryExpression>();
-			if (right_expr->GetExpressionClass() == ExpressionClass::SUBQUERY) {
+			if (other_operator_expr.is_subquery) {
 				if (expression_type == ExpressionType::INVALID) {
 					throw ParserException("ANY and ALL operators require one of =,<>,>,<,>=,<= comparisons!");
 				}
@@ -1430,12 +1431,68 @@ PEGTransformerFactory::TransformCustomPrefixExpression(PEGTransformer &transform
 	return TransformOperatorFunction(operator_literal, std::move(children));
 }
 
-OtherOperatorTail PEGTransformerFactory::TransformOtherOperatorTail(PEGTransformer &transformer,
-                                                                    ParsedOperator other_operator,
-                                                                    unique_ptr<ParsedExpression> bitwise_expression) {
+OtherOperatorTail PEGTransformerFactory::TransformAnyAllSubqueryTail(PEGTransformer &transformer,
+                                                                     ParsedOperator any_all_parsed_operator,
+                                                                     unique_ptr<TableRef> subquery_reference) {
+	auto subquery = make_uniq<SubqueryExpression>();
+	subquery->GetSubqueryTypeMutable() = SubqueryType::SCALAR;
+	subquery->SubqueryMutable() = std::move(subquery_reference->Cast<SubqueryRef>().subquery);
+	OtherOperatorTail result;
+	result.op = std::move(any_all_parsed_operator);
+	result.expression = std::move(subquery);
+	result.is_subquery = true;
+	return result;
+}
+
+OtherOperatorTail
+PEGTransformerFactory::TransformOtherOperatorExpressionTail(PEGTransformer &transformer, ParsedOperator other_operator,
+                                                            unique_ptr<ParsedExpression> bitwise_expression) {
 	OtherOperatorTail result;
 	result.op = std::move(other_operator);
 	result.expression = std::move(bitwise_expression);
+	return result;
+}
+
+OtherOperatorTail PEGTransformerFactory::TransformSingleArrowTail(PEGTransformer &transformer,
+                                                                  ArrowBody single_arrow_body) {
+	OtherOperatorTail result;
+	result.op.name = "->";
+	result.is_arrow = true;
+	result.expression = std::move(single_arrow_body.expression);
+	result.arrow_chain = std::move(single_arrow_body.arrow_chain);
+	return result;
+}
+
+OtherOperatorTail PEGTransformerFactory::TransformDoubleArrowTail(PEGTransformer &transformer,
+                                                                  unique_ptr<ParsedExpression> bitwise_expression) {
+	OtherOperatorTail result;
+	result.op.name = "->>";
+	result.expression = std::move(bitwise_expression);
+	return result;
+}
+
+ArrowBody PEGTransformerFactory::TransformArrowChainBody(PEGTransformer &transformer,
+                                                         unique_ptr<ParsedExpression> bitwise_expression,
+                                                         vector<OtherOperatorTail> arrow_chain_tail) {
+	ArrowBody result;
+	result.expression = std::move(bitwise_expression);
+	// flatten the chain: a nested '->' carries the arrows that follow its own operand
+	for (auto &tail : arrow_chain_tail) {
+		ArrowChainLink link;
+		link.is_double_arrow = !tail.is_arrow;
+		link.expression = std::move(tail.expression);
+		result.arrow_chain.push_back(std::move(link));
+		for (auto &nested_link : tail.arrow_chain) {
+			result.arrow_chain.push_back(std::move(nested_link));
+		}
+	}
+	return result;
+}
+
+ArrowBody PEGTransformerFactory::TransformArrowFullBody(PEGTransformer &transformer,
+                                                        unique_ptr<ParsedExpression> logical_or_expression) {
+	ArrowBody result;
+	result.expression = std::move(logical_or_expression);
 	return result;
 }
 
@@ -2093,8 +2150,7 @@ unique_ptr<ParsedExpression> PEGTransformerFactory::TransformStarExpression(
 		}
 		for (auto &replace_entry : result->ReplaceList()) {
 			if (result->ExcludeList().find(QualifiedColumnName(replace_entry.first)) != result->ExcludeList().end()) {
-				throw ParserException("Column \"%s\" cannot occur in both EXCLUDE and REPLACE list",
-				                      replace_entry.first);
+				throw ParserException("Column %s cannot occur in both EXCLUDE and REPLACE list", replace_entry.first);
 			}
 		}
 	}

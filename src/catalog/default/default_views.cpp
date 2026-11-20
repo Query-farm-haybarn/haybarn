@@ -38,8 +38,8 @@ static const DefaultView internal_views[] = {
      "SELECT name, statement, NULL prepare_time, parameter_types, result_types, NULL from_sql, NULL generic_plans, "
      "NULL custom_plans from duckdb_prepared_statements()"},
     {"pg_catalog", "pg_attribute",
-     "SELECT table_oid attrelid, column_name attname, map_to_pg_oid((SELECT type_name FROM duckdb_types() pgt WHERE "
-     "pgt.type_oid = data_type_id LIMIT 1)) atttypid, 0 attstattarget, NULL attlen, "
+     "SELECT table_oid attrelid, column_name attname, "
+     "coalesce(map_type_id_to_pg_oid(data_type_id), data_type_id + 16384) atttypid, 0 attstattarget, NULL attlen, "
      "column_index attnum, 0 attndims, -1 attcacheoff, case when data_type ilike '%decimal%' then "
      "numeric_precision*1000+numeric_scale else -1 end atttypmod, false attbyval, NULL attstorage, NULL attalign, NOT "
      "is_nullable attnotnull, column_default IS NOT NULL atthasdef, false atthasmissing, '' attidentity, '' "
@@ -138,13 +138,13 @@ static const DefaultView internal_views[] = {
     {"pg_catalog", "pg_tablespace", "SELECT 0 oid, 'pg_default' spcname, 0 spcowner, NULL spcacl, NULL spcoptions"},
     {"pg_catalog", "pg_type",
      "SELECT CASE WHEN type_oid IS NULL THEN NULL WHEN logical_type = 'ENUM' AND type_name <> 'enum' THEN type_oid "
-     "ELSE map_to_pg_oid(type_name) END oid, format_pg_type(logical_type, type_name) typname, CASE WHEN internal THEN "
+     "ELSE map_to_pg_oid(CASE WHEN internal THEN type_name END) END oid, format_pg_type(logical_type, type_name) typname, CASE WHEN internal THEN "
      "(SELECT oid FROM duckdb_schemas() WHERE schema_name='pg_catalog' LIMIT 1) ELSE schema_oid END typnamespace, "
      "0 typowner, type_size typlen, false typbyval, CASE WHEN logical_type='ENUM' THEN 'e' else 'b' end typtype, CASE "
      "WHEN type_category='NUMERIC' THEN 'N' WHEN type_category='STRING' THEN 'S' WHEN type_category='DATETIME' THEN "
      "'D' WHEN type_category='BOOLEAN' THEN 'B' WHEN type_category='COMPOSITE' THEN 'C' WHEN type_category='USER' THEN "
      "'U' ELSE 'X' END typcategory, false typispreferred, true typisdefined, ',' typdelim, NULL typrelid, NULL "
-     "typsubscript, NULL typelem, CASE map_to_pg_oid(type_name) WHEN 16 THEN 1000 WHEN 17 THEN 1001 WHEN 20 THEN "
+     "typsubscript, NULL typelem, CASE map_to_pg_oid(CASE WHEN internal THEN type_name END) WHEN 16 THEN 1000 WHEN 17 THEN 1001 WHEN 20 THEN "
      "1016 WHEN 21 THEN 1005 WHEN 23 THEN 1007 WHEN 700 THEN 1021 WHEN 701 THEN 1022 WHEN 1043 THEN 1015 WHEN 1082 "
      "THEN 1182 WHEN 1083 THEN 1183 WHEN 1114 THEN 1115 WHEN 1184 THEN 1185 WHEN 1186 THEN 1187 WHEN 1266 THEN 1270 "
      "WHEN 1700 THEN 1231 WHEN 2950 THEN 2951 ELSE NULL END typarray, 0 typinput, 0 typoutput, 0 typreceive, 0 "
@@ -152,17 +152,17 @@ static const DefaultView internal_views[] = {
      "typbasetype, NULL "
      "typtypmod, NULL typndims, NULL typcollation, NULL typdefaultbin, NULL typdefault, NULL typacl FROM "
      "duckdb_types() WHERE type_oid IS NOT NULL AND ((logical_type = 'ENUM' AND type_name <> 'enum') OR "
-     "map_to_pg_oid(type_name) IS NOT NULL) UNION ALL SELECT CASE map_to_pg_oid(type_name) WHEN 16 THEN 1000 "
+     "map_to_pg_oid(CASE WHEN internal THEN type_name END) IS NOT NULL) UNION ALL SELECT CASE map_to_pg_oid(CASE WHEN internal THEN type_name END) WHEN 16 THEN 1000 "
      "WHEN 17 THEN 1001 WHEN 20 THEN 1016 WHEN 21 THEN 1005 WHEN 23 THEN 1007 WHEN 700 THEN 1021 WHEN 701 THEN 1022 "
      "WHEN 1043 THEN 1015 WHEN 1082 THEN 1182 WHEN 1083 THEN 1183 WHEN 1114 THEN 1115 WHEN 1184 THEN 1185 WHEN 1186 "
      "THEN 1187 WHEN 1266 THEN 1270 WHEN 1700 THEN 1231 WHEN 2950 THEN 2951 END oid, '_' || "
      "format_pg_type(logical_type, type_name) typname, CASE WHEN internal THEN (SELECT oid FROM duckdb_schemas() "
      "WHERE schema_name='pg_catalog' LIMIT 1) ELSE schema_oid END typnamespace, 0 typowner, -1 typlen, false typbyval, "
      "'b' typtype, 'A' typcategory, false typispreferred, true typisdefined, ',' typdelim, NULL typrelid, NULL "
-     "typsubscript, map_to_pg_oid(type_name) typelem, NULL typarray, 0 typinput, 0 typoutput, 0 typreceive, 0 typsend, "
+     "typsubscript, map_to_pg_oid(CASE WHEN internal THEN type_name END) typelem, NULL typarray, 0 typinput, 0 typoutput, 0 typreceive, 0 typsend, "
      "NULL typmodin, NULL typmodout, NULL typanalyze, 'd' typalign, 'p' typstorage, false typnotnull, "
      "NULL typbasetype, NULL typtypmod, NULL typndims, NULL typcollation, NULL typdefaultbin, NULL typdefault, NULL "
-     "typacl FROM duckdb_types() WHERE type_oid IS NOT NULL AND map_to_pg_oid(type_name) IN "
+     "typacl FROM duckdb_types() WHERE type_oid IS NOT NULL AND map_to_pg_oid(CASE WHEN internal THEN type_name END) IN "
      "(16,17,20,21,23,700,701,1043,1082,1083,1114,1184,1186,1266,1700,2950) UNION ALL SELECT 1009 oid, '_text' "
      "typname, CASE WHEN internal THEN (SELECT oid FROM duckdb_schemas() WHERE schema_name='pg_catalog' LIMIT 1) "
      "ELSE schema_oid END typnamespace, 0 typowner, -1 typlen, false typbyval, 'b' typtype, 'A' typcategory, false "
@@ -251,9 +251,8 @@ static const DefaultView internal_views[] = {
      "WHERE constraint_type NOT IN ('NOT NULL');"},
     {"information_schema", "check_constraints",
      "SELECT database_name AS constraint_catalog, schema_name AS constraint_schema, constraint_name, CASE "
-     "constraint_type WHEN 'NOT NULL' THEN column_name || ' IS NOT NULL' ELSE constraint_text END AS check_clause FROM "
-     "(SELECT dc.*, UNNEST(dc.constraint_column_names) AS column_name FROM duckdb_constraints() AS dc WHERE "
-     "constraint_type IN ('CHECK', 'NOT NULL'));"},
+     "constraint_type WHEN 'NOT NULL' THEN constraint_column_names[1] || ' IS NOT NULL' ELSE constraint_text END AS "
+     "check_clause FROM duckdb_constraints() WHERE constraint_type IN ('CHECK', 'NOT NULL');"},
     {"information_schema", "views",
      "SELECT database_name AS table_catalog, schema_name AS table_schema, view_name AS table_name, sql AS "
      "view_definition, 'NONE' AS check_option, 'NO' AS is_updatable, 'NO' AS is_insertable_into, 'NO' AS "
