@@ -100,7 +100,7 @@ jobs:
           {
             echo 'groups<<HAYBARN_GROUPS_EOF'
             emit smoke   $'haybarn-2-0:\n  config: duckdb/.github/config/haybarn_extensions_next_2_0.cmake\n  toolchain: main'
-            emit core    $'core:\n  config: duckdb/.github/config/haybarn/core.cmake\n  extra_toolchains: unixodbc;parser_tools\n  toolchain: main'
+            emit core    $'core:\n  config: duckdb/.github/config/core.cmake\n  extra_toolchains: unixodbc;parser_tools\n  toolchain: main'
             emit cloud   $'cloud:\n  config: duckdb/.github/config/haybarn/cloud.cmake\n  extra_toolchains: unixodbc;parser_tools\n  toolchain: main'
             emit search  $'search:\n  config: duckdb/.github/config/search.cmake\n  extra_toolchains: unixodbc;parser_tools\n  toolchain: main'
             emit scanner $'scanner:\n  config: duckdb/.github/config/scanner.cmake\n  extra_toolchains: unixodbc;parser_tools\n  toolchain: main'
@@ -116,11 +116,11 @@ jobs:
     name: Build extensions
     needs: prepare
     # ci-tools haybarn-2.0 (upstream v2.0-cyanoptera + Haybarn): haybarn-ci images/actions, Haybarn-only prebuilt.
-    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/build.yml@1033e6a97e1f3f87978c78869965dfe29030c0ff
+    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/build.yml@89430a2c8ba7c99cc667e5d5d981b594570acff9
     with:
       duckdb_version: ${{ needs.prepare.outputs.duckdb_version }}
       duckdb_commit: ${{ needs.prepare.outputs.duckdb_commit }}
-      ci_tools_version: 1033e6a97e1f3f87978c78869965dfe29030c0ff
+      ci_tools_version: 89430a2c8ba7c99cc667e5d5d981b594570acff9
       ci_tools_repository: Query-farm-haybarn/haybarn-extension-ci-tools
       duckdb_repository: Query-farm-haybarn/haybarn
       extension_repository: duckdb/extension-template

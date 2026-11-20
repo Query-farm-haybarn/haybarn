@@ -50,7 +50,7 @@ concurrency:
 env:
   # ci-tools haybarn-2.0: publish_extensions.py and _extension_registry_publish.yml.
   # Keep in sync with the build.yml pin in haybarn-extensions.yml.
-  HAYBARN_CI_TOOLS_REF: 3327f19d2ce02cf0c18ec2ae93f789b0cd976548
+  HAYBARN_CI_TOOLS_REF: 89430a2c8ba7c99cc667e5d5d981b594570acff9
 
 jobs:
   publish:
@@ -165,7 +165,7 @@ jobs:
           import sync_out_of_tree_extensions as s
           base = Path(".github/config/extensions").resolve()
           names = {"autocomplete", "core_functions", "icu", "json", "parquet", "tpcds", "tpch"}
-          for config in ("haybarn/core.cmake", "haybarn/cloud.cmake", "search.cmake", "scanner.cmake",
+          for config in ("core.cmake", "haybarn/cloud.cmake", "search.cmake", "scanner.cmake",
                          "haybarn/rust_based_extensions.cmake"):
               names.update(e["name"] for e in s.parse_cmake_file(Path(".github/config") / config, base))
           print("\n".join(sorted(names)))
@@ -264,7 +264,7 @@ jobs:
     name: Publish PyPI + npm
     needs: publish
     if: ${{ needs.publish.outputs.deploy == 'true' }}
-    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/_extension_registry_publish.yml@3327f19d2ce02cf0c18ec2ae93f789b0cd976548
+    uses: Query-farm-haybarn/haybarn-extension-ci-tools/.github/workflows/_extension_registry_publish.yml@89430a2c8ba7c99cc667e5d5d981b594570acff9
     permissions:
       contents: read
       actions:  read
@@ -280,6 +280,6 @@ jobs:
       # channel). ci-tools defaults publish_npm to false; set true to publish.
       publish_npm: false
       # MUST match the ref in the `uses:` line above.
-      ci_tools_ref: 3327f19d2ce02cf0c18ec2ae93f789b0cd976548
+      ci_tools_ref: 89430a2c8ba7c99cc667e5d5d981b594570acff9
       duckdb_version: ${{ needs.publish.outputs.duckdb_version }}
       source_run_id: ''
