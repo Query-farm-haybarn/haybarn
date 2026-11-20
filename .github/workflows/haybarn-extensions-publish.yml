@@ -157,7 +157,7 @@ jobs:
           # Publish exactly the extensions Haybarn's group configs declare: the
           # build also emits the extension-template's own `waddle` and test
           # extensions (demo_capi, ...), which must never reach the repository.
-          # In-tree set = upstream core.cmake + cloud.cmake IN_TREE blocks.
+          # In-tree set = the core + cloud IN_TREE blocks.
           allow=$(python3 -I - <<'EOF'
           import sys
           from pathlib import Path
@@ -165,7 +165,7 @@ jobs:
           import sync_out_of_tree_extensions as s
           base = Path(".github/config/extensions").resolve()
           names = {"autocomplete", "core_functions", "icu", "json", "parquet", "tpcds", "tpch"}
-          for config in ("core.cmake", "haybarn/cloud.cmake", "search.cmake", "scanner.cmake",
+          for config in ("haybarn/core.cmake", "haybarn/cloud.cmake", "search.cmake", "scanner.cmake",
                          "haybarn/rust_based_extensions.cmake"):
               names.update(e["name"] for e in s.parse_cmake_file(Path(".github/config") / config, base))
           print("\n".join(sorted(names)))

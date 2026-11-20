@@ -100,7 +100,7 @@ jobs:
           {
             echo 'groups<<HAYBARN_GROUPS_EOF'
             emit smoke   $'haybarn-2-0:\n  config: duckdb/.github/config/haybarn_extensions_next_2_0.cmake\n  toolchain: main'
-            emit core    $'core:\n  config: duckdb/.github/config/core.cmake\n  extra_toolchains: unixodbc;parser_tools\n  toolchain: main'
+            emit core    $'core:\n  config: duckdb/.github/config/haybarn/core.cmake\n  extra_toolchains: unixodbc;parser_tools\n  toolchain: main'
             emit cloud   $'cloud:\n  config: duckdb/.github/config/haybarn/cloud.cmake\n  extra_toolchains: unixodbc;parser_tools\n  toolchain: main'
             emit search  $'search:\n  config: duckdb/.github/config/search.cmake\n  extra_toolchains: unixodbc;parser_tools\n  toolchain: main'
             emit scanner $'scanner:\n  config: duckdb/.github/config/scanner.cmake\n  extra_toolchains: unixodbc;parser_tools\n  toolchain: main'
