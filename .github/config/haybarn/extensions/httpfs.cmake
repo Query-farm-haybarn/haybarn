@@ -1,4 +1,4 @@
-# Haybarn build-fork of httpfs: upstream's v2.0.0 pin (77392a72) plus Haybarn's
+# Haybarn build-fork of httpfs: upstream's v2.0.1 pin (f71cfdb4) plus Haybarn's
 # HTTP work re-expressed against upstream's 2.0 src/http + src/s3 layout:
 # HTTP/2 via ALPN with curl_multi stream multiplexing, lowercase response header
 # names, response compression for API requests and whole-file GETs (text pages
@@ -11,5 +11,5 @@
 duckdb_extension_load(httpfs
     LOAD_TESTS
     GIT_URL https://github.com/Query-farm-haybarn/haybarn-httpfs
-    GIT_TAG bfc432fae9111229dfedf5f479cd6d7b67f86baf
+    GIT_TAG e0d2876400247a3feed6a78a9a67e19285379472
 )

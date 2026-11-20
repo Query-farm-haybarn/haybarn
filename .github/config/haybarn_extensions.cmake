@@ -30,7 +30,7 @@ duckdb_extension_load(tpch)
 
 # --- Out-of-tree extensions, rebuilt from upstream ---------------------------
 # These reuse the upstream GIT_URL + pinned GIT_TAG from the per-extension
-# config files (.github/config/extensions/, DuckDB v2.0.0 pins); only the build
+# config files (.github/config/extensions/, DuckDB v2.0.1 pins); only the build
 # target (Haybarn DuckDB) and the signing key differ from upstream. This is
 # upstream's core + cloud + search + scanner + rust sets (out_of_tree_extensions
 # + rust_based_extensions), minus the build-forks below.

@@ -1,8 +1,15 @@
-# Haybarn build-fork of iceberg: upstream's v2.0.0 pin (4c0c0874) plus the
+# Haybarn build-fork of iceberg: upstream's v2.0.1 pin (f979b5b2) plus the
 # Haybarn CI/NOTICE stack. Branch haybarn-2.0; the 1.5 line is `haybarn`.
+# Windows tests for iceberg currently not working (as upstream)
+IF (NOT WIN32)
+  set(LOAD_ICEBERG_TESTS "LOAD_TESTS")
+else ()
+  set(LOAD_ICEBERG_TESTS "")
+endif()
 if (NOT MINGW)
   duckdb_extension_load(iceberg
+            ${LOAD_ICEBERG_TESTS}
             GIT_URL https://github.com/Query-farm-haybarn/haybarn-iceberg
-            GIT_TAG fa86ad24928da0f4be1ed3fec76cf73e22daed3e
+            GIT_TAG e6e133be5a944c8316badde2be695562c9bc3a0d
             )
 endif()
